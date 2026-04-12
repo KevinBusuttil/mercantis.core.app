@@ -162,10 +162,9 @@ public struct GenericFormView: View {
     }
 
     private func formulaField(field: FieldDefinition) -> some View {
-        let computed = (try? expressionEvaluator.evaluateFormula(
-            expression: field.visibilityExpression ?? "",
-            context: document.fields
-        )) ?? .null
+        let computed = field.formulaExpression.flatMap { expr in
+            try? expressionEvaluator.evaluateFormula(expression: expr, context: document.fields)
+        } ?? FieldValue.null
         let display: String
         switch computed {
         case .double(let d): display = String(format: "%.2f", d)

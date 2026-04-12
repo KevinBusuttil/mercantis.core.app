@@ -52,6 +52,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var validationRules: [ValidationRule]
     public var visibilityExpression: String?   // boolean expression; field shown only when true
     public var readOnlyExpression: String?
+    public var formulaExpression: String?      // for formula fields; arithmetic expression returning a value
     public var permissions: FieldPermission?
     public var isSearchable: Bool
     public var isSynced: Bool
