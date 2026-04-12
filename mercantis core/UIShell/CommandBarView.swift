@@ -76,7 +76,7 @@ public struct CommandBarView: View {
     @ViewBuilder
     private var resultList: some View {
         if results.isEmpty && !query.isEmpty {
-            Text("No results for "\(query)"")
+            Text("No results for \"\(query)\"")
                 .foregroundStyle(.secondary)
                 .padding()
         } else if results.isEmpty {
