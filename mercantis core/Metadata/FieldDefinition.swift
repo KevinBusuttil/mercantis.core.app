@@ -29,7 +29,7 @@ public enum FieldType: String, Codable, Sendable {
 }
 
 /// A value that can be assigned to a field.
-public enum FieldValue: Codable, Sendable {
+public enum FieldValue: Codable, Sendable, Equatable {
     case string(String)
     case int(Int)
     case double(Double)
@@ -52,6 +52,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var validationRules: [ValidationRule]
     public var visibilityExpression: String?   // boolean expression; field shown only when true
     public var readOnlyExpression: String?
+    public var formulaExpression: String?      // for formula fields; arithmetic expression returning a value
     public var permissions: FieldPermission?
     public var isSearchable: Bool
     public var isSynced: Bool
