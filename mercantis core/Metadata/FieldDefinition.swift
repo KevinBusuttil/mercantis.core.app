@@ -29,7 +29,7 @@ public enum FieldType: String, Codable, Sendable {
 }
 
 /// A value that can be assigned to a field.
-public enum FieldValue: Codable, Sendable {
+public enum FieldValue: Codable, Sendable, Equatable {
     case string(String)
     case int(Int)
     case double(Double)
