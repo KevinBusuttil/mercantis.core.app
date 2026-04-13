@@ -22,4 +22,32 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var indexes: [IndexDefinition]
     public var searchFields: [String]
     public var titleField: String
+
+    public init(
+        id: String,
+        name: String,
+        module: String,
+        appId: String,
+        isChildTable: Bool,
+        fields: [FieldDefinition],
+        permissions: [PermissionRule],
+        workflowId: String? = nil,
+        syncPolicy: SyncPolicy,
+        indexes: [IndexDefinition],
+        searchFields: [String],
+        titleField: String
+    ) {
+        self.id = id
+        self.name = name
+        self.module = module
+        self.appId = appId
+        self.isChildTable = isChildTable
+        self.fields = fields
+        self.permissions = permissions
+        self.workflowId = workflowId
+        self.syncPolicy = syncPolicy
+        self.indexes = indexes
+        self.searchFields = searchFields
+        self.titleField = titleField
+    }
 }

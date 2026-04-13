@@ -25,4 +25,34 @@ public struct AppManifest: Codable, Identifiable, Sendable {
     public var dashboards: [DashboardDefinition]
     public var localizations: [LocalizationBundle]
     public var iconAsset: String?
+
+    public init(
+        id: String,
+        name: String,
+        version: String,
+        minimumCoreVersion: String,
+        description: String,
+        doctypes: [DocType],
+        workflows: [WorkflowDefinition],
+        permissions: [PermissionRule],
+        reports: [ReportDefinition],
+        automationRules: [AutomationRule],
+        dashboards: [DashboardDefinition],
+        localizations: [LocalizationBundle],
+        iconAsset: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.minimumCoreVersion = minimumCoreVersion
+        self.description = description
+        self.doctypes = doctypes
+        self.workflows = workflows
+        self.permissions = permissions
+        self.reports = reports
+        self.automationRules = automationRules
+        self.dashboards = dashboards
+        self.localizations = localizations
+        self.iconAsset = iconAsset
+    }
 }

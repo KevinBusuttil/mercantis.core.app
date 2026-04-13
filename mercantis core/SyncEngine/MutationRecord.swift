@@ -38,4 +38,15 @@ public struct MutationRecord: Identifiable, Codable, Sendable {
     public let localTimestamp: Date
     public let syncVersion: Int64         // monotonically increasing per document
     public var status: MutationStatus
+
+    public init(id: UUID, type: MutationType, payload: Data, deviceId: String, userId: String, localTimestamp: Date, syncVersion: Int64, status: MutationStatus) {
+        self.id = id
+        self.type = type
+        self.payload = payload
+        self.deviceId = deviceId
+        self.userId = userId
+        self.localTimestamp = localTimestamp
+        self.syncVersion = syncVersion
+        self.status = status
+    }
 }

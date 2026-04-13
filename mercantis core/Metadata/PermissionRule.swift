@@ -16,4 +16,14 @@ public struct PermissionRule: Codable, Sendable {
     public let canDelete: Bool
     public let canSubmit: Bool
     public let canAmend: Bool
+
+    public init(role: String, canRead: Bool, canWrite: Bool, canCreate: Bool, canDelete: Bool, canSubmit: Bool, canAmend: Bool) {
+        self.role = role
+        self.canRead = canRead
+        self.canWrite = canWrite
+        self.canCreate = canCreate
+        self.canDelete = canDelete
+        self.canSubmit = canSubmit
+        self.canAmend = canAmend
+    }
 }

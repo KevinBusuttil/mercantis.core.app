@@ -12,4 +12,9 @@ import Foundation
 public struct IndexDefinition: Codable, Sendable {
     public let fieldKey: String
     public let unique: Bool
+
+    public init(fieldKey: String, unique: Bool) {
+        self.fieldKey = fieldKey
+        self.unique = unique
+    }
 }
