@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 
 /// In-memory DocType registry backed by the `doctypes` table in SQLite.
 ///
@@ -99,10 +100,11 @@ public final class MetadataRegistry: @unchecked Sendable {
     // MARK: - Private Helpers
 
     private func loadFromDatabase(id: String) throws -> DocType? {
-        let rows = try database.read { db in
-            try db.query(sql: "SELECT payload FROM doctypes WHERE id = ?", arguments: [id])
+        let row = try database.read { db in
+            try Row.fetchOne(db, sql: "SELECT payload FROM doctypes WHERE id = ?", arguments: [id])
         }
-        guard let row = rows.first, let payloadString = row.first as? String,
+        guard let row = row,
+              let payloadString: String = row[0],
               let payloadData = payloadString.data(using: .utf8) else { return nil }
 
         let decoder = JSONDecoder()
@@ -112,12 +114,12 @@ public final class MetadataRegistry: @unchecked Sendable {
 
     private func loadAllFromDatabase() throws -> [DocType] {
         let rows = try database.read { db in
-            try db.query(sql: "SELECT payload FROM doctypes", arguments: [])
+            try Row.fetchAll(db, sql: "SELECT payload FROM doctypes", arguments: [])
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try rows.compactMap { row -> DocType? in
-            guard let payloadString = row.first as? String,
+            guard let payloadString: String = row[0],
                   let payloadData = payloadString.data(using: .utf8) else { return nil }
             return try decoder.decode(DocType.self, from: payloadData)
         }
