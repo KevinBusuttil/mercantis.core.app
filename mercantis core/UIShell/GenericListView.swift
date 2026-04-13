@@ -81,29 +81,6 @@ public struct GenericListView: View {
     private var documentTable: some View {
         let columns = listColumns
 
-        #if os(macOS)
-        Table(processedDocuments) {
-            TableColumn("ID") { doc in
-                Text(doc.id).font(.caption).foregroundStyle(.secondary)
-            }
-            .width(min: 80, ideal: 120)
-
-            ForEach(columns) { field in
-                TableColumn(field.label) { doc in
-                    Text(displayValue(for: field.key, in: doc))
-                }
-            }
-
-            TableColumn("Status") { doc in
-                Text(doc.status)
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-            }
-        }
-        #else
         List(processedDocuments) { doc in
             Button(action: { onSelect?(doc) }) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -121,7 +98,6 @@ public struct GenericListView: View {
             }
             .buttonStyle(.plain)
         }
-        #endif
     }
 
     // MARK: - Computed Properties

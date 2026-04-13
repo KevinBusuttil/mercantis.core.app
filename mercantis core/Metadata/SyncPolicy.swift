@@ -25,4 +25,9 @@ public struct SyncPolicy: Codable, Sendable {
     public var requiresVersionCheck: Bool {
         conflictResolution == .versionChecked
     }
+
+    public init(conflictResolution: ConflictResolution, immutableAfterSubmit: Bool) {
+        self.conflictResolution = conflictResolution
+        self.immutableAfterSubmit = immutableAfterSubmit
+    }
 }

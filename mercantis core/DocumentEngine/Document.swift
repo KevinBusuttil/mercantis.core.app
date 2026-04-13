@@ -9,7 +9,7 @@ import Foundation
 
 /// A runtime document instance. Documents are generic containers
 /// whose structure is defined by their DocType metadata. (ADR-003)
-public struct Document: Identifiable, Sendable {
+public struct Document: Identifiable, Codable, Sendable {
     public let id: String                       // UUID
     public let docType: String                  // references DocType.id
     public var company: String
@@ -24,6 +24,30 @@ public struct Document: Identifiable, Sendable {
 
     /// Child table rows grouped by table name. (ADR-002)
     public var children: [String: [ChildRow]]
+
+    public init(
+        id: String,
+        docType: String,
+        company: String,
+        status: String,
+        createdAt: Date,
+        updatedAt: Date,
+        syncVersion: Int64,
+        syncState: SyncState,
+        fields: [String: FieldValue],
+        children: [String: [ChildRow]]
+    ) {
+        self.id = id
+        self.docType = docType
+        self.company = company
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.syncVersion = syncVersion
+        self.syncState = syncState
+        self.fields = fields
+        self.children = children
+    }
 }
 
 /// Sync state of a document on this device.
@@ -35,8 +59,14 @@ public enum SyncState: String, Codable, Sendable {
 }
 
 /// A single child row belonging to a parent document.
-public struct ChildRow: Identifiable, Sendable {
+public struct ChildRow: Identifiable, Codable, Sendable {
     public let id: String
     public var rowIndex: Int
     public var fields: [String: FieldValue]
+
+    public init(id: String, rowIndex: Int, fields: [String: FieldValue]) {
+        self.id = id
+        self.rowIndex = rowIndex
+        self.fields = fields
+    }
 }
