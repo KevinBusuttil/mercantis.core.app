@@ -11,7 +11,7 @@ import SwiftUI
 struct mercantis_coreApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationShell()
         }
     }
 }
