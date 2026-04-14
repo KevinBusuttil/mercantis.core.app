@@ -30,6 +30,14 @@ A `DocType` carries:
 
 `MetadataRegistry` provides an in-memory cache of registered DocTypes backed by the `doctypes` table.
 
+At runtime, raw DocType definitions are not used directly. A `MetaComposer` composes a `ResolvedMeta` object by merging three layers:
+
+1. **Base definition** — the `DocType` as declared in the app manifest or `doctypes` table.
+2. **Custom fields** — user-added fields stored in the `custom_fields` table.
+3. **Property overrides** — per-field property overrides stored in the `property_setters` table (label, hidden, read_only, default, etc.).
+
+The resulting `ResolvedMeta` is what all runtime consumers (DocumentEngine, PermissionEngine, UIShell, ExpressionEngine) use. Raw `DocType` definitions are an internal detail of MetadataRegistry. See [ADR-021](ADR-021-metadata-composition-resolved-meta.md).
+
 ## Consequences
 
 **Positive:**
@@ -48,4 +56,4 @@ A `DocType` carries:
 
 ---
 
-*See also: [ADR-004 — Declarative App / Plugin Model](ADR-004-declarative-app-plugin-model.md)*
+*See also: [ADR-004 — Declarative App / Plugin Model](ADR-004-declarative-app-plugin-model.md), [ADR-021 — Metadata Composition and ResolvedMeta](ADR-021-metadata-composition-resolved-meta.md)*

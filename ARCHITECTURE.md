@@ -32,20 +32,22 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │                                                                             │
 │   ┌───────────┐   ┌─────────────┐   ┌────────────────────┐                 │
 │   │  UIShell  │   │ AppRuntime  │   │  ExpressionEngine  │                 │
-│   │ (planned) │   │  (manifest  │   │  (sandboxed eval)  │                 │
+│   │ (planned) │   │  (manifest  │   │  (AST-based eval)  │                 │
 │   │           │   │  installer) │   │                    │                 │
 │   └─────┬─────┘   └──────┬──────┘   └─────────┬──────────┘                 │
 │         │                │                    │                             │
 │   ┌─────▼────────────────▼────────────────────▼────────────────────────┐   │
 │   │                         DocumentEngine                              │   │
 │   │  save() · delete() · fetch() · list() · submit() · cancel() ·      │   │
-│   │  amend() · SchemaValidator · lifecycle events · mutation logging    │   │
+│   │  amend() · ValidationPipeline · VersioningDiffTracker ·            │   │
+│   │  optimistic concurrency · lifecycle events · mutation logging       │   │
 │   └────────────────────────────┬────────────────────────────────────────┘   │
 │         │           │          │           │            │                   │
 │   ┌─────▼──────┐  ┌─▼──────────▼──┐  ┌────▼──────┐  ┌─▼──────────────┐   │
-│   │ Permissions│  │ WorkflowEngine │  │ EventBus  │  │  NamingService │   │
-│   │  Engine    │  │ (state machine)│  │(Notif'ns) │  │SchedulerService│   │
-│   └─────┬──────┘  └───────┬────────┘  └───────────┘  └────────────────┘   │
+│   │ Permission │  │ WorkflowEngine │  │  Typed    │  │  NamingService │   │
+│   │ Evaluator  │  │ (state machine)│  │ EventBus  │  │SchedulerService│   │
+│   │ Chain      │  └───────┬────────┘  └───────────┘  └────────────────┘   │
+│   └─────┬──────┘          │                                                 │
 │         │                 │                                                 │
 │   ┌─────▼─────────────────▼──────────────────────────────────────────┐     │
 │   │                   Storage (GRDB / SQLite)                         │     │
@@ -60,13 +62,20 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │                                                                             │
 │   ┌────────────────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────┐  │
 │   │  MetadataRegistry  │  │ ReportEngine │  │FileManager │  │PrintEngine│  │
-│   │  (DocType registry)│  │  (planned)   │  │            │  │(planned) │  │
-│   └────────────────────┘  └──────────────┘  └────────────┘  └──────────┘  │
+│   │  + MetaComposer    │  │  (planned)   │  │            │  │(planned) │  │
+│   │  → ResolvedMeta    │  └──────────────┘  └────────────┘  └──────────┘  │
+│   └────────────────────┘                                                   │
 │                                                                             │
 │   ┌────────────────────────┐  ┌───────────────────────┐                   │
 │   │  CustomizationEngine   │  │    ImportExport        │                   │
 │   │  (Custom Fields, Props,│  │  (CSV/JSON import/     │                   │
 │   │   Client Scripts)      │  │   export, fixtures)    │                   │
+│   └────────────────────────┘  └───────────────────────┘                   │
+│                                                                             │
+│   ┌────────────────────────┐  ┌───────────────────────┐                   │
+│   │ NamingStrategy Registry│  │  AutomationAction      │                   │
+│   │ (UUIDv7 | Series |     │  │  Registry              │                   │
+│   │  Field | Prompt | Fmt) │  │  (set_value | assign…) │                   │
 │   └────────────────────────┘  └───────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -89,7 +98,9 @@ The Metadata Engine is the schema registry. Every entity in the system — wheth
 
 `SchemaValidator` validates DocType definitions before they are committed to the registry. `MetadataRegistry` provides an in-memory cache backed by the `doctypes` table.
 
-See [ADR-003](Docs/ADR/ADR-003-metadata-defined-doctypes.md).
+**MetaComposer:** At runtime, raw DocType definitions are not used directly. `MetaComposer` composes a `ResolvedMeta` object by merging three layers: the base DocType definition (from the manifest / `doctypes` table) + user custom fields (from the `custom_fields` table) + property overrides (from the `property_setters` table). The `ResolvedMeta` is the authoritative runtime schema that all consumers — DocumentEngine, PermissionEngine, UIShell, ExpressionEngine — use. The `CustomizationEngine` (§4.19) is the write path for custom fields and property setters; `MetaComposer` is the read path. `ResolvedMeta` is cached and invalidated whenever any of the three layers changes for a given DocType.
+
+See [ADR-003](Docs/ADR/ADR-003-metadata-defined-doctypes.md) and [ADR-021](Docs/ADR/ADR-021-metadata-composition-resolved-meta.md).
 
 ---
 
@@ -100,10 +111,25 @@ See [ADR-003](Docs/ADR/ADR-003-metadata-defined-doctypes.md).
 The Document Engine handles all CRUD operations on `Document` instances. A `Document` is a generic container — its structure is determined entirely by its `DocType` metadata.
 
 Key responsibilities:
-- **`save(_:)`** — Validate against the DocType via `SchemaValidator`, serialize to JSON, write to the `documents` table, and atomically append a `MutationRecord` to `sync_queue`. Fire a `document.saved` event on the `EventBus`.
-- **`delete(docType:id:)`** — Delete from `documents`, cascade-delete child rows from `document_children`, append a `deleteDocument` mutation, fire a `document.deleted` event.
+- **`save(_:)`** — Run the `ValidationPipeline`, check optimistic concurrency, serialize to JSON, write to the `documents` table, compute and store a field-level diff as a `DocumentVersion`, and atomically append a `MutationRecord` to `sync_queue`. Fire a `DocumentSavedEvent` on the typed event bus.
+- **`delete(docType:id:)`** — Delete from `documents`, cascade-delete child rows from `document_children`, append a `deleteDocument` mutation, fire a `DocumentDeletedEvent`.
 - **`fetch(docType:id:)`** — Query `documents`, deserialize the JSON payload into a `Document`.
 - **`list(docType:filters:)`** — Query with optional WHERE clauses, return a list of `Document` objects.
+
+**ValidationPipeline:** Document save runs a structured, ordered validation sequence. Each stage is a `ValidationStage` protocol conformance, independently testable, executed in declared order:
+1. `TypeCoercionStage` — field values match declared types.
+2. `RequiredFieldStage` — required fields are non-empty.
+3. `LinkValidationStage` — link field targets exist.
+4. `UniqueConstraintStage` — unique fields/indexes have no collisions.
+5. `ValidationRuleStage` — `ValidationRule` expressions evaluate to true.
+6. `WorkflowGuardStage` — workflow transition is allowed.
+7. `PermissionStage` — permission evaluator chain passes.
+
+Validation failures produce structured errors with stage, field, and message. See [ADR-022](Docs/ADR/ADR-022-document-validation-pipeline.md).
+
+**Optimistic concurrency:** Documents carry a `modifiedAt` timestamp. On save, `DocumentEngine` compares the document's `modifiedAt` against the stored value. If another save occurred between load and save (even on the same device), the save fails with a `ConcurrencyConflictError`. This is separate from cross-device sync conflicts (handled by `SyncEngine`). See [ADR-023](Docs/ADR/ADR-023-optimistic-concurrency-modified-timestamp.md).
+
+**Versioning / diff tracking:** On every save, `DocumentEngine` computes a field-level diff (which fields changed, old value → new value) and stores it as a `DocumentVersion` record. This provides a complete field-level change history for audit-sensitive documents. See [ADR-024](Docs/ADR/ADR-024-document-versioning-diff-tracking.md).
 
 Every write goes through the Document Engine. Direct SQLite writes that bypass it are prohibited (see [ADR-005](Docs/ADR/ADR-005-sync-via-mutation-log.md)).
 
@@ -142,19 +168,25 @@ See [ADR-002](Docs/ADR/ADR-002-sqlite-local-source-of-truth.md).
 
 **Location:** `mercantis core/Permissions/`
 
-The Permissions Engine evaluates multi-level access rules before any document operation proceeds.
+The Permissions Engine evaluates multi-level access rules before any document operation proceeds. It is implemented as an **evaluator chain** — each permission level is a `PermissionEvaluator` protocol conformance:
 
-Permission levels (evaluated in order):
-1. **App-level** — Is the user's role allowed to use this module/app at all?
-2. **DocType-level** — `PermissionRule` per role: read, write, create, delete, submit, amend.
-3. **Field-level** — `FieldPermission.readRoles` / `writeRoles` per field.
-4. **Row-level** — Arbitrary condition filter (e.g. user can only see documents for their warehouse).
-5. **Workflow action level** — `WorkflowTransition.allowedRoles` guards each transition.
+```swift
+protocol PermissionEvaluator {
+    func evaluate(context: PermissionContext) -> PermissionDecision
+}
+enum PermissionDecision { case allowed, denied(reason: String), abstain }
+```
 
-Key methods:
-- `canPerform(operation:on:userRoles:)` — DocType-level check.
-- `canAccessField(fieldKey:on:userRoles:operation:)` — Field-level check.
-- `canAccessRow(document:userRoles:rowFilter:)` — Row-level check.
+Chain (evaluated in order):
+1. **`AppLevelEvaluator`** — Is the user's role allowed to use this module/app at all?
+2. **`DocTypeLevelEvaluator`** — `PermissionRule` per role: read, write, create, delete, submit, amend.
+3. **`FieldLevelEvaluator`** — `FieldPermission.readRoles` / `writeRoles` per field.
+4. **`RowLevelEvaluator`** — Arbitrary condition filter (e.g. user can only see documents for their warehouse).
+5. **`WorkflowLevelEvaluator`** — `WorkflowTransition.allowedRoles` guards each transition.
+
+All evaluators must return `.allowed` or `.abstain`. Evaluation short-circuits on the first `.denied`. Each evaluator is independently testable. New evaluators can be appended to the chain without modifying existing ones.
+
+See [ADR-011](Docs/ADR/ADR-011-multi-level-permission-model.md).
 
 ---
 
@@ -220,7 +252,11 @@ Supported syntax:
 - Parentheses for grouping
 - Arithmetic formulas: `+`, `-`, `*`, `/`
 
+The evaluator parses expressions into a **typed AST** (Abstract Syntax Tree) before evaluation — not string-walking. Benefits: static analysis of field references, constant folding, and precise error messages with source position information.
+
 The evaluator operates with **no access to the file system, network, or arbitrary Swift APIs**.
+
+See [ADR-017](Docs/ADR/ADR-017-expression-engine-scope-sandboxing.md).
 
 ---
 
@@ -228,13 +264,15 @@ The evaluator operates with **no access to the file system, network, or arbitrar
 
 **Location:** `mercantis core/Notifications/`
 
-`EventBus` is a simple in-process publish/subscribe bus. Subsystems publish named events; interested components subscribe to them.
+The event system uses **typed events** — each event is a concrete Swift type, not a string key. Subscriptions are type-parameterised and compile-time verified. Callers receive a `SubscriptionToken`; releasing it cancels the subscription, preventing memory leaks.
 
-Standard event names:
-- `document.saved` — fired by `DocumentEngine.save(_:)`
-- `document.deleted` — fired by `DocumentEngine.delete(docType:id:)`
-- `workflow.transition` — fired by `WorkflowEngine.transition(...)`
-- `app.installed` — fired by `AppInstaller.install(_:)`
+Standard event types:
+- `DocumentSavedEvent` — fired by `DocumentEngine.save(_:)`
+- `DocumentDeletedEvent` — fired by `DocumentEngine.delete(docType:id:)`
+- `WorkflowTransitionEvent` — fired by `WorkflowEngine.transition(...)`
+- `AppInstalledEvent` — fired by `AppInstaller.install(_:)`
+
+This supersedes the stringly-typed `EventBus` (ADR-012). See [ADR-020](Docs/ADR/ADR-020-typed-event-system.md).
 
 An in-app inbox for user-visible notifications is planned.
 
@@ -265,7 +303,7 @@ The Document Lifecycle subsystem manages the `docstatus` state machine for submi
 
 Valid transitions: Draft → Draft (save), Draft → Submitted (submit), Submitted → Cancelled (cancel). No other transitions are permitted.
 
-DocTypes opt into this lifecycle via `isSubmittable: true` in the DocType definition. Fields marked `allowOnSubmit: true` can be edited after submission. Amending a cancelled document creates a new Draft linked via `amendedFrom`, providing a complete correction history. The `immutableAfterSubmit` sync policy flag (from [ADR-006](Docs/ADR/ADR-006-financial-inventory-conflict-policy.md)) enforces immutability at the sync layer.
+DocTypes opt into this lifecycle via `isSubmittable: true` in the DocType definition. Fields marked `allowOnSubmit: true` can be edited after submission — all other fields are immutable and any write attempt is rejected at the DocumentEngine layer. Cancellation checks for linked submitted documents: if any downstream submitted document references the document being cancelled, the cancel is rejected to prevent dangling references. Amending a cancelled document creates a new Draft with `amendedFrom` pointing to the cancelled document and `docstatus` reset to 0, providing a complete correction history. The `immutableAfterSubmit` sync policy flag (from [ADR-006](Docs/ADR/ADR-006-financial-inventory-conflict-policy.md)) enforces immutability at the sync layer.
 
 Key methods: `DocumentEngine.submit(_:)`, `DocumentEngine.cancel(_:)`, `DocumentEngine.amend(_:)`.
 
@@ -277,41 +315,48 @@ See [ADR-009](Docs/ADR/ADR-009-single-documents-table.md) and [ADR-013](Docs/ADR
 
 **Location:** `mercantis core/Naming/`
 
-The Naming System determines the `id` / `name` of each document at save time. The naming strategy is declared per DocType via the `autoname` property.
+The Naming System determines the `id` / `name` of each document at save time. It is implemented as a **strategy registry** — each naming strategy is a `NamingStrategy` protocol conformance:
 
-Supported strategies:
+```swift
+protocol NamingStrategy {
+    func resolve(docType: DocType, document: Document, context: NamingContext) throws -> String
+}
+```
 
-- **UUID (default)** — UUID v7, time-ordered, globally unique. Recommended for offline-first DocTypes.
-- **Naming Series** — Pattern-based sequential naming (e.g. `SINV-.YYYY.-.####`). Supports date tokens (`YY`, `YYYY`, `MM`, `DD`), field references, and hash placeholders.
-- **Field-based** — Derive the name from a field value (e.g. `field:email`).
-- **Autoincrement** — Integer sequence per DocType. Requires server coordination; not recommended for offline-first.
-- **Prompt** — The user enters the name manually.
-- **Expression** — Format string with field interpolation (e.g. `format:{company_abbr}-{naming_series}`).
+Built-in strategies:
 
-A `DocumentNamingRule` system allows conditional naming rules with priority ordering — different patterns can apply based on document field values.
+- **`UUIDv7Strategy`** (default) — UUID v7, time-ordered, globally unique. Recommended for offline-first DocTypes.
+- **`NamingSeriesStrategy`** — Pattern-based sequential naming (e.g. `SINV-.YYYY.-.####`). Supports date tokens (`YY`, `YYYY`, `MM`, `DD`), field references, and hash placeholders.
+- **`FieldDerivedStrategy`** — Derive the name from a field value (e.g. `field:email`).
+- **`PromptStrategy`** — The user enters the name manually.
+- **`FormatStrategy`** — Format string with field interpolation (e.g. `format:{company_abbr}-{naming_series}`).
+
+A `DocumentNamingRule` conditional selector picks the strategy based on document field values (e.g. different naming series per company), with priority ordering. `NamingService` evaluates these rules at `DocumentEngine.save()` time and dispatches to the appropriate strategy.
 
 See [ADR-014](Docs/ADR/ADR-014-document-naming-strategy.md).
 
 ---
 
-### 4.12 Hooks / Extension Points
+### 4.12 Extension Points
 
 **Location:** `mercantis core/AppRuntime/`
 
-The Hooks subsystem provides a declarative mechanism for apps to wire into Core lifecycle events without modifying Core code.
+Mercantis Core uses a **three-layer extensibility model** (see [ADR-026](Docs/ADR/ADR-026-three-layer-extensibility-model.md)) instead of Frappe-style hooks. Frappe hooks are explicitly rejected: they are stringly-typed, have no ordering guarantees, produce silent failures on misspelled event names, and require executable code that violates iOS App Store rules.
 
-Apps declare hooks in their manifest under the `hooks` section. Supported hook types:
+**Layer 1 — Declarative manifests (primary extension surface):**
+Apps declare extension points in their manifest under `extensionPoints`:
+- `documentEventSubscriptions` — Per-DocType or global lifecycle subscriptions (`on_update`, `after_insert`, `on_submit`, `on_cancel`, `on_trash`, `on_change`). Handlers are built-in action types only.
+- `schedulerEvents` — Periodic task registration (`all`, `daily`, `hourly`, `weekly`, `monthly`, `cron`).
 
-- `doc_events` — Subscribe to document lifecycle events (`on_update`, `after_insert`, `on_submit`, `on_cancel`, `on_trash`, `on_change`) per DocType or globally (`*`).
-- `scheduler_events` — Register functions for periodic execution (`all`, `daily`, `hourly`, `weekly`, `monthly`, `cron`).
-- `override_doctype_class` — Extend or replace the controller for a DocType.
-- `override_whitelisted_methods` — Redirect API calls to custom implementations.
+**Layer 2 — Typed event subscriptions:**
+Compiled-in code subscribes to typed events via the `EventEmitter`. Type-safe, lifecycle-managed via `SubscriptionToken`. Not available to downloaded apps.
 
-Hooks are resolved at install time by `AppInstaller`, which collects hook declarations from all installed app manifests and registers them as `EventBus` subscriptions or `SchedulerService` entries. Since no executable code is downloaded, hook handlers are limited to built-in action types.
+**Layer 3 — Compiled-in extension protocols:**
+First-party code provides custom `NamingStrategy`, `AutomationActionHandler`, or `PermissionEvaluator` conformances compiled into Core. Not available to downloaded apps.
 
-The `EventBus` (§4.8) fires events; hooks are the declarative mechanism for apps to subscribe to them.
+At install time, `AppInstaller` resolves Layer 1 declarations into typed event subscriptions or `SchedulerService` registrations.
 
-See [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md).
+See [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md) and [ADR-026](Docs/ADR/ADR-026-three-layer-extensibility-model.md).
 
 ---
 
@@ -321,11 +366,13 @@ See [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md).
 
 Because Mercantis Core is a pure client-side library (no server process), background tasks execute within the app process using Swift Concurrency (`Task`, `TaskGroup`).
 
-- **Scheduled tasks** — A `SchedulerService` checks for due tasks on app launch and periodically while the app is active. Tasks are declared in app manifests under `scheduler_events`.
+- **Scheduled tasks** — A `SchedulerService` checks for due tasks on app launch and periodically while the app is active. Tasks are declared in app manifests under `schedulerEvents`.
 - **Task types:** `all` (every 5 min), `hourly`, `daily`, `weekly`, `monthly`, `cron` (custom cron expression).
 - **Queue categories:** `short` (< 5 s, UI-blocking permitted), `default` (< 60 s), `long` (> 60 s, runs as a background task).
 - Failed tasks are retried with exponential backoff. Failures are logged to `audit_log`.
 - Sync operations (push/receive) are themselves scheduled background tasks.
+
+**AutomationActionRegistry:** Automation action dispatch uses a registry of `AutomationActionHandler` protocol conformances keyed by `actionType` string. Built-in action types: `set_value`, `set_status`, `send_notification`, `validate`, `assign`. New action types are added by registering a conformance compiled into Core. See [ADR-025](Docs/ADR/ADR-025-automation-action-registry.md).
 
 See [ADR-010](Docs/ADR/ADR-010-pure-client-side-architecture.md).
 
@@ -354,12 +401,14 @@ Key API points:
 
 - `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:sortBy:limit:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)`
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
-- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(...)`, `canAccessRow(...)`
+- `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
+- `PermissionEngine` — evaluator chain; `canPerform(operation:on:context:)`, `canAccessField(...)`, `canAccessRow(...)`
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
 - `SyncEngine` — `push()`, `receive()`, `applyRemote(_:)`
 - `ExpressionEvaluator` — `evaluateBool(_:context:)`, `evaluateFormula(_:context:)`
-- `EventBus` — `subscribe(event:handler:)`, `publish(event:payload:)`
+- `EventEmitter` — `subscribe(_:handler:)` → `SubscriptionToken`, `publish(_:)`
 - `AppInstaller` — `install(_:)`, `uninstall(appId:)`
+- `AutomationActionRegistry` — `register(_:)`, `execute(actionType:document:parameters:context:)`
 
 See [ADR-007](Docs/ADR/ADR-007-hub-on-core-public-apis.md).
 
@@ -435,8 +484,8 @@ The Data Import / Export subsystem handles bulk data operations.
 
 The Realtime Updates subsystem keeps the UI consistent with the underlying document state.
 
-- **Local observation** — SwiftUI views observe the `EventBus` for `document.saved` and `document.deleted` events to refresh automatically without polling.
-- **Sync-triggered updates** — When `SyncEngine.receive()` applies remote mutations, it fires the same `EventBus` events, causing UI refreshes as if changes were local.
+- **Local observation** — SwiftUI views subscribe to typed events (`DocumentSavedEvent`, `DocumentDeletedEvent`) to refresh automatically without polling.
+- **Sync-triggered updates** — When `SyncEngine.receive()` applies remote mutations, it publishes the same typed events, causing UI refreshes as if changes were local.
 - **Planned: WebSocket adapter** — For multi-device scenarios, a `RealtimeAdapter` protocol will allow push notifications from the cloud when remote changes occur. Core defines the protocol; the host app provides the implementation.
 
 ---
@@ -480,9 +529,13 @@ The Reporting Engine executes `ReportDefinition` queries against the local datab
 ```
 mercantis core/
 ├── AppRuntime/
-│   ├── AppInstaller.swift        # Installs/uninstalls app manifests
+│   ├── AppInstaller.swift        # Installs/uninstalls app manifests; resolves extension points
 │   ├── AppManifest.swift         # Codable manifest struct
 │   └── AppRuntimeTypes.swift     # WorkflowDefinition, ReportDefinition, AutomationRule, …
+├── Automation/
+│   ├── AutomationActionHandler.swift  # Protocol: actionType + execute(document:parameters:context:)
+│   ├── AutomationActionRegistry.swift # Registry: maps actionType → handler
+│   └── BuiltInActionHandlers.swift    # SetValueHandler, SetStatusHandler, SendNotificationHandler, …
 ├── Cache/
 │   └── CacheManager.swift        # Generation-counter cache; metadata, document, and query caches
 ├── Customization/
@@ -491,9 +544,11 @@ mercantis core/
 │   └── PropertySetter.swift      # Per-field property overrides
 ├── DocumentEngine/
 │   ├── Document.swift            # Document, ChildRow, SyncState
-│   └── DocumentEngine.swift      # save, delete, fetch, list, submit, cancel, amend
+│   ├── DocumentEngine.swift      # save, delete, fetch, list, submit, cancel, amend
+│   ├── DocumentVersion.swift     # DocumentVersion, FieldDiff (versioning/diff tracking)
+│   └── ValidationPipeline.swift  # ValidationStage protocol, pipeline, ValidationError
 ├── ExpressionEngine/
-│   └── ExpressionEvaluator.swift # evaluateBool, evaluateFormula
+│   └── ExpressionEvaluator.swift # AST-based evaluator: evaluateBool, evaluateFormula
 ├── Files/
 │   ├── File.swift                # File DocType metadata record
 │   └── FileManager.swift         # Sandboxed file storage; public/private paths
@@ -504,18 +559,23 @@ mercantis core/
 │   ├── DocType.swift             # DocType struct
 │   ├── FieldDefinition.swift     # FieldDefinition, FieldType, FieldValue, FieldPermission
 │   ├── IndexDefinition.swift     # IndexDefinition
-│   ├── MetadataRegistry.swift    # In-memory DocType cache
+│   ├── MetaComposer.swift        # Composes ResolvedMeta from base + custom fields + property setters
+│   ├── MetadataRegistry.swift    # In-memory DocType cache (raw definitions)
 │   ├── PermissionRule.swift      # PermissionRule
+│   ├── ResolvedMeta.swift        # ResolvedMeta, ResolvedFieldDefinition
 │   ├── SchemaValidator.swift     # Validates DocType definitions
 │   └── SyncPolicy.swift          # SyncPolicy, ConflictResolution
 ├── Naming/
 │   ├── DocumentNamingRule.swift  # Conditional naming rules with priority ordering
-│   ├── NamingSeries.swift        # Pattern-based sequential naming (SINV-.YYYY.-.####)
-│   └── NamingService.swift       # Resolves autoname strategy at save time
+│   ├── NamingService.swift       # Resolves autoname strategy at save time
+│   ├── NamingSeries.swift        # NamingSeriesStrategy implementation
+│   └── NamingStrategy.swift      # NamingStrategy protocol + UUIDv7, Field, Prompt, Format strategies
 ├── Notifications/
-│   └── EventBus.swift            # In-process publish/subscribe
+│   └── EventEmitter.swift        # Typed event bus: subscribe<E>(_:handler:) → SubscriptionToken
 ├── Permissions/
-│   └── PermissionEngine.swift    # canPerform, canAccessField, canAccessRow
+│   ├── PermissionContext.swift   # PermissionContext, PermissionDecision
+│   ├── PermissionEngine.swift    # Evaluator chain orchestrator
+│   └── PermissionEvaluators.swift# AppLevel, DocTypeLevel, FieldLevel, RowLevel, WorkflowLevel
 ├── Printing/
 │   ├── LetterHead.swift          # Company header/footer templates
 │   ├── PDFGenerator.swift        # Protocol-based PDF renderer adapter
@@ -559,11 +619,18 @@ mercantis core/
 | [ADR-009](Docs/ADR/ADR-009-single-documents-table.md) | Single Documents Table with JSON Payload |
 | [ADR-010](Docs/ADR/ADR-010-pure-client-side-architecture.md) | Pure Client-Side Architecture (No Server Component) |
 | [ADR-011](Docs/ADR/ADR-011-multi-level-permission-model.md) | Multi-Level Permission Evaluation Model |
-| [ADR-012](Docs/ADR/ADR-012-eventbus-internal-pubsub.md) | EventBus for Internal Pub/Sub |
+| [ADR-012](Docs/ADR/ADR-012-eventbus-internal-pubsub.md) | EventBus for Internal Pub/Sub *(Superseded by ADR-020)* |
 | [ADR-013](Docs/ADR/ADR-013-submit-cancel-amend-lifecycle.md) | Submit / Cancel / Amend Document Lifecycle |
 | [ADR-014](Docs/ADR/ADR-014-document-naming-strategy.md) | Document Naming Strategy |
-| [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md) | Declarative Hooks for App Extension |
+| [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md) | Declarative Extension Points for App Extension |
 | [ADR-016](Docs/ADR/ADR-016-metadata-driven-generic-ui.md) | Metadata-Driven Generic UI |
 | [ADR-017](Docs/ADR/ADR-017-expression-engine-scope-sandboxing.md) | Expression Engine Scope and Sandboxing |
 | [ADR-018](Docs/ADR/ADR-018-cloud-adapter-protocol-boundary.md) | Cloud Adapter as Protocol Boundary |
 | [ADR-019](Docs/ADR/ADR-019-automation-execution-model.md) | Automation Execution Model |
+| [ADR-020](Docs/ADR/ADR-020-typed-event-system.md) | Typed Event System |
+| [ADR-021](Docs/ADR/ADR-021-metadata-composition-resolved-meta.md) | Metadata Composition and ResolvedMeta |
+| [ADR-022](Docs/ADR/ADR-022-document-validation-pipeline.md) | Document Validation Pipeline |
+| [ADR-023](Docs/ADR/ADR-023-optimistic-concurrency-modified-timestamp.md) | Optimistic Concurrency via Modified Timestamp |
+| [ADR-024](Docs/ADR/ADR-024-document-versioning-diff-tracking.md) | Document Versioning and Field-Level Diff Tracking |
+| [ADR-025](Docs/ADR/ADR-025-automation-action-registry.md) | Automation Action Registry |
+| [ADR-026](Docs/ADR/ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model |

@@ -13,32 +13,38 @@ In an offline-first multi-device environment, naming strategies that require ser
 
 ## Decision
 
-Mercantis Core defaults to **UUID v7** (time-ordered) for all documents. UUID v7 ensures global uniqueness without coordination — critical for offline-first scenarios where two devices may create documents simultaneously.
+Mercantis Core implements naming as a **strategy registry**. Each strategy is a conformance of the `NamingStrategy` protocol:
 
-Apps can override the naming strategy per DocType via the `autoname` property in the DocType definition:
+```swift
+protocol NamingStrategy {
+    func resolve(docType: DocType, document: Document, context: NamingContext) throws -> String
+}
+```
 
-- `UUID` (default) — UUID v7, time-ordered, globally unique.
-- `naming_series:PATTERN` — Pattern-based sequential naming (e.g. `SINV-.YYYY.-.####`). Supports date tokens (`YY`, `YYYY`, `MM`, `DD`), field references, and hash placeholders.
-- `field:FIELDNAME` — Derive the name from a field value (e.g. `field:email`).
-- `autoincrement` — Integer sequence per DocType. Requires server coordination.
-- `prompt` — The user enters the name manually.
-- `format:TEMPLATE` — Format string with field interpolation (e.g. `format:{company_abbr}-{naming_series}`).
+Concrete built-in implementations:
 
-A `DocumentNamingRule` system allows conditional naming rules with priority ordering — different patterns can apply based on field values (e.g. different series per company).
+- **`UUIDv7Strategy`** (default) — UUID v7, time-ordered, globally unique. Recommended for offline-first DocTypes.
+- **`NamingSeriesStrategy`** — Pattern-based sequential naming (e.g. `SINV-.YYYY.-.####`). Supports date tokens (`YY`, `YYYY`, `MM`, `DD`), field references, and hash placeholders.
+- **`FieldDerivedStrategy`** — Derives the name from a field value (e.g. `field:email`).
+- **`PromptStrategy`** — The user enters the name manually. Throws if no name is provided.
+- **`FormatStrategy`** — Format string with field interpolation (e.g. `format:{company_abbr}-{naming_series}`).
 
-The naming strategy is resolved at `DocumentEngine.save()` time, before the document is persisted.
+The `autoname` property in the DocType definition selects the strategy by its token (e.g. `UUID`, `naming_series:SINV-.YYYY.-.####`, `field:email`, `prompt`, `format:...`).
+
+A `DocumentNamingRule` conditional selector allows priority-ordered rules that select different strategies based on document field values (e.g. different naming series per company). `NamingService` evaluates these rules at `DocumentEngine.save()` time and dispatches to the appropriate strategy.
 
 ## Consequences
 
 **Positive:**
 - UUID default ensures no naming conflicts across offline devices.
 - Naming series provides human-readable IDs for business documents (e.g. `SINV-2026-00001`).
-- Multiple strategies cover diverse requirements without changing Core infrastructure.
+- Protocol-based strategies are independently testable and extensible via compiled-in additions.
+- `DocumentNamingRule` covers conditional naming without adding control flow to Core.
 
 **Negative:**
 - UUIDs are not human-friendly for business references.
 - Naming series requires a counter, which is complex in multi-device sync (counter conflicts on offline creation).
-- `autoincrement` requires server-side coordination and is not recommended for offline-first DocTypes.
+- `autoincrement` requires server-side coordination and is not supported for offline-first DocTypes.
 
 **Neutral:**
 - Naming series counters are stored in a `series` table and synced via the mutation log. Counter conflicts are resolved by reserving a range per device.

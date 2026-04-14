@@ -1,7 +1,9 @@
 # ADR-012 — EventBus for Internal Pub/Sub
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-020 — Typed Event System](ADR-020-typed-event-system.md)  
 **Date:** 2026-04-14
+
+> The stringly-typed EventBus described here is replaced by the typed event system in ADR-020. New code should use typed events. ADR-012 is retained for historical context only.
 
 ---
 

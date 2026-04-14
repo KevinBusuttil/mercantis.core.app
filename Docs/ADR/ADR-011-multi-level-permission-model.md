@@ -13,22 +13,39 @@ Mercantis Core needs an equivalent permission model that runs entirely on-device
 
 ## Decision
 
-Mercantis Core implements a 5-level permission model evaluated in strict order:
+Mercantis Core implements permission evaluation as an **evaluator chain**. Each permission level is a `PermissionEvaluator` protocol conformance:
 
-1. **App-level** — Is the user's role allowed to use this module/app at all?
-2. **DocType-level** — `PermissionRule` per role: read, write, create, delete, submit, amend.
-3. **Field-level** — `readRoles` / `writeRoles` per field definition.
-4. **Row-level** — A condition expression filter evaluated by `ExpressionEngine` (e.g. `warehouse == userDefaults.warehouse`).
-5. **Workflow action level** — `allowedRoles` on each workflow transition.
+```swift
+protocol PermissionEvaluator {
+    func evaluate(context: PermissionContext) -> PermissionDecision
+}
 
-All levels must pass for an operation to be allowed. Evaluation short-circuits on the first denial.
+enum PermissionDecision {
+    case allowed
+    case denied(reason: String)
+    case abstain
+}
+```
+
+The chain consists of five evaluators executed in order:
+
+1. **`AppLevelEvaluator`** — Is the user's role allowed to use this module/app at all?
+2. **`DocTypeLevelEvaluator`** — `PermissionRule` per role: read, write, create, delete, submit, amend.
+3. **`FieldLevelEvaluator`** — `readRoles` / `writeRoles` per field definition.
+4. **`RowLevelEvaluator`** — A condition expression filter evaluated by `ExpressionEngine` (e.g. `warehouse == userDefaults.warehouse`).
+5. **`WorkflowLevelEvaluator`** — `allowedRoles` on each workflow transition.
+
+All evaluators must return `.allowed` or `.abstain` for an operation to proceed. Evaluation short-circuits on the first `.denied` result. An evaluator that returns `.abstain` defers to the next in the chain.
+
+Each evaluator is independently testable. New evaluators can be appended to the chain without modifying existing ones.
 
 ## Consequences
 
 **Positive:**
 - Predictable, ordered evaluation: every denial has a clear level and reason.
 - Fine-grained access control down to individual fields prevents data leakage in shared DocTypes.
-- Consistent enforcement — the same `PermissionEngine` is called by DocumentEngine, WorkflowEngine, and the UI Shell.
+- Consistent enforcement — the same `PermissionEngine` chain is called by DocumentEngine, WorkflowEngine, and the UI Shell.
+- Each evaluator is independently testable in isolation.
 
 **Negative:**
 - 5-level evaluation adds overhead to every document operation.
@@ -36,7 +53,7 @@ All levels must pass for an operation to be allowed. Evaluation short-circuits o
 - No "sharing" mechanism (planned for a future ADR).
 
 **Neutral:**
-- The model is extensible — new permission levels can be inserted without breaking existing ones.
+- The chain is extensible — new evaluators can be inserted without breaking existing ones.
 
 ---
 
