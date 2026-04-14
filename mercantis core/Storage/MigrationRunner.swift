@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 
 /// Runs versioned, forward-only SQL migrations against the database.
 /// Every migration is a named, tested, forward-only script. (ADR-002)
@@ -37,12 +38,9 @@ public struct MigrationRunner {
         );
         """
 
-    private func currentVersion(db: GRDBDatabase) throws -> Int {
-        let rows = try db.query(
-            sql: "SELECT MAX(version) FROM schema_version",
-            arguments: []
-        )
-        if let row = rows.first, let v = row.first as? Int {
+    private func currentVersion(db: Database) throws -> Int {
+        if let row = try Row.fetchOne(db, sql: "SELECT MAX(version) FROM schema_version"),
+           let v: Int = row[0] {
             return v
         }
         return 0
@@ -51,7 +49,7 @@ public struct MigrationRunner {
     // MARK: - Run Pending Migrations
 
     /// Run all pending migrations against the given database pool.
-    public func migrate(pool: GRDBDatabasePool) throws {
+    public func migrate(pool: DatabasePool) throws {
         try pool.write { db in
             // Ensure the schema_version tracking table exists.
             try db.execute(sql: MigrationRunner.schemaVersionTable)
@@ -77,7 +75,7 @@ public struct MigrationRunner {
     // MARK: - Built-in Migrations
 
     /// Register all built-in Core migrations into the provided runner.
-    public static func registerAll(into runner: inout MigrationRunner, pool: GRDBDatabasePool) {
+    public static func registerAll(into runner: inout MigrationRunner, pool: DatabasePool) {
         runner.register(version: 1, name: "initial_schema", sql: MigrationRunner.v1SQL)
     }
 

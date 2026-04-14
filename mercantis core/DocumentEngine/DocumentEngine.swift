@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 
 /// Handles all CRUD operations on documents.
 /// Every persistent write atomically appends a MutationRecord to the sync queue. (ADR-002, ADR-005)
@@ -202,8 +203,9 @@ public final class DocumentEngine {
 
     /// Fetch a single document by type and ID.
     public func fetch(docType: String, id: String) throws -> Document? {
-        let rows = try database.read { db in
-            try db.query(
+        let row = try database.read { db in
+            try Row.fetchOne(
+                db,
                 sql: """
                     SELECT id, doctype, company, status, createdAt, updatedAt,
                            syncVersion, syncState, payload
@@ -214,7 +216,7 @@ public final class DocumentEngine {
                 arguments: [id, docType]
             )
         }
-        guard let row = rows.first else { return nil }
+        guard let row = row else { return nil }
         return try documentFromRow(row)
     }
 
@@ -223,7 +225,8 @@ public final class DocumentEngine {
     /// Fetch all documents of a given type, with optional field filters.
     public func list(docType: String, filters: [String: FieldValue]? = nil) throws -> [Document] {
         let rows = try database.read { db in
-            try db.query(
+            try Row.fetchAll(
+                db,
                 sql: """
                     SELECT id, doctype, company, status, createdAt, updatedAt,
                            syncVersion, syncState, payload
@@ -251,21 +254,20 @@ public final class DocumentEngine {
 
     // MARK: - Private Helpers
 
-    private func documentFromRow(_ row: [Any?]) throws -> Document {
-        guard row.count >= 9 else {
+    private func documentFromRow(_ row: Row) throws -> Document {
+        guard let id: String = row["id"], !id.isEmpty else {
             throw DocumentEngineError.malformedRow
         }
 
-        let id        = row[0] as? String ?? ""
-        let docType   = row[1] as? String ?? ""
-        let company   = row[2] as? String ?? ""
-        let status    = row[3] as? String ?? ""
-        let createdAt = parseDate(row[4] as? String) ?? Date()
-        let updatedAt = parseDate(row[5] as? String) ?? Date()
-        let syncVersion = row[6] as? Int64 ?? 0
-        let syncStateRaw = row[7] as? String ?? "local"
+        let docType: String = row["doctype"] ?? ""
+        let company: String = row["company"] ?? ""
+        let status: String = row["status"] ?? ""
+        let createdAt = parseDate(row["createdAt"] as String?) ?? Date()
+        let updatedAt = parseDate(row["updatedAt"] as String?) ?? Date()
+        let syncVersion: Int64 = row["syncVersion"] ?? 0
+        let syncStateRaw: String = row["syncState"] ?? "local"
         let syncState = SyncState(rawValue: syncStateRaw) ?? .local
-        let payloadString = row[8] as? String ?? "{}"
+        let payloadString: String = row["payload"] ?? "{}"
 
         var fields: [String: FieldValue] = [:]
         if let payloadData = payloadString.data(using: .utf8) {

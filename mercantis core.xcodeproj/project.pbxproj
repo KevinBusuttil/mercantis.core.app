@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0AA63F262F8C4305006B68B5 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 0AA63F252F8C4305006B68B5 /* GRDB */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		0AA63F162F8C4305006B68B5 /* mercantis core.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mercantis core.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0AA63F262F8C4305006B68B5 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "mercantis core";
 			packageProductDependencies = (
+				0AA63F252F8C4305006B68B5 /* GRDB */,
 			);
 			productName = "mercantis core";
 			productReference = 0AA63F162F8C4305006B68B5 /* mercantis core.app */;
@@ -98,6 +104,9 @@
 			productRefGroup = 0AA63F172F8C4305006B68B5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
 			targets = (
 				0AA63F152F8C4305006B68B5 /* mercantis core */,
 			);
@@ -123,6 +132,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0AA63F252F8C4305006B68B5 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0AA63F1F2F8C4305006B68B5 /* Debug */ = {
