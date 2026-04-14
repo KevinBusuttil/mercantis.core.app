@@ -19,12 +19,24 @@ Each `AutomationRule` has:
 - A `conditionExpression` evaluated by `ExpressionEngine` against the document context.
 - An `actions` array, executed in declared order.
 
-Supported action types:
+**AutomationActionRegistry:** Action dispatch uses a registry pattern rather than a string-switch. Each built-in action type is a conformance of the `AutomationActionHandler` protocol:
+
+```swift
+protocol AutomationActionHandler {
+    static var actionType: String { get }
+    func execute(document: inout Document, parameters: [String: String], context: AutomationContext) throws
+}
+```
+
+Built-in action types registered at startup:
+
 - `set_value` — Set a field on the document.
 - `set_status` — Change the workflow state.
 - `send_notification` — Create a `NotificationLog` entry.
 - `validate` — Throw a validation error if a condition fails (blocking save).
 - `assign` — Assign the document to a user or role.
+
+`AutomationActionRegistry` maps `actionType` strings to handler instances. New action types are added by registering a conformance compiled into Core — not by downloading code.
 
 Actions execute within the same database transaction as the document save. If any action throws an error, the entire save rolls back. Long-running or external actions (e.g. actual email delivery) are deferred to the `SchedulerService` for post-commit execution.
 
@@ -34,6 +46,7 @@ Actions execute within the same database transaction as the document save. If an
 - Automations work fully offline.
 - Deterministic execution order — actions run in the declared sequence.
 - Transactional consistency — a failing action rolls back the whole save, preventing partial state.
+- Registry-based dispatch is type-safe and independently testable per handler.
 - Auditable — every automation execution is logged to `audit_log`.
 
 **Negative:**
@@ -46,4 +59,4 @@ Actions execute within the same database transaction as the document save. If an
 
 ---
 
-*See also: [ADR-008 — No Arbitrary Downloaded Executable Plugins on iOS](ADR-008-no-executable-plugins-ios.md), [ADR-010 — Pure Client-Side Architecture](ADR-010-pure-client-side-architecture.md), [ADR-015 — Declarative Hooks for App Extension](ADR-015-declarative-hooks-app-extension.md)*
+*See also: [ADR-008 — No Arbitrary Downloaded Executable Plugins on iOS](ADR-008-no-executable-plugins-ios.md), [ADR-010 — Pure Client-Side Architecture](ADR-010-pure-client-side-architecture.md), [ADR-015 — Declarative Extension Points for App Extension](ADR-015-declarative-hooks-app-extension.md), [ADR-025 — Automation Action Registry](ADR-025-automation-action-registry.md)*

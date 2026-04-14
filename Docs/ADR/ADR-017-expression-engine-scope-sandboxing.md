@@ -22,14 +22,18 @@ Mercantis Core's `ExpressionEngine` supports a deliberately narrow expression la
 - Parenthetical grouping
 - Field references (`fieldKey` looks up the value in the evaluation context)
 
-No loops, no function definitions, no imports, no I/O, no access to the Swift runtime. The evaluator is a simple recursive-descent parser that operates on a `[String: FieldValue]` context dictionary. Maximum expression length and maximum nesting depth are enforced to prevent denial-of-service.
+No loops, no function definitions, no imports, no I/O, no access to the Swift runtime.
+
+**AST-based parsing:** The evaluator parses expressions into a typed Abstract Syntax Tree (AST) rather than using string-walking evaluation. Benefits: static analysis of field references before evaluation, constant folding for performance, and error messages that include precise source position information. The AST is the internal representation; it is not exposed to callers.
+
+Maximum expression length and maximum nesting depth are enforced to prevent denial-of-service.
 
 ## Consequences
 
 **Positive:**
 - Provably safe — no code injection, no infinite loops, no resource exhaustion by design.
 - App Store compliant — no dynamic code execution.
-- Fast to evaluate — simple recursive descent on small expressions.
+- AST-based parsing enables static field reference analysis and precise error messages with source positions.
 - Easy to serialise and sync expressions as strings in manifest files.
 
 **Negative:**
@@ -39,6 +43,7 @@ No loops, no function definitions, no imports, no I/O, no access to the Swift ru
 
 **Neutral:**
 - The expression syntax is a subset of common expression languages. Migration from Frappe's `safe_eval` expressions is mostly mechanical for simple conditions.
+- A `lookup()` function for cross-document reads is a planned extension (not yet decided — see ARCHITECTURE-CHANGELOG.md).
 
 ---
 

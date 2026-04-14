@@ -19,14 +19,21 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-009](ADR-009-single-documents-table.md) | Single Documents Table with JSON Payload | Accepted |
 | [ADR-010](ADR-010-pure-client-side-architecture.md) | Pure Client-Side Architecture (No Server Component) | Accepted |
 | [ADR-011](ADR-011-multi-level-permission-model.md) | Multi-Level Permission Evaluation Model | Accepted |
-| [ADR-012](ADR-012-eventbus-internal-pubsub.md) | EventBus for Internal Pub/Sub | Accepted |
+| [ADR-012](ADR-012-eventbus-internal-pubsub.md) | EventBus for Internal Pub/Sub | Superseded by ADR-020 |
 | [ADR-013](ADR-013-submit-cancel-amend-lifecycle.md) | Submit / Cancel / Amend Document Lifecycle | Accepted |
 | [ADR-014](ADR-014-document-naming-strategy.md) | Document Naming Strategy | Accepted |
-| [ADR-015](ADR-015-declarative-hooks-app-extension.md) | Declarative Hooks for App Extension | Accepted |
+| [ADR-015](ADR-015-declarative-hooks-app-extension.md) | Declarative Extension Points for App Extension | Accepted |
 | [ADR-016](ADR-016-metadata-driven-generic-ui.md) | Metadata-Driven Generic UI | Accepted |
 | [ADR-017](ADR-017-expression-engine-scope-sandboxing.md) | Expression Engine Scope and Sandboxing | Accepted |
 | [ADR-018](ADR-018-cloud-adapter-protocol-boundary.md) | Cloud Adapter as Protocol Boundary | Accepted |
 | [ADR-019](ADR-019-automation-execution-model.md) | Automation Execution Model | Accepted |
+| [ADR-020](ADR-020-typed-event-system.md) | Typed Event System | Accepted |
+| [ADR-021](ADR-021-metadata-composition-resolved-meta.md) | Metadata Composition and ResolvedMeta | Accepted |
+| [ADR-022](ADR-022-document-validation-pipeline.md) | Document Validation Pipeline | Accepted |
+| [ADR-023](ADR-023-optimistic-concurrency-modified-timestamp.md) | Optimistic Concurrency via Modified Timestamp | Accepted |
+| [ADR-024](ADR-024-document-versioning-diff-tracking.md) | Document Versioning and Field-Level Diff Tracking | Accepted |
+| [ADR-025](ADR-025-automation-action-registry.md) | Automation Action Registry | Accepted |
+| [ADR-026](ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model | Accepted |
 
 ## How to Read an ADR
 
