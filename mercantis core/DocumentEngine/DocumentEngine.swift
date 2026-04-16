@@ -39,10 +39,18 @@ public final class DocumentEngine {
     // MARK: - Save
 
     /// Create or update a document. Appends an `upsertDocument` mutation atomically.
+    ///
+    /// If the document belongs to a submittable DocType and has `docStatus == 1` (Submitted),
+    /// only fields marked `allowOnSubmit: true` can be changed. (ADR-013)
     public func save(_ document: Document) throws {
         // Validate the document's DocType if it is registered.
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
+
+            // ADR-013: Immutability enforcement for submitted documents.
+            if document.docStatus == 1 && docType.isSubmittable {
+                try enforceSubmitImmutability(document: document, docType: docType)
+            }
         }
 
         let encoder = JSONEncoder()
@@ -73,14 +81,16 @@ public final class DocumentEngine {
             try db.execute(
                 sql: """
                     INSERT INTO documents
-                        (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, payload)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         company     = excluded.company,
                         status      = excluded.status,
                         updatedAt   = excluded.updatedAt,
                         syncVersion = excluded.syncVersion,
                         syncState   = excluded.syncState,
+                        docStatus   = excluded.docStatus,
+                        amendedFrom = excluded.amendedFrom,
                         payload     = excluded.payload
                     """,
                 arguments: [
@@ -92,6 +102,8 @@ public final class DocumentEngine {
                     updatedAtString,
                     document.syncVersion,
                     document.syncState.rawValue,
+                    document.docStatus,
+                    document.amendedFrom,
                     payloadString
                 ]
             )
@@ -154,6 +166,11 @@ public final class DocumentEngine {
 
     /// Delete a document. Appends a `deleteDocument` mutation atomically.
     public func delete(docType: String, id: String) throws {
+        // ADR-013: Submitted documents cannot be deleted directly.
+        if let existing = try fetch(docType: docType, id: id), existing.docStatus == 1 {
+            throw DocumentEngineError.cannotDeleteSubmitted(id: id)
+        }
+
         let mutation = MutationRecord(
             id: UUID(),
             type: .deleteDocument,
@@ -199,6 +216,142 @@ public final class DocumentEngine {
         ))
     }
 
+    // MARK: - Submit (ADR-013)
+
+    /// Submit a document, transitioning it from Draft (docStatus 0) to Submitted (docStatus 1).
+    ///
+    /// - The DocType must have `isSubmittable: true`.
+    /// - The document must currently be in Draft state (`docStatus == 0`).
+    /// - After submission, the document becomes immutable except for `allowOnSubmit` fields.
+    public func submit(_ document: inout Document) throws {
+        guard let docType = registry.get(document.docType) else {
+            throw DocumentEngineError.docTypeNotFound(document.docType)
+        }
+        guard docType.isSubmittable else {
+            throw DocumentEngineError.notSubmittable(docType: document.docType)
+        }
+        guard document.docStatus == 0 else {
+            throw DocumentEngineError.invalidDocStatusTransition(
+                from: document.docStatus, to: 1, id: document.id
+            )
+        }
+
+        document.docStatus = 1
+        document.updatedAt = Date()
+        try save(document)
+
+        eventBus.publish(EventBus.Event(
+            name: "document.submitted",
+            docType: document.docType,
+            documentId: document.id,
+            payload: [:]
+        ))
+    }
+
+    // MARK: - Cancel (ADR-013)
+
+    /// Cancel a submitted document, transitioning it from Submitted (docStatus 1) to
+    /// Cancelled (docStatus 2).
+    ///
+    /// Before cancelling, checks for linked submitted documents that reference this one.
+    /// If any downstream submitted document holds a Link field pointing to this document,
+    /// the cancel is rejected. (ADR-013)
+    public func cancel(_ document: inout Document) throws {
+        guard let docType = registry.get(document.docType) else {
+            throw DocumentEngineError.docTypeNotFound(document.docType)
+        }
+        guard docType.isSubmittable else {
+            throw DocumentEngineError.notSubmittable(docType: document.docType)
+        }
+        guard document.docStatus == 1 else {
+            throw DocumentEngineError.invalidDocStatusTransition(
+                from: document.docStatus, to: 2, id: document.id
+            )
+        }
+
+        // Check for linked submitted documents that reference this one.
+        let blockingDocuments = try findLinkedSubmittedDocuments(documentId: document.id)
+        if !blockingDocuments.isEmpty {
+            throw DocumentEngineError.cancelBlockedByLinks(
+                id: document.id,
+                blockingIds: blockingDocuments
+            )
+        }
+
+        document.docStatus = 2
+        document.updatedAt = Date()
+        try save(document)
+
+        eventBus.publish(EventBus.Event(
+            name: "document.cancelled",
+            docType: document.docType,
+            documentId: document.id,
+            payload: [:]
+        ))
+    }
+
+    // MARK: - Amend (ADR-013)
+
+    /// Amend a cancelled document by creating a new Draft copy. (ADR-013)
+    ///
+    /// - All fields are copied from the cancelled document.
+    /// - `docStatus` is reset to 0 (Draft).
+    /// - `amendedFrom` is set to the cancelled document's ID.
+    /// - A new document ID is generated.
+    ///
+    /// Returns the new amended document. The caller must save it via `save()`.
+    public func amend(_ document: Document) throws -> Document {
+        guard let docType = registry.get(document.docType) else {
+            throw DocumentEngineError.docTypeNotFound(document.docType)
+        }
+        guard docType.isSubmittable else {
+            throw DocumentEngineError.notSubmittable(docType: document.docType)
+        }
+        guard document.docStatus == 2 else {
+            throw DocumentEngineError.invalidDocStatusTransition(
+                from: document.docStatus, to: 0, id: document.id
+            )
+        }
+
+        let newId = UUID().uuidString
+        let now = Date()
+
+        var amended = Document(
+            id: newId,
+            docType: document.docType,
+            company: document.company,
+            status: document.status,
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            docStatus: 0,
+            amendedFrom: document.id,
+            fields: document.fields,
+            children: document.children
+        )
+
+        // Reset child row IDs to new UUIDs so they don't conflict.
+        var newChildren: [String: [ChildRow]] = [:]
+        for (tableName, rows) in amended.children {
+            newChildren[tableName] = rows.map { row in
+                ChildRow(id: UUID().uuidString, rowIndex: row.rowIndex, fields: row.fields)
+            }
+        }
+        amended.children = newChildren
+
+        try save(amended)
+
+        eventBus.publish(EventBus.Event(
+            name: "document.amended",
+            docType: document.docType,
+            documentId: newId,
+            payload: ["amendedFrom": document.id]
+        ))
+
+        return amended
+    }
+
     // MARK: - Fetch
 
     /// Fetch a single document by type and ID.
@@ -208,7 +361,7 @@ public final class DocumentEngine {
                 db,
                 sql: """
                     SELECT id, doctype, company, status, createdAt, updatedAt,
-                           syncVersion, syncState, payload
+                           syncVersion, syncState, docStatus, amendedFrom, payload
                     FROM documents
                     WHERE id = ? AND doctype = ?
                     LIMIT 1
@@ -229,7 +382,7 @@ public final class DocumentEngine {
                 db,
                 sql: """
                     SELECT id, doctype, company, status, createdAt, updatedAt,
-                           syncVersion, syncState, payload
+                           syncVersion, syncState, docStatus, amendedFrom, payload
                     FROM documents
                     WHERE doctype = ?
                     ORDER BY updatedAt DESC
@@ -254,6 +407,62 @@ public final class DocumentEngine {
 
     // MARK: - Private Helpers
 
+    /// ADR-013: Check that only `allowOnSubmit` fields have been modified on a submitted document.
+    private func enforceSubmitImmutability(document: Document, docType: DocType) throws {
+        guard let existing = try fetch(docType: document.docType, id: document.id) else {
+            // New document — no immutability check needed.
+            return
+        }
+        guard existing.docStatus == 1 else { return }
+
+        let allowedKeys = Set(docType.fields.filter { $0.allowOnSubmit }.map { $0.key })
+
+        for (key, newValue) in document.fields {
+            let oldValue = existing.fields[key]
+            if oldValue != newValue && !allowedKeys.contains(key) {
+                throw DocumentEngineError.fieldImmutableAfterSubmit(
+                    fieldKey: key, documentId: document.id
+                )
+            }
+        }
+    }
+
+    /// ADR-013: Find submitted documents that link to the given document ID.
+    ///
+    /// Checks all registered DocTypes for Link fields, then queries only those DocTypes
+    /// for submitted documents whose payload contains the target ID. This is more targeted
+    /// than a full table scan but still uses a JSON payload search; a dedicated link reference
+    /// table would be more efficient for large datasets.
+    private func findLinkedSubmittedDocuments(documentId: String) throws -> [String] {
+        // Gather DocType IDs that have Link fields (potential linkers).
+        let allDocTypes = registry.all()
+        let linkingDocTypeIds = allDocTypes
+            .filter { dt in dt.fields.contains(where: { $0.type == .link }) }
+            .map { $0.id }
+
+        guard !linkingDocTypeIds.isEmpty else { return [] }
+
+        // Query each linking DocType for submitted documents whose payload references documentId.
+        var blockingIds: [String] = []
+        for docTypeId in linkingDocTypeIds {
+            let rows = try database.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT id FROM documents
+                        WHERE docStatus = 1
+                          AND doctype = ?
+                          AND payload LIKE ?
+                          AND id != ?
+                        """,
+                    arguments: [docTypeId, "%\(documentId)%", documentId]
+                )
+            }
+            blockingIds.append(contentsOf: rows.compactMap { $0["id"] as String? })
+        }
+        return blockingIds
+    }
+
     private func documentFromRow(_ row: Row) throws -> Document {
         guard let id: String = row["id"], !id.isEmpty else {
             throw DocumentEngineError.malformedRow
@@ -267,6 +476,8 @@ public final class DocumentEngine {
         let syncVersion: Int64 = row["syncVersion"] ?? 0
         let syncStateRaw: String = row["syncState"] ?? "local"
         let syncState = SyncState(rawValue: syncStateRaw) ?? .local
+        let docStatus: Int = row["docStatus"] ?? 0
+        let amendedFrom: String? = row["amendedFrom"]
         let payloadString: String = row["payload"] ?? "{}"
 
         var fields: [String: FieldValue] = [:]
@@ -285,6 +496,8 @@ public final class DocumentEngine {
             updatedAt: updatedAt,
             syncVersion: syncVersion,
             syncState: syncState,
+            docStatus: docStatus,
+            amendedFrom: amendedFrom,
             fields: fields,
             children: [:]
         )
@@ -300,6 +513,11 @@ public final class DocumentEngine {
     public enum DocumentEngineError: Error, Sendable {
         case malformedRow
         case docTypeNotFound(String)
+        case notSubmittable(docType: String)
+        case invalidDocStatusTransition(from: Int, to: Int, id: String)
+        case fieldImmutableAfterSubmit(fieldKey: String, documentId: String)
+        case cancelBlockedByLinks(id: String, blockingIds: [String])
+        case cannotDeleteSubmitted(id: String)
     }
 
     // MARK: - Private Types
