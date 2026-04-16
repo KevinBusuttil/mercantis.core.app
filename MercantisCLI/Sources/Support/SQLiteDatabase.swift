@@ -24,7 +24,6 @@ final class SQLiteDatabase {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(path, &db, flags, nil) != SQLITE_OK {
             let message = String(cString: sqlite3_errmsg(db))
-            sqlite3_close(db)
             throw SQLiteDatabaseError.openFailed("Failed to open database: \(message)")
         }
     }

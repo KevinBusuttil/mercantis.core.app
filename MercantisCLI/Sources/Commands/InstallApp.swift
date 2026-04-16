@@ -79,7 +79,7 @@ struct InstallApp: ParsableCommand {
             try db.execute("ALTER TABLE apps ADD COLUMN title TEXT NOT NULL DEFAULT ''")
         }
         if !columns.contains("manifestJson") {
-            try db.execute("ALTER TABLE apps ADD COLUMN manifestJson TEXT NOT NULL DEFAULT '{}' ")
+            try db.execute("ALTER TABLE apps ADD COLUMN manifestJson TEXT NOT NULL DEFAULT '{}'")
         }
 
         let updatedColumns = Set(try db.query("PRAGMA table_info(apps)").compactMap { $0["name"] })
