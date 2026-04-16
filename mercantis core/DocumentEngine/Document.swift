@@ -19,6 +19,14 @@ public struct Document: Identifiable, Codable, Sendable {
     public var syncVersion: Int64
     public var syncState: SyncState
 
+    /// Submit/Cancel/Amend lifecycle state. (ADR-013)
+    /// 0 = Draft, 1 = Submitted, 2 = Cancelled.
+    /// Only meaningful for DocTypes with `isSubmittable: true`.
+    public var docStatus: Int
+
+    /// The document this was amended from (if any). (ADR-013)
+    public var amendedFrom: String?
+
     /// Custom field values stored as a dictionary (persisted as JSON payload in SQLite). (ADR-002)
     public var fields: [String: FieldValue]
 
@@ -34,6 +42,8 @@ public struct Document: Identifiable, Codable, Sendable {
         updatedAt: Date,
         syncVersion: Int64,
         syncState: SyncState,
+        docStatus: Int = 0,
+        amendedFrom: String? = nil,
         fields: [String: FieldValue],
         children: [String: [ChildRow]]
     ) {
@@ -45,6 +55,8 @@ public struct Document: Identifiable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.syncVersion = syncVersion
         self.syncState = syncState
+        self.docStatus = docStatus
+        self.amendedFrom = amendedFrom
         self.fields = fields
         self.children = children
     }

@@ -86,6 +86,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var permissions: FieldPermission?
     public var isSearchable: Bool
     public var isSynced: Bool
+    public var allowOnSubmit: Bool                 // If true, this field can be edited on submitted documents (ADR-013)
 
     public init(
         key: String,
@@ -102,7 +103,8 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         formulaExpression: String? = nil,
         permissions: FieldPermission? = nil,
         isSearchable: Bool = false,
-        isSynced: Bool = true
+        isSynced: Bool = true,
+        allowOnSubmit: Bool = false
     ) {
         self.key = key
         self.label = label
@@ -119,6 +121,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         self.permissions = permissions
         self.isSearchable = isSearchable
         self.isSynced = isSynced
+        self.allowOnSubmit = allowOnSubmit
     }
 }
 

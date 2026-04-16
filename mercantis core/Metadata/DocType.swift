@@ -15,6 +15,7 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var module: String                      // owning module, e.g. "Sales"
     public var appId: String                       // owning app manifest id
     public var isChildTable: Bool                  // true if used only as a child table
+    public var isSubmittable: Bool                 // true if this DocType uses the Submit/Cancel/Amend lifecycle (ADR-013)
     public var fields: [FieldDefinition]
     public var permissions: [PermissionRule]
     public var workflowId: String?
@@ -29,6 +30,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         module: String,
         appId: String,
         isChildTable: Bool,
+        isSubmittable: Bool = false,
         fields: [FieldDefinition],
         permissions: [PermissionRule],
         workflowId: String? = nil,
@@ -42,6 +44,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.module = module
         self.appId = appId
         self.isChildTable = isChildTable
+        self.isSubmittable = isSubmittable
         self.fields = fields
         self.permissions = permissions
         self.workflowId = workflowId

@@ -77,6 +77,7 @@ public struct MigrationRunner {
     /// Register all built-in Core migrations into the provided runner.
     public static func registerAll(into runner: inout MigrationRunner, pool: DatabasePool) {
         runner.register(version: 1, name: "initial_schema", sql: MigrationRunner.v1SQL)
+        runner.register(version: 2, name: "add_doc_status_columns", sql: MigrationRunner.v2SQL)
     }
 
     // MARK: - v1 Schema
@@ -174,5 +175,13 @@ public struct MigrationRunner {
             appId           TEXT    NOT NULL,
             payload         TEXT    NOT NULL   -- JSON-encoded WorkflowDefinition
         );
+        """
+
+    // MARK: - v2 Schema — docStatus + amendedFrom
+
+    private static let v2SQL = """
+        -- ADR-013: Submit / Cancel / Amend lifecycle columns.
+        ALTER TABLE documents ADD COLUMN docStatus INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents ADD COLUMN amendedFrom TEXT;
         """
 }
