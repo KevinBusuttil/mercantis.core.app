@@ -68,7 +68,9 @@ final class SQLiteDatabase {
 
             for index in 0..<columnCount {
                 let name = String(cString: sqlite3_column_name(statement, index))
-                if let value = sqlite3_column_text(statement, index) {
+                if sqlite3_column_type(statement, index) == SQLITE_NULL {
+                    row[name] = "<null>"
+                } else if let value = sqlite3_column_text(statement, index) {
                     row[name] = String(cString: value)
                 } else {
                     row[name] = ""

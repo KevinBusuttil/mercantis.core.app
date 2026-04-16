@@ -39,7 +39,7 @@ struct ListApps: ParsableCommand {
                 print(output)
             }
         case .table:
-            let headers = try tableHeaders(from: db, tableName: "apps", fallback: rows)
+            let headers = try tableHeaders(from: db, fallback: rows)
             let values = rows.map { row in
                 headers.map { row[$0] ?? "" }
             }
@@ -47,8 +47,8 @@ struct ListApps: ParsableCommand {
         }
     }
 
-    private func tableHeaders(from db: SQLiteDatabase, tableName: String, fallback rows: [[String: String]]) throws -> [String] {
-        let pragmaRows = try db.query("PRAGMA table_info(\(tableName))")
+    private func tableHeaders(from db: SQLiteDatabase, fallback rows: [[String: String]]) throws -> [String] {
+        let pragmaRows = try db.query("PRAGMA table_info(apps)")
         let ordered = pragmaRows.compactMap { $0["name"] }
         if !ordered.isEmpty {
             return ordered
