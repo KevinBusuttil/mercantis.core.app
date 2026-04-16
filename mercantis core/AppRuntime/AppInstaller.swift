@@ -188,7 +188,7 @@ public final class AppInstaller {
                     """,
                 arguments: [
                     mutationId.uuidString,
-                    MutationType.updateSchema.rawValue,
+                    MutationType.uninstallApp.rawValue,
                     payloadString,
                     "",
                     "",

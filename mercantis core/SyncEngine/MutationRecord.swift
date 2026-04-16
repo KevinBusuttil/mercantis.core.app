@@ -15,6 +15,7 @@ public enum MutationType: String, Codable, Sendable {
     case attachFile
     case updateSchema
     case installApp
+    case uninstallApp
     case updatePermissions
     case resolveConflict       // ADR-006: conflict resolution decision
 }

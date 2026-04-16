@@ -133,7 +133,7 @@ public final class SyncEngine {
             case .deleteDocument:
                 try applyRemoteDelete(mutation)
 
-            case .installApp, .updateSchema, .updatePermissions:
+            case .installApp, .uninstallApp, .updateSchema, .updatePermissions:
                 // Schema/app mutations are applied by re-decoding the payload and
                 // re-running the appropriate installer/registry path.
                 try applyRemoteMetadataMutation(mutation)

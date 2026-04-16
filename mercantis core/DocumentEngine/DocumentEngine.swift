@@ -428,21 +428,39 @@ public final class DocumentEngine {
     }
 
     /// ADR-013: Find submitted documents that link to the given document ID.
+    ///
+    /// Checks all registered DocTypes for Link fields, then queries only those DocTypes
+    /// for submitted documents whose payload contains the target ID. This is more targeted
+    /// than a full table scan but still uses a JSON payload search; a dedicated link reference
+    /// table would be more efficient for large datasets.
     private func findLinkedSubmittedDocuments(documentId: String) throws -> [String] {
-        // Search all documents with docStatus == 1 whose payload contains the document ID.
-        // This is a simplified check; a full implementation would inspect Link field definitions
-        // across all DocTypes to find exact link relationships.
-        let rows = try database.read { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT id FROM documents
-                    WHERE docStatus = 1 AND payload LIKE ? AND id != ?
-                    """,
-                arguments: ["%\(documentId)%", documentId]
-            )
+        // Gather DocType IDs that have Link fields (potential linkers).
+        let allDocTypes = registry.all()
+        let linkingDocTypeIds = allDocTypes
+            .filter { dt in dt.fields.contains(where: { $0.type == .link }) }
+            .map { $0.id }
+
+        guard !linkingDocTypeIds.isEmpty else { return [] }
+
+        // Query each linking DocType for submitted documents whose payload references documentId.
+        var blockingIds: [String] = []
+        for docTypeId in linkingDocTypeIds {
+            let rows = try database.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT id FROM documents
+                        WHERE docStatus = 1
+                          AND doctype = ?
+                          AND payload LIKE ?
+                          AND id != ?
+                        """,
+                    arguments: [docTypeId, "%\(documentId)%", documentId]
+                )
+            }
+            blockingIds.append(contentsOf: rows.compactMap { $0["id"] as String? })
         }
-        return rows.compactMap { row -> String? in row["id"] }
+        return blockingIds
     }
 
     private func documentFromRow(_ row: Row) throws -> Document {
