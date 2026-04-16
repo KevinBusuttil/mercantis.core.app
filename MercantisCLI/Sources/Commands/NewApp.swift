@@ -22,6 +22,7 @@ struct NewApp: ParsableCommand {
         let version = prompt("App Version", defaultValue: "0.1.0")
         let minimumCoreVersion = prompt("Minimum Core Version", defaultValue: "1.0.0")
         let outputDirectory = prompt("Output directory", defaultValue: FileManager.default.currentDirectoryPath)
+        let outputDirectoryURL = URL(fileURLWithPath: outputDirectory)
 
         guard isValidSemver(version) else {
             throw ValidationError("Invalid App Version. Expected semver, e.g. 0.1.0")
@@ -31,7 +32,13 @@ struct NewApp: ParsableCommand {
             throw ValidationError("Invalid minimum core version. Expected semver, e.g. 1.0.0")
         }
 
-        let rootURL = URL(fileURLWithPath: outputDirectory).appendingPathComponent(appID)
+        var isDirectory: ObjCBool = false
+        let outputPathExists = FileManager.default.fileExists(atPath: outputDirectoryURL.path, isDirectory: &isDirectory)
+        if outputPathExists && !isDirectory.boolValue {
+            throw ValidationError("Output directory path exists but is not a directory: \(outputDirectoryURL.path)")
+        }
+
+        let rootURL = outputDirectoryURL.appendingPathComponent(appID)
         let manifestURL = rootURL.appendingPathComponent("manifest.json")
 
         if FileManager.default.fileExists(atPath: manifestURL.path) {

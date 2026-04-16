@@ -89,10 +89,10 @@ struct InstallApp: ParsableCommand {
         let hasManifestJSON = updatedColumns.contains("manifestJson")
 
         if hasLegacyName && hasTitle {
-            try db.execute("UPDATE apps SET title = name WHERE title IS NULL OR title = ''")
+            try db.execute("UPDATE apps SET title = name WHERE COALESCE(title, '') = ''")
         }
         if hasLegacyPayload && hasManifestJSON {
-            try db.execute("UPDATE apps SET manifestJson = payload WHERE manifestJson IS NULL OR manifestJson = ''")
+            try db.execute("UPDATE apps SET manifestJson = payload WHERE COALESCE(manifestJson, '') = ''")
         }
     }
 
