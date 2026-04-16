@@ -15,12 +15,13 @@ Mercantis Core is the general-purpose platform layer that provides the foundatio
 - **Declarative plugin model** — Apps are manifest files, not binaries. Business logic runs in a sandboxed expression engine.
 - **Multi-level permissions** — App → DocType → field → row → workflow action, evaluated at runtime.
 - **Workflow engine** — State-machine transitions with role guards and condition expressions.
+- **Document lifecycle** — Submit/cancel/amend flow for submittable DocTypes, including amendment lineage.
 - **Expression engine** — Sandboxed evaluator for boolean conditions and formula fields.
 - **Conflict resolution** — Three policies per DocType: Last-Write-Wins, Version-Checked Merge, Append-Only.
 
 ## Project Status
 
-⚠️ **Early development.** The subsystem scaffolding is in place. Core storage, CRUD, sync, expressions, and UI shell are being actively implemented.
+⚠️ **Early development.** The platform is still evolving, but several major subsystems are now concretely implemented — including app install/uninstall mutation flow, sync push/pull/apply flow, the cloud adapter protocol boundary, submit/cancel/amend document lifecycle, and migration support for lifecycle fields such as `docStatus` and `amendedFrom`.
 
 ## Architecture
 
@@ -47,7 +48,7 @@ mercantis core/
 ├── DocumentEngine/      # CRUD, lifecycle, atomic mutation logging
 ├── ExpressionEngine/    # Sandboxed boolean + formula evaluator
 ├── Metadata/            # DocType registry, FieldDefinition, SchemaValidator, SyncPolicy
-├── Notifications/       # EventBus — in-process pub/sub
+├── Notifications/       # Event system (transitioning from EventBus toward typed EventEmitter model)
 ├── Permissions/         # Multi-level permission evaluation
 ├── Reporting/           # ReportEngine — query and aggregate document data
 ├── Storage/             # MercantisDatabase (GRDB), MigrationRunner
