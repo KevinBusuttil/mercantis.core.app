@@ -76,18 +76,23 @@ struct InstallApp: ParsableCommand {
 
         let columns = Set(try db.query("PRAGMA table_info(apps)").compactMap { $0["name"] })
         if !columns.contains("title") {
-            try db.execute("ALTER TABLE apps ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+            try db.execute("ALTER TABLE apps ADD COLUMN title TEXT")
         }
         if !columns.contains("manifestJson") {
-            try db.execute("ALTER TABLE apps ADD COLUMN manifestJson TEXT NOT NULL DEFAULT '{}'")
+            try db.execute("ALTER TABLE apps ADD COLUMN manifestJson TEXT")
         }
 
         let updatedColumns = Set(try db.query("PRAGMA table_info(apps)").compactMap { $0["name"] })
-        if updatedColumns.contains("name") && updatedColumns.contains("title") {
-            try db.execute("UPDATE apps SET title = name WHERE title = ''")
+        let hasLegacyName = updatedColumns.contains("name")
+        let hasLegacyPayload = updatedColumns.contains("payload")
+        let hasTitle = updatedColumns.contains("title")
+        let hasManifestJSON = updatedColumns.contains("manifestJson")
+
+        if hasLegacyName && hasTitle {
+            try db.execute("UPDATE apps SET title = name WHERE title IS NULL OR title = ''")
         }
-        if updatedColumns.contains("payload") && updatedColumns.contains("manifestJson") {
-            try db.execute("UPDATE apps SET manifestJson = payload WHERE manifestJson = '{}' OR manifestJson = ''")
+        if hasLegacyPayload && hasManifestJSON {
+            try db.execute("UPDATE apps SET manifestJson = payload WHERE manifestJson IS NULL OR manifestJson = ''")
         }
     }
 

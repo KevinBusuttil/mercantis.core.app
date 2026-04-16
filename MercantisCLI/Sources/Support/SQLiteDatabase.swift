@@ -23,7 +23,12 @@ final class SQLiteDatabase {
     init(path: String) throws {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(path, &db, flags, nil) != SQLITE_OK {
-            let message = String(cString: sqlite3_errmsg(db))
+            let message: String
+            if let db {
+                message = String(cString: sqlite3_errmsg(db))
+            } else {
+                message = "Unknown SQLite open error"
+            }
             throw SQLiteDatabaseError.openFailed("Failed to open database: \(message)")
         }
     }

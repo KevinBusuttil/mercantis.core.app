@@ -24,7 +24,7 @@ struct NewApp: ParsableCommand {
         let outputDirectory = prompt("Output directory", defaultValue: FileManager.default.currentDirectoryPath)
 
         guard isValidSemver(version) else {
-            throw ValidationError("Invalid app version. Expected semver, e.g. 0.1.0")
+            throw ValidationError("Invalid App Version. Expected semver, e.g. 0.1.0")
         }
 
         guard isValidSemver(minimumCoreVersion) else {
