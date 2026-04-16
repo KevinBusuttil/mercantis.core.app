@@ -14,12 +14,13 @@ Frappe is tightly coupled to its infrastructure stack (MariaDB, Redis, Gunicorn,
 Mercantis Core defines a `CloudAdapter` Swift protocol with the following interface:
 
 ```swift
-protocol CloudAdapter {
+public protocol CloudAdapter: Sendable {
     func pushMutations(_ mutations: [MutationRecord]) async throws -> [SyncAcknowledgement]
     func pullMutations(since version: SyncVersion) async throws -> [RemoteMutation]
-    func resolveConflict(_ conflict: ConflictCandidate) async throws -> ConflictResolution
 }
 ```
+
+Conflict resolution is currently handled inside Core by `SyncEngine` and `ConflictResolver`; `CloudAdapter` is responsible only for transport of mutations and acknowledgements.
 
 Core never imports or references any specific cloud SDK. The host application provides a concrete `CloudAdapter` implementation and injects it into the `SyncEngine` at initialisation. Core ships with a `NoOpCloudAdapter` for fully offline use.
 
@@ -33,11 +34,11 @@ Core never imports or references any specific cloud SDK. The host application pr
 
 **Negative:**
 - The protocol boundary adds indirection.
-- Complex cloud features (real-time subscriptions, server-side validation) must be shoe-horned into the protocol interface or handled outside Core.
+- Complex cloud features (real-time subscriptions, server-side validation, or server-mediated conflict workflows) must either be modeled as higher-level host-app concerns or added through future protocol evolution.
 - The host app bears responsibility for providing a correct, secure adapter implementation.
 
 **Neutral:**
-- The first production `CloudAdapter` will target a Frappe-compatible REST API, enabling Mercantis Hub to sync with Frappe/ERPNext backends.
+- A future production `CloudAdapter` may target a Frappe-compatible REST API, enabling Mercantis Hub to sync with Frappe/ERPNext backends.
 
 ---
 
