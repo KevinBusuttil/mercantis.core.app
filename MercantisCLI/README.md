@@ -26,6 +26,18 @@ Interactively scaffold a new app manifest and app folder structure.
 mercantis new-app
 ```
 
+### `mercantis new-doctype`
+
+Interactively scaffold a DocType definition and either append it to an app manifest or create a standalone `.doctype.json` file.
+
+```bash
+mercantis new-doctype --app ./app.mercantis.library-management
+```
+
+```bash
+mercantis new-doctype
+```
+
 ### `mercantis install-app`
 
 Install a manifest into a Mercantis SQLite database.

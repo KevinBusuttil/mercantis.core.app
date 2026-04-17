@@ -8,6 +8,7 @@ struct Mercantis: ParsableCommand {
         version: "0.1.0",
         subcommands: [
             NewApp.self,
+            NewDocType.self,
             Migrate.self,
             CreatePatch.self,
             RunPatch.self,
