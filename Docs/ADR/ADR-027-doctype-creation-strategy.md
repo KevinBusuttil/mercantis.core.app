@@ -33,7 +33,9 @@ Implementation details:
 
 ### Phase 3 — Visual drag-and-drop Form Builder
 
-An upgrade to Phase 2 that adds a drag-and-drop field designer. Users drag field types from a palette onto a canvas with sections and columns, configure properties in an inspector panel, and see a live preview rendered by `GenericFormView` in read-only mode. Uses SwiftUI `draggable()` / `dropDestination()` (macOS 14+ / iOS 17+). This phase targets a best-in-class no-code experience but is only justified once Phase 2 is proven in production.
+An upgrade to Phase 2 that adds a drag-and-drop field designer.
+Users drag field types from a palette onto a canvas with sections and columns, configure properties in an inspector panel, and see a live preview rendered by `GenericFormView` in read-only mode.
+This uses SwiftUI `draggable()` / `dropDestination()` (macOS 14+ / iOS 17+). This phase targets a best-in-class no-code experience but is only justified once Phase 2 is proven in production.
 
 ## Consequences
 

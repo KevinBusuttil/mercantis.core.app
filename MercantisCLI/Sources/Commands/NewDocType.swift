@@ -151,7 +151,7 @@ struct NewDocType: ParsableCommand {
             isSingle: isSingle,
             fields: fields,
             permissions: permissions,
-            // Phase 1 CLI scaffolds to ADR-014's default naming conflict strategy (LWW).
+            // Phase 1 scaffolds the default sync policy used for generic business DocTypes.
             syncPolicy: .init(conflictResolution: Self.defaultConflictResolution, immutableAfterSubmit: false),
             indexes: [],
             workflowId: nil,
