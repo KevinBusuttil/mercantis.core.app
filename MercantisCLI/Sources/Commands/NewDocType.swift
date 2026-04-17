@@ -118,7 +118,7 @@ struct NewDocType: ParsableCommand {
         doctypes.append(try jsonObject(payload))
         manifestObject["doctypes"] = doctypes
 
-        let updatedData = try JSONSerialization.data(withJSONObject: manifestObject, options: [.prettyPrinted, .sortedKeys])
+        let updatedData = try JSONSerialization.data(withJSONObject: manifestObject, options: [.prettyPrinted])
         try updatedData.write(to: manifestURL)
 
         printSuccess("DocType scaffold created.")
