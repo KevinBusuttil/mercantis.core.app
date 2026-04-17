@@ -34,6 +34,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-024](ADR-024-document-versioning-diff-tracking.md) | Document Versioning and Field-Level Diff Tracking | Accepted |
 | [ADR-025](ADR-025-automation-action-registry.md) | Automation Action Registry | Accepted |
 | [ADR-026](ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model | Accepted |
+| [ADR-027](ADR-027-doctype-creation-strategy.md) | DocType Creation Tooling — Phased Strategy | Accepted |
 
 ## How to Read an ADR
 
