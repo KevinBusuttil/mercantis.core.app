@@ -1,0 +1,10 @@
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/CreatePatch.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/InstallApp.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/ListApps.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/Migrate.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/NewApp.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/RunPatch.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/Output.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/SQLiteDatabase.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/Validators.swift
+/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/main.swift

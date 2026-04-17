@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/primary.swiftdeps"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/checkouts/swift-argument-parser/Tools/generate-docc-reference/Extensions/ArgumentParser+Markdown.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/ArgumentParser+Markdown.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/ArgumentParser+Markdown.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/ArgumentParser+Markdown~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/ArgumentParser+Markdown.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/ArgumentParser+Markdown.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/checkouts/swift-argument-parser/Tools/generate-docc-reference/Extensions/Process+SimpleAPI.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/Process+SimpleAPI.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/Process+SimpleAPI.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/Process+SimpleAPI~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/Process+SimpleAPI.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/Process+SimpleAPI.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/checkouts/swift-argument-parser/Tools/generate-docc-reference/GenerateDoccReference.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/GenerateDoccReference.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/GenerateDoccReference.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/GenerateDoccReference~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/GenerateDoccReference.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/generate_docc_reference-tool.build/GenerateDoccReference.dia"
+  }
+}

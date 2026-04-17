@@ -1,0 +1,75 @@
+{
+  "": {
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/primary.swiftdeps"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/CreatePatch.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/CreatePatch.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/CreatePatch.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/CreatePatch~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/CreatePatch.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/CreatePatch.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/InstallApp.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/InstallApp.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/InstallApp.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/InstallApp~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/InstallApp.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/InstallApp.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/ListApps.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/ListApps.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/ListApps.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/ListApps~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/ListApps.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/ListApps.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/Migrate.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Migrate.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Migrate.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Migrate~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Migrate.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Migrate.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/NewApp.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/NewApp.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/NewApp.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/NewApp~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/NewApp.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/NewApp.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Commands/RunPatch.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/RunPatch.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/RunPatch.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/RunPatch~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/RunPatch.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/RunPatch.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/Output.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Output.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Output.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Output~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Output.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Output.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/SQLiteDatabase.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/SQLiteDatabase.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/SQLiteDatabase.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/SQLiteDatabase~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/SQLiteDatabase.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/SQLiteDatabase.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/Support/Validators.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Validators.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Validators.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Validators~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Validators.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/Validators.dia"
+  },
+  "/home/runner/work/mercantis.core.app/mercantis.core.app/MercantisCLI/Sources/main.swift": {
+    "dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/main.d",
+    "object": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/main.swift.o",
+    "swiftmodule": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/main~partial.swiftmodule",
+    "swift-dependencies": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/main.swiftdeps",
+    "diagnostics": "/home/runner/work/mercantis.core.app/mercantis.core.app/.build/x86_64-unknown-linux-gnu/debug/mercantis.build/main.dia"
+  }
+}
