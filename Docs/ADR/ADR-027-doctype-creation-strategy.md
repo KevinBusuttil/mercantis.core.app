@@ -6,7 +6,11 @@
 
 ## Context
 
-Frappe allows creating DocTypes entirely from the browser UI (via the DocType list → "Create New DocType" dialog → Form Builder for adding fields, permissions, and settings). In Mercantis Core, DocTypes are currently defined by hand-writing JSON inside app manifests or directly in the `doctypes` table. This is a usability gap that affects developer velocity and prevents non-developers from defining data models. The Customization Layer (§4.19 in ARCHITECTURE.md) already specifies that "Custom DocTypes — Users can create entirely new DocTypes through the UI without an app manifest" — but no concrete UI or tooling exists yet.
+Frappe allows creating DocTypes entirely from the browser UI (via the DocType list → "Create New DocType" dialog → Form Builder for adding fields, permissions, and settings).
+
+In Mercantis Core, DocTypes are currently defined by hand-writing JSON inside app manifests or directly in the `doctypes` table. This is a usability gap that affects developer velocity and prevents non-developers from defining data models.
+
+The Customization Layer (§4.19 in ARCHITECTURE.md) already specifies that "Custom DocTypes — Users can create entirely new DocTypes through the UI without an app manifest" — but no concrete UI or tooling exists yet.
 
 ## Decision
 

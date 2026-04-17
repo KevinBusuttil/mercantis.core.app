@@ -273,7 +273,7 @@ struct NewDocType: ParsableCommand {
 
     private func promptTitleField(from fields: [FieldDefinitionTemplate]) -> String {
         while true {
-            let value = prompt("Title field key (optional)", defaultValue: "")
+            let value = prompt("Title field key (optional; leave blank for none)", defaultValue: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if value.isEmpty || fields.contains(where: { $0.key == value }) {
                 return value
