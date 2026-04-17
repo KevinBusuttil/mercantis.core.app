@@ -19,12 +19,13 @@ struct NewDocType: ParsableCommand {
         let isChildTable = promptYesNo("Is Child Table?", defaultValue: false)
         let naming = try promptNamingConfig()
         let fields = try promptFields()
+        let titleField = promptTitleField(from: fields)
         let permissions = try promptPermissions(isSubmittable: isSubmittable)
 
         if let app {
-            try appendDocTypeToManifest(at: app, id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, permissions: permissions)
+            try appendDocTypeToManifest(at: app, id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, titleField: titleField, permissions: permissions)
         } else {
-            try writeStandaloneDocType(id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, permissions: permissions)
+            try writeStandaloneDocType(id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, titleField: titleField, permissions: permissions)
         }
     }
 
@@ -37,6 +38,7 @@ struct NewDocType: ParsableCommand {
         isChildTable: Bool,
         naming: NamingConfig,
         fields: [FieldDefinitionTemplate],
+        titleField: String,
         permissions: [PermissionRuleTemplate]
     ) throws {
         let payload = makeDocTypePayload(
@@ -49,6 +51,7 @@ struct NewDocType: ParsableCommand {
             isChildTable: isChildTable,
             naming: naming,
             fields: fields,
+            titleField: titleField,
             permissions: permissions
         )
 
@@ -77,6 +80,7 @@ struct NewDocType: ParsableCommand {
         isChildTable: Bool,
         naming: NamingConfig,
         fields: [FieldDefinitionTemplate],
+        titleField: String,
         permissions: [PermissionRuleTemplate]
     ) throws {
         let appURL = URL(fileURLWithPath: appDirectory)
@@ -106,6 +110,7 @@ struct NewDocType: ParsableCommand {
             isChildTable: isChildTable,
             naming: naming,
             fields: fields,
+            titleField: titleField,
             permissions: permissions
         )
 
@@ -131,6 +136,7 @@ struct NewDocType: ParsableCommand {
         isChildTable: Bool,
         naming: NamingConfig,
         fields: [FieldDefinitionTemplate],
+        titleField: String,
         permissions: [PermissionRuleTemplate]
     ) -> DocTypeTemplate {
         DocTypeTemplate(
@@ -143,6 +149,7 @@ struct NewDocType: ParsableCommand {
             isSingle: isSingle,
             fields: fields,
             permissions: permissions,
+            // Phase 1 CLI scaffolds to ADR-014's default naming conflict strategy (LWW).
             syncPolicy: .init(conflictResolution: "lastWriteWins", immutableAfterSubmit: false),
             indexes: [],
             workflowId: nil,
@@ -151,7 +158,7 @@ struct NewDocType: ParsableCommand {
             namingField: naming.namingField,
             namingFormat: naming.namingFormat,
             searchFields: [],
-            titleField: ""
+            titleField: titleField
         )
     }
 
@@ -262,6 +269,17 @@ struct NewDocType: ParsableCommand {
         }
 
         return permissions
+    }
+
+    private func promptTitleField(from fields: [FieldDefinitionTemplate]) -> String {
+        while true {
+            let value = prompt("Title field key (optional)", defaultValue: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty || fields.contains(where: { $0.key == value }) {
+                return value
+            }
+            printError("Title field must match one of the entered field keys.")
+        }
     }
 
     private func promptFieldType() throws -> SupportedFieldType {

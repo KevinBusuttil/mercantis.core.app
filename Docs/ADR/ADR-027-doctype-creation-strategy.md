@@ -18,7 +18,14 @@ An interactive `mercantis new-doctype` CLI command scaffolds DocType definitions
 
 ### Phase 2 — In-app DocType Builder view
 
-A `DocTypeBuilderView` in the UIShell allows creating and editing DocTypes from within the running app. The approach is self-referential: DocType is itself treated as a document type. A system DocType called `DocType` is declared in Core's built-in manifest, with fields for name, module, flags, a child table of `FieldDefinition` rows, and a child table of `PermissionRule` rows. `GenericFormView` renders this meta-DocType automatically. On save, instead of writing to the `documents` table, the save hook calls `SchemaValidator.validate()` → `MetadataRegistry.register()` to register the new DocType. Custom DocTypes created this way are stored with `custom: true` in the `doctypes` table. This gives Frappe-level parity for non-developer users within a native iOS/macOS app.
+A `DocTypeBuilderView` in the UIShell allows creating and editing DocTypes from within the running app using a self-referential "DocType as a DocType" approach. This provides Frappe-level parity for non-developer users inside the native iOS/macOS app.
+
+Implementation details:
+- A system DocType called `DocType` is declared in Core's built-in manifest.
+- It contains fields for name, module, type flags, plus child tables for `FieldDefinition` rows and `PermissionRule` rows.
+- `GenericFormView` renders this meta-DocType automatically.
+- On save, the hook calls `SchemaValidator.validate()` then `MetadataRegistry.register()` instead of writing to `documents`.
+- Custom DocTypes created from this flow are stored in `doctypes` with `custom: true`.
 
 ### Phase 3 — Visual drag-and-drop Form Builder
 
