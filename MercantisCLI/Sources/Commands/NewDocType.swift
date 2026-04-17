@@ -2,6 +2,8 @@ import ArgumentParser
 import Foundation
 
 struct NewDocType: ParsableCommand {
+    private static let defaultConflictResolution = "lastWriteWins"
+
     static let configuration = CommandConfiguration(
         commandName: "new-doctype",
         abstract: "Interactively scaffold a new DocType definition."
@@ -150,7 +152,7 @@ struct NewDocType: ParsableCommand {
             fields: fields,
             permissions: permissions,
             // Phase 1 CLI scaffolds to ADR-014's default naming conflict strategy (LWW).
-            syncPolicy: .init(conflictResolution: "lastWriteWins", immutableAfterSubmit: false),
+            syncPolicy: .init(conflictResolution: Self.defaultConflictResolution, immutableAfterSubmit: false),
             indexes: [],
             workflowId: nil,
             autoname: naming.autoname,
