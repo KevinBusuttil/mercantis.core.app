@@ -157,26 +157,26 @@ struct NewDocType: ParsableCommand {
 
     private func promptNamingConfig() throws -> NamingConfig {
         while true {
-            let input = prompt("Naming strategy (uuid/series/field/prompt/format)", defaultValue: "uuid")
+            let input = prompt("Naming strategy (\(NamingStrategyOption.promptValues))", defaultValue: NamingStrategyOption.uuid.rawValue)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased()
 
             switch input {
-            case "uuid":
+            case NamingStrategyOption.uuid.rawValue:
                 return NamingConfig(autoname: "UUID")
-            case "series":
+            case NamingStrategyOption.series.rawValue:
                 let pattern = promptRequired("Series pattern (e.g. AR.#######)")
                 return NamingConfig(autoname: "naming_series:\(pattern)", namingSeries: pattern)
-            case "field":
+            case NamingStrategyOption.field.rawValue:
                 let fieldKey = promptRequired("Field key for naming (e.g. email)")
                 return NamingConfig(autoname: "field:\(fieldKey)", namingField: fieldKey)
-            case "prompt":
+            case NamingStrategyOption.prompt.rawValue:
                 return NamingConfig(autoname: "prompt")
-            case "format":
+            case NamingStrategyOption.format.rawValue:
                 let format = promptRequired("Format string (e.g. {company_abbr}-{naming_series})")
                 return NamingConfig(autoname: "format:\(format)", namingFormat: format)
             default:
-                printError("Invalid naming strategy. Choose: uuid, series, field, prompt, format.")
+                printError("Invalid naming strategy. Choose: \(NamingStrategyOption.promptValues).")
             }
         }
     }
@@ -266,7 +266,7 @@ struct NewDocType: ParsableCommand {
 
     private func promptFieldType() throws -> SupportedFieldType {
         while true {
-            let input = prompt("Field type (text/number/date/datetime/check/select/link/table/currency/float/attach/image/textEditor)", defaultValue: "text")
+            let input = prompt("Field type (\(SupportedFieldType.promptValues))", defaultValue: SupportedFieldType.text.rawValue)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             if let value = SupportedFieldType(rawValue: input) {
@@ -348,7 +348,19 @@ struct NewDocType: ParsableCommand {
         return try JSONSerialization.jsonObject(with: data)
     }
 
-    private enum SupportedFieldType: String {
+    private enum NamingStrategyOption: String, CaseIterable {
+        case uuid
+        case series
+        case field
+        case prompt
+        case format
+
+        static var promptValues: String {
+            allCases.map(\.rawValue).joined(separator: "/")
+        }
+    }
+
+    private enum SupportedFieldType: String, CaseIterable {
         case text
         case number
         case date
@@ -362,6 +374,10 @@ struct NewDocType: ParsableCommand {
         case attach
         case image
         case textEditor
+
+        static var promptValues: String {
+            allCases.map(\.rawValue).joined(separator: "/")
+        }
 
         var fieldTypeValue: String {
             switch self {
