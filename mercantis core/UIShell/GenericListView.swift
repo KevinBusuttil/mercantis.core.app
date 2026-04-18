@@ -40,6 +40,7 @@ public struct GenericListView: View {
                 documentTable
             }
         }
+        .background(MercantisTheme.background)
         .navigationTitle(docType.name)
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -67,8 +68,8 @@ public struct GenericListView: View {
             }
         }
         .padding(8)
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(MercantisTheme.surfaceMuted)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
         .padding(.vertical, 8)
     }

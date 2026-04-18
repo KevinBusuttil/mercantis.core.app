@@ -15,6 +15,8 @@ struct mercantis_coreApp: App {
         WindowGroup {
             NavigationShell()
                 .environmentObject(docTypeTooling)
+                .tint(MercantisTheme.primary)
+                .font(.system(size: 14, weight: .regular, design: .default))
         }
     }
 }

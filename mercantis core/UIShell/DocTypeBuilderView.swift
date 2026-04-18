@@ -211,6 +211,7 @@ public struct DocTypeBuilderView: View {
 
     private let existingDocType: DocType?
     private let onSave: (() -> Void)?
+    private let formLabelWidth: CGFloat = 190
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -233,91 +234,166 @@ public struct DocTypeBuilderView: View {
     }
 
     public var body: some View {
-        Form {
-            if let validationError {
-                Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let validationError {
                     Text(validationError)
-                        .foregroundStyle(.red)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MercantisTheme.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .mercantisCard()
                 }
-            }
 
-            Section("Basic Info") {
-                TextField("DocType ID", text: $docTypeId)
-                TextField("Name", text: $name)
-                TextField("Module", text: $module)
-                Toggle("Submittable", isOn: $isSubmittable)
-                Toggle("Child Table", isOn: $isChildTable)
-                TextField("Title Field", text: $titleField)
-                TextField("Search Fields (comma-separated)", text: $searchFields)
-            }
+                MercantisSectionHeading(title: "Basic Info")
+                VStack(spacing: 12) {
+                    labeledFormRow("DocType ID") {
+                        TextField("DocType ID", text: $docTypeId)
+                            .mercantisInput()
+                    }
+                    labeledFormRow("Name") {
+                        TextField("Name", text: $name)
+                            .mercantisInput()
+                    }
+                    labeledFormRow("Module") {
+                        TextField("Module", text: $module)
+                            .mercantisInput()
+                    }
+                    labeledFormRow("Title Field") {
+                        TextField("Title Field", text: $titleField)
+                            .mercantisInput()
+                    }
+                    labeledFormRow("Search Fields") {
+                        TextField("comma-separated", text: $searchFields)
+                            .mercantisInput()
+                    }
+                    checkboxRow("Submittable", isOn: $isSubmittable)
+                    checkboxRow("Child Table", isOn: $isChildTable)
+                }
+                .mercantisCard()
 
-            Section("Fields") {
-                ForEach($fields) { $field in
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("Key", text: $field.key)
-                        TextField("Label", text: $field.label)
-                        Picker("Type", selection: $field.type) {
-                            ForEach(FieldType.allCases, id: \.self) { type in
-                                Text(type.rawValue).tag(type)
+                MercantisSectionHeading(title: "Fields")
+                VStack(spacing: 12) {
+                    ForEach($fields) { $field in
+                        VStack(alignment: .leading, spacing: 10) {
+                            labeledFormRow("Key") {
+                                TextField("field_key", text: $field.key)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Label") {
+                                TextField("Field Label", text: $field.label)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Type") {
+                                Picker("Type", selection: $field.type) {
+                                    ForEach(FieldType.allCases, id: \.self) { type in
+                                        Text(type.rawValue).tag(type)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .mercantisPicker()
+                            }
+                            checkboxRow("Required", isOn: $field.required)
+                            labeledFormRow("Options") {
+                                TextField("comma-separated options", text: $field.optionsText)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Linked DocType") {
+                                TextField("Linked DocType", text: $field.linkedDocType)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Child DocType") {
+                                TextField("Child DocType", text: $field.childDocType)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Visibility") {
+                                TextField("Expression", text: $field.visibilityExpression)
+                                    .mercantisInput()
+                            }
+                            Button("Remove Field", role: .destructive) {
+                                removeField(with: field.wrappedValue.id)
+                            }
+                            .buttonStyle(MercantisDestructiveButtonStyle())
+                        }
+                        .mercantisCard()
+                    }
+
+                    Button("Add Field") {
+                        fields.append(EditableField())
+                    }
+                    .buttonStyle(MercantisSecondaryButtonStyle())
+                }
+
+                MercantisSectionHeading(title: "Permission Rules")
+                VStack(spacing: 12) {
+                    ForEach($permissions) { $permission in
+                        VStack(alignment: .leading, spacing: 10) {
+                            labeledFormRow("Role") {
+                                TextField("Role", text: $permission.role)
+                                    .mercantisInput()
+                            }
+                            checkboxRow("Read", isOn: $permission.canRead)
+                            checkboxRow("Write", isOn: $permission.canWrite)
+                            checkboxRow("Create", isOn: $permission.canCreate)
+                            checkboxRow("Delete", isOn: $permission.canDelete)
+                            checkboxRow("Submit", isOn: $permission.canSubmit)
+                            checkboxRow("Amend", isOn: $permission.canAmend)
+                            Button("Remove Permission", role: .destructive) {
+                                removePermission(with: permission.wrappedValue.id)
+                            }
+                            .buttonStyle(MercantisDestructiveButtonStyle())
+                        }
+                        .mercantisCard()
+                    }
+
+                    Button("Add Permission Rule") {
+                        permissions.append(EditablePermission())
+                    }
+                    .buttonStyle(MercantisSecondaryButtonStyle())
+                }
+
+                MercantisSectionHeading(title: "Sync Policy")
+                VStack(spacing: 12) {
+                    labeledFormRow("Conflict Resolution") {
+                        Picker("Conflict Resolution", selection: $conflictResolution) {
+                            ForEach(ConflictResolution.allCases, id: \.self) { value in
+                                Text(value.rawValue).tag(value)
                             }
                         }
-                        Toggle("Required", isOn: $field.required)
-                        TextField("Options (comma-separated)", text: $field.optionsText)
-                        TextField("Linked DocType", text: $field.linkedDocType)
-                        TextField("Child DocType", text: $field.childDocType)
-                        TextField("Visibility Expression", text: $field.visibilityExpression)
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .mercantisPicker()
                     }
+                    checkboxRow("Immutable After Submit", isOn: $immutableAfterSubmit)
                 }
-                .onDelete { fields.remove(atOffsets: $0) }
-                .onMove { fields.move(fromOffsets: $0, toOffset: $1) }
+                .mercantisCard()
 
-                Button("Add Field") {
-                    fields.append(EditableField())
+                MercantisSectionHeading(title: "Indexes")
+                VStack(spacing: 12) {
+                    ForEach($indexes) { $index in
+                        VStack(alignment: .leading, spacing: 10) {
+                            labeledFormRow("Field Key") {
+                                TextField("Field Key", text: $index.fieldKey)
+                                    .mercantisInput()
+                            }
+                            checkboxRow("Unique", isOn: $index.unique)
+                            Button("Remove Index", role: .destructive) {
+                                removeIndex(with: index.wrappedValue.id)
+                            }
+                            .buttonStyle(MercantisDestructiveButtonStyle())
+                        }
+                        .mercantisCard()
+                    }
+
+                    Button("Add Index") {
+                        indexes.append(EditableIndex())
+                    }
+                    .buttonStyle(MercantisSecondaryButtonStyle())
                 }
             }
-
-            Section("Permission Rules") {
-                ForEach($permissions) { $permission in
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("Role", text: $permission.role)
-                        Toggle("Read", isOn: $permission.canRead)
-                        Toggle("Write", isOn: $permission.canWrite)
-                        Toggle("Create", isOn: $permission.canCreate)
-                        Toggle("Delete", isOn: $permission.canDelete)
-                        Toggle("Submit", isOn: $permission.canSubmit)
-                        Toggle("Amend", isOn: $permission.canAmend)
-                    }
-                }
-                .onDelete { permissions.remove(atOffsets: $0) }
-
-                Button("Add Permission Rule") {
-                    permissions.append(EditablePermission())
-                }
-            }
-
-            Section("Sync Policy") {
-                Picker("Conflict Resolution", selection: $conflictResolution) {
-                    ForEach(ConflictResolution.allCases, id: \.self) { value in
-                        Text(value.rawValue).tag(value)
-                    }
-                }
-                Toggle("Immutable After Submit", isOn: $immutableAfterSubmit)
-            }
-
-            Section("Indexes") {
-                ForEach($indexes) { $index in
-                    HStack {
-                        TextField("Field Key", text: $index.fieldKey)
-                        Toggle("Unique", isOn: $index.unique)
-                    }
-                }
-                .onDelete { indexes.remove(atOffsets: $0) }
-
-                Button("Add Index") {
-                    indexes.append(EditableIndex())
-                }
-            }
+            .padding()
         }
+        .background(MercantisTheme.background)
         .navigationTitle(existingDocType == nil ? "New DocType" : "Edit DocType")
         .toolbar {
             #if os(iOS)
@@ -327,6 +403,7 @@ public struct DocTypeBuilderView: View {
             #endif
             ToolbarItem(placement: .primaryAction) {
                 Button("Save", action: save)
+                    .buttonStyle(MercantisPrimaryButtonStyle())
             }
         }
         .onAppear {
@@ -345,6 +422,44 @@ public struct DocTypeBuilderView: View {
             indexes = existingDocType.indexes.map(EditableIndex.init)
             didLoadExisting = true
         }
+    }
+
+    private func labeledFormRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if let label, !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MercantisTheme.textPrimary)
+                } else {
+                    Spacer()
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(width: formLabelWidth, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func checkboxRow(_ label: String, isOn: Binding<Bool>) -> some View {
+        labeledFormRow(label) {
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func removeField(with id: UUID) {
+        fields.removeAll { $0.id == id }
+    }
+
+    private func removePermission(with id: UUID) {
+        permissions.removeAll { $0.id == id }
+    }
+
+    private func removeIndex(with id: UUID) {
+        indexes.removeAll { $0.id == id }
     }
 
     private func save() {

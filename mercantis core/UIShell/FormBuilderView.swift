@@ -11,6 +11,7 @@ public struct FormBuilderView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let onSave: (() -> Void)?
+    private let compactLayoutMaxWidth: CGFloat = 1180
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -30,22 +31,18 @@ public struct FormBuilderView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 0) {
-            fieldPalette
-                .frame(width: 180)
-            Divider()
-            canvas
-            Divider()
-            inspector
-                .frame(width: 300)
-            Divider()
-            preview
-                .frame(minWidth: 320)
+        GeometryReader { proxy in
+            if proxy.size.width < compactLayoutMaxWidth {
+                compactLayout
+            } else {
+                expandedLayout
+            }
         }
         .navigationTitle("Form Builder")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Save", action: save)
+                    .buttonStyle(MercantisPrimaryButtonStyle())
             }
         }
         .overlay(alignment: .top) {
@@ -57,6 +54,36 @@ public struct FormBuilderView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding()
             }
+        }
+        .background(MercantisTheme.background)
+    }
+
+    private var expandedLayout: some View {
+        HStack(spacing: 0) {
+            fieldPalette
+                .frame(width: 180)
+            Divider()
+            canvas
+                .frame(minWidth: 360, maxWidth: .infinity)
+                .layoutPriority(1)
+            Divider()
+            inspector
+                .frame(width: 280)
+            Divider()
+            preview
+                .frame(minWidth: 320, maxWidth: .infinity)
+        }
+    }
+
+    private var compactLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                fieldPalette
+                canvas
+                inspector
+                preview
+            }
+            .padding()
         }
     }
 
@@ -70,14 +97,14 @@ public struct FormBuilderView: View {
                         .font(.callout)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(6)
-                        .background(.secondary.opacity(0.12))
+                        .background(MercantisTheme.surfaceMuted)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .draggable(fieldType.rawValue)
                 }
             }
             Spacer()
         }
-        .padding()
+        .mercantisCard()
     }
 
     private var canvas: some View {
@@ -100,6 +127,7 @@ public struct FormBuilderView: View {
             }
             .padding()
         }
+        .mercantisCard()
     }
 
     private var basicInfoCard: some View {
@@ -107,16 +135,19 @@ public struct FormBuilderView: View {
             Text("DocType")
                 .font(.headline)
             TextField("DocType ID", text: $docTypeId)
+                .mercantisInput()
             TextField("Name", text: $name)
+                .mercantisInput()
             TextField("Module", text: $module)
+                .mercantisInput()
             TextField("Title Field", text: $titleField)
+                .mercantisInput()
             TextField("Search Fields (comma-separated)", text: $searchFields)
+                .mercantisInput()
             Toggle("Submittable", isOn: $isSubmittable)
             Toggle("Child Table", isOn: $isChildTable)
         }
-        .padding()
-        .background(.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .mercantisCard()
     }
 
     private func dropColumn(sectionIndex: Int, columnIndex: Int) -> some View {
@@ -124,9 +155,11 @@ public struct FormBuilderView: View {
             ForEach(sections[sectionIndex].columns[columnIndex]) { field in
                 let isSelected = field.id == selectedFieldID
                 Text(displayName(for: field))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
-                    .background(isSelected ? .blue.opacity(0.2) : .secondary.opacity(0.12))
+                    .background(isSelected ? MercantisTheme.primary.opacity(0.2) : MercantisTheme.surfaceMuted)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .onTapGesture {
                         selectedFieldID = field.id
@@ -139,7 +172,7 @@ public struct FormBuilderView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .background(.secondary.opacity(0.08))
+        .background(MercantisTheme.surfaceMuted)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .dropDestination(for: String.self) { items, _ in
             guard let rawValue = items.first, let type = FieldType(rawValue: rawValue) else { return false }
@@ -162,17 +195,25 @@ public struct FormBuilderView: View {
 
             if let binding = selectedFieldBinding {
                 TextField("Key", text: binding.key)
+                    .mercantisInput()
                 TextField("Label", text: binding.label)
+                    .mercantisInput()
                 Picker("Type", selection: binding.type) {
                     ForEach(FieldType.allCases, id: \.self) { type in
                         Text(type.rawValue).tag(type)
                     }
                 }
+                .pickerStyle(.menu)
+                .mercantisPicker()
                 Toggle("Required", isOn: binding.required)
                 TextField("Options", text: binding.optionsText)
+                    .mercantisInput()
                 TextField("Linked DocType", text: binding.linkedDocType)
+                    .mercantisInput()
                 TextField("Visibility Expression", text: binding.visibilityExpression)
+                    .mercantisInput()
                 TextField("Child DocType", text: binding.childDocType)
+                    .mercantisInput()
             } else {
                 Text("Select a field on the canvas to edit properties.")
                     .foregroundStyle(.secondary)
@@ -180,7 +221,7 @@ public struct FormBuilderView: View {
 
             Spacer()
         }
-        .padding()
+        .mercantisCard()
     }
 
     private var preview: some View {
@@ -193,7 +234,7 @@ public struct FormBuilderView: View {
             )
             .disabled(true)
         }
-        .padding()
+        .mercantisCard()
     }
 
     private var selectedFieldBinding: Binding<EditableField>? {
