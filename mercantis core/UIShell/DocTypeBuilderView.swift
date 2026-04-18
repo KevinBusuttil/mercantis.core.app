@@ -1,13 +1,25 @@
 import SwiftUI
 import Combine
+import GRDB
 
 @MainActor
 final class DocTypeToolingContext: ObservableObject {
     @Published var docTypes: [DocType] = []
+    @Published var reports: [ReportDefinition] = []
+    @Published var dashboards: [DashboardDefinition] = []
 
     let validator = SchemaValidator()
     let registry: MetadataRegistry
     private let database: MercantisDatabase
+    private let eventBus = EventBus()
+    private lazy var documentEngine = DocumentEngine(
+        database: database,
+        registry: registry,
+        eventBus: eventBus,
+        deviceId: "local-device",
+        userId: "local-user"
+    )
+    private var reportEngine: ReportEngine?
 
     init() {
         let dbURL = Self.databaseURL()
@@ -30,12 +42,68 @@ final class DocTypeToolingContext: ObservableObject {
         docTypes = registry
             .all()
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let manifests = loadInstalledManifests()
+        let manifestReports = manifests.flatMap(\.reports)
+        let generatedReports = generatedListReports(from: docTypes)
+        reports = deduplicateReports(manifestReports + generatedReports)
+
+        let engine = ReportEngine(documentEngine: documentEngine)
+        reports.forEach { engine.register($0) }
+        reportEngine = engine
+
+        let manifestDashboards = manifests.flatMap(\.dashboards)
+        dashboards = deduplicateDashboards(manifestDashboards + generatedDashboards(from: docTypes))
     }
 
     func save(docType: DocType) throws {
         try validator.validate(docType)
         try registry.register(docType)
         reload()
+    }
+
+    func docType(withId id: String) -> DocType? {
+        docTypes.first(where: { $0.id == id }) ?? registry.get(id)
+    }
+
+    func report(withId id: String) -> ReportDefinition? {
+        reports.first(where: { $0.id == id })
+    }
+
+    func dashboard(withId id: String) -> DashboardDefinition? {
+        dashboards.first(where: { $0.id == id })
+    }
+
+    func listDocuments(docTypeId: String) -> [Document] {
+        (try? documentEngine.list(docType: docTypeId)) ?? []
+    }
+
+    func createDraftDocument(for docType: DocType) -> Document {
+        let now = Date()
+        let defaultFields = Dictionary(uniqueKeysWithValues: docType.fields.map { field in
+            (field.key, defaultFieldValue(for: field))
+        })
+        return Document(
+            id: UUID().uuidString,
+            docType: docType.id,
+            company: "",
+            status: "Draft",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: defaultFields,
+            children: [:]
+        )
+    }
+
+    func saveDocument(_ document: Document) throws {
+        try documentEngine.save(document)
+    }
+
+    func executeReport(_ report: ReportDefinition, filters: [String: FieldValue] = [:]) -> ReportResult? {
+        guard let reportEngine else { return nil }
+        return try? reportEngine.execute(report: report, filters: filters)
     }
 
     func errorMessage(for error: Error) -> String {
@@ -68,6 +136,103 @@ final class DocTypeToolingContext: ObservableObject {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("metadata.sqlite")
     }
+
+    private func loadInstalledManifests() -> [AppManifest] {
+        let rows: [Row]
+        do {
+            rows = try database.read { db in
+                try Row.fetchAll(db, sql: "SELECT payload FROM apps", arguments: [])
+            }
+        } catch {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return rows.compactMap { row in
+            guard let payloadString: String = row[0],
+                  let payloadData = payloadString.data(using: .utf8) else {
+                return nil
+            }
+            return try? decoder.decode(AppManifest.self, from: payloadData)
+        }
+    }
+
+    private func generatedListReports(from docTypes: [DocType]) -> [ReportDefinition] {
+        docTypes.map { docType in
+            let candidateColumns = ([docType.titleField] + docType.searchFields).uniqued().prefix(4)
+            return ReportDefinition(
+                id: "generated.report.\(docType.id)",
+                name: "\(docType.name) List",
+                docType: docType.id,
+                columns: Array(candidateColumns),
+                filters: []
+            )
+        }
+    }
+
+    private func generatedDashboards(from docTypes: [DocType]) -> [DashboardDefinition] {
+        let grouped = Dictionary(grouping: docTypes, by: \.module)
+        return grouped.keys.sorted().map { module in
+            let widgets = grouped[module, default: []].prefix(4).map { docType in
+                DashboardWidget(
+                    type: "count",
+                    title: docType.name,
+                    reportId: "generated.report.\(docType.id)",
+                    docType: docType.id,
+                    parameters: [:]
+                )
+            }
+            return DashboardDefinition(
+                id: "generated.dashboard.\(slug(module))",
+                name: "\(module) Workspace",
+                widgets: Array(widgets)
+            )
+        }
+    }
+
+    private func deduplicateReports(_ items: [ReportDefinition]) -> [ReportDefinition] {
+        var seen = Set<String>()
+        return items.filter { report in
+            seen.insert(report.id).inserted
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func deduplicateDashboards(_ items: [DashboardDefinition]) -> [DashboardDefinition] {
+        var seen = Set<String>()
+        return items.filter { dashboard in
+            seen.insert(dashboard.id).inserted
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func defaultFieldValue(for field: FieldDefinition) -> FieldValue {
+        if let defaultValue = field.defaultValue {
+            return defaultValue
+        }
+        switch field.type {
+        case .boolean:
+            return .bool(false)
+        case .number:
+            return .int(0)
+        case .decimal, .currency:
+            return .double(0)
+        default:
+            return .string("")
+        }
+    }
+
+    private func slug(_ value: String) -> String {
+        value.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
 }
 
 struct EditableField: Identifiable, Hashable {
@@ -80,6 +245,8 @@ struct EditableField: Identifiable, Hashable {
     var linkedDocType: String
     var childDocType: String
     var visibilityExpression: String
+    var section: String
+    var column: Int
 
     nonisolated init(
         key: String = "",
@@ -89,7 +256,9 @@ struct EditableField: Identifiable, Hashable {
         optionsText: String = "",
         linkedDocType: String = "",
         childDocType: String = "",
-        visibilityExpression: String = ""
+        visibilityExpression: String = "",
+        section: String = "",
+        column: Int = 0
     ) {
         self.key = key
         self.label = label
@@ -99,6 +268,8 @@ struct EditableField: Identifiable, Hashable {
         self.linkedDocType = linkedDocType
         self.childDocType = childDocType
         self.visibilityExpression = visibilityExpression
+        self.section = section
+        self.column = column
     }
 
     nonisolated init(_ field: FieldDefinition) {
@@ -110,7 +281,9 @@ struct EditableField: Identifiable, Hashable {
             optionsText: (field.options ?? []).joined(separator: ","),
             linkedDocType: field.linkedDocType ?? "",
             childDocType: field.childDocType ?? "",
-            visibilityExpression: field.visibilityExpression ?? ""
+            visibilityExpression: field.visibilityExpression ?? "",
+            section: field.section ?? "",
+            column: field.column ?? 0
         )
     }
 
@@ -128,7 +301,9 @@ struct EditableField: Identifiable, Hashable {
             options: options.isEmpty ? nil : options,
             linkedDocType: linkedDocType.isEmpty ? nil : linkedDocType,
             childDocType: childDocType.isEmpty ? nil : childDocType,
-            visibilityExpression: visibilityExpression.isEmpty ? nil : visibilityExpression
+            visibilityExpression: visibilityExpression.isEmpty ? nil : visibilityExpression,
+            section: section.isEmpty ? nil : section,
+            column: column <= 0 ? nil : column
         )
     }
 }
@@ -309,6 +484,15 @@ public struct DocTypeBuilderView: View {
                             labeledFormRow("Visibility") {
                                 TextField("Expression", text: $field.visibilityExpression)
                                     .mercantisInput()
+                            }
+                            labeledFormRow("Section") {
+                                TextField("Section", text: $field.section)
+                                    .mercantisInput()
+                            }
+                            labeledFormRow("Column") {
+                                Stepper(value: $field.column, in: 0...4) {
+                                    Text(field.column <= 0 ? "Automatic" : "\(field.column)")
+                                }
                             }
                             Button("Remove Field", role: .destructive) {
                                 removeField(with: field.id)
