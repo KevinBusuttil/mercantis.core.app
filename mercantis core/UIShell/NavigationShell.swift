@@ -376,56 +376,55 @@ public struct NavigationShell: View {
 
     @ViewBuilder
     private func docTypeDetail(docTypeId: String) -> some View {
-        guard let docType = tooling.docType(withId: docTypeId) else {
+        if let docType = tooling.docType(withId: docTypeId) {
+            let documents = tooling.listDocuments(docTypeId: docType.id)
+            HStack(spacing: 0) {
+                GenericListView(
+                    docType: docType,
+                    documents: documents,
+                    onSelect: { document in
+                        activeDocument = document
+                        addRecent(.record(docTypeId: docType.id, documentId: document.id))
+                    },
+                    onCreate: {
+                        activeDocument = tooling.createDraftDocument(for: docType)
+                        addRecent(.docType(docType.id))
+                    }
+                )
+                .frame(minWidth: 400, maxWidth: .infinity)
+
+                Divider()
+
+                if let activeDocument {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GenericFormView(docType: docType, document: bindingForActiveDocument)
+                        HStack {
+                            Spacer()
+                            Button("Save") {
+                                try? tooling.saveDocument(activeDocument)
+                            }
+                            .buttonStyle(MercantisPrimaryButtonStyle())
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                    }
+                    .frame(minWidth: 380, maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text("Select a record to view details")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationTitle(docType.name)
+        } else {
             Text("DocType not found")
                 .foregroundStyle(.secondary)
-            return
         }
-
-        let documents = tooling.listDocuments(docTypeId: docType.id)
-        HStack(spacing: 0) {
-            GenericListView(
-                docType: docType,
-                documents: documents,
-                onSelect: { document in
-                    activeDocument = document
-                    addRecent(.record(docTypeId: docType.id, documentId: document.id))
-                },
-                onCreate: {
-                    activeDocument = tooling.createDraftDocument(for: docType)
-                    addRecent(.docType(docType.id))
-                }
-            )
-            .frame(minWidth: 400, maxWidth: .infinity)
-
-            Divider()
-
-            if let activeDocument {
-                VStack(alignment: .leading, spacing: 10) {
-                    GenericFormView(docType: docType, document: bindingForActiveDocument)
-                    HStack {
-                        Spacer()
-                        Button("Save") {
-                            try? tooling.saveDocument(activeDocument)
-                        }
-                        .buttonStyle(MercantisPrimaryButtonStyle())
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
-                }
-                .frame(minWidth: 380, maxWidth: .infinity)
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                    Text("Select a record to view details")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .navigationTitle(docType.name)
     }
 
     @ViewBuilder
@@ -461,40 +460,39 @@ public struct NavigationShell: View {
 
     @ViewBuilder
     private func dashboardDetail(dashboardId: String) -> some View {
-        guard let dashboard = tooling.dashboard(withId: dashboardId) else {
-            ContentUnavailableView("Dashboard unavailable", systemImage: "rectangle.3.group")
-            return
-        }
-
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                ForEach(Array(dashboard.widgets.enumerated()), id: \.offset) { _, widget in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(widget.title)
-                            .font(.headline)
-                        if let docType = widget.docType {
-                            Text("\(tooling.listDocuments(docTypeId: docType).count) records")
-                                .foregroundStyle(.secondary)
-                            Button("Open \(docType)") {
-                                router.openDocType(docType, module: tooling.docType(withId: docType)?.module)
+        if let dashboard = tooling.dashboard(withId: dashboardId) {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
+                    ForEach(Array(dashboard.widgets.enumerated()), id: \.offset) { _, widget in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(widget.title)
+                                .font(.headline)
+                            if let docType = widget.docType {
+                                Text("\(tooling.listDocuments(docTypeId: docType).count) records")
+                                    .foregroundStyle(.secondary)
+                                Button("Open \(docType)") {
+                                    router.openDocType(docType, module: tooling.docType(withId: docType)?.module)
+                                }
+                                .buttonStyle(MercantisSecondaryButtonStyle())
+                            } else if let reportId = widget.reportId {
+                                Button("Open Report") {
+                                    router.openReport(reportId, module: tooling.report(withId: reportId).flatMap(moduleForReport))
+                                }
+                                .buttonStyle(MercantisSecondaryButtonStyle())
+                            } else {
+                                Text(widget.type.capitalized)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
-                        } else if let reportId = widget.reportId {
-                            Button("Open Report") {
-                                router.openReport(reportId, module: tooling.report(withId: reportId).flatMap(moduleForReport))
-                            }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
-                        } else {
-                            Text(widget.type.capitalized)
-                                .foregroundStyle(.secondary)
                         }
+                        .mercantisCard()
                     }
-                    .mercantisCard()
                 }
+                .padding()
             }
-            .padding()
+            .navigationTitle(dashboard.name)
+        } else {
+            ContentUnavailableView("Dashboard unavailable", systemImage: "rectangle.3.group")
         }
-        .navigationTitle(dashboard.name)
     }
 
     @ViewBuilder
