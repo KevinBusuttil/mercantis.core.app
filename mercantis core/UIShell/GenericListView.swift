@@ -16,8 +16,6 @@ public struct GenericListView: View {
     let onSelect: ((Document) -> Void)?
 
     @State private var searchText = ""
-    @State private var sortFieldKey: String? = nil
-    @State private var sortAscending = true
 
     public init(
         docType: DocType,
@@ -119,15 +117,6 @@ public struct GenericListView: View {
                 docType.searchFields.contains { key in
                     displayValue(for: key, in: doc).lowercased().contains(lower)
                 } || doc.id.lowercased().contains(lower)
-            }
-        }
-
-        // Sort by selected field.
-        if let key = sortFieldKey {
-            result.sort { a, b in
-                let av = displayValue(for: key, in: a)
-                let bv = displayValue(for: key, in: b)
-                return sortAscending ? av < bv : av > bv
             }
         }
 

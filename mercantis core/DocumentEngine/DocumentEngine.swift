@@ -108,6 +108,23 @@ public final class DocumentEngine {
                 ]
             )
 
+            // Remove stale child rows that are no longer present.
+            let currentChildIds = document.children.values.flatMap { $0 }.map { $0.id }
+            if currentChildIds.isEmpty {
+                try db.execute(
+                    sql: "DELETE FROM document_children WHERE parentId = ?",
+                    arguments: [document.id]
+                )
+            } else {
+                let placeholders = currentChildIds.map { _ in "?" }.joined(separator: ",")
+                var args: [any DatabaseValueConvertible] = [document.id]
+                args.append(contentsOf: currentChildIds)
+                try db.execute(
+                    sql: "DELETE FROM document_children WHERE parentId = ? AND id NOT IN (\(placeholders))",
+                    arguments: StatementArguments(args)
+                )
+            }
+
             // Upsert child rows.
             for (tableName, rows) in document.children {
                 for row in rows {
@@ -171,10 +188,11 @@ public final class DocumentEngine {
             throw DocumentEngineError.cannotDeleteSubmitted(id: id)
         }
 
+        let deletePayload = try JSONEncoder().encode(["id": id, "docType": docType])
         let mutation = MutationRecord(
             id: UUID(),
             type: .deleteDocument,
-            payload: Data("{\"id\":\"\(id)\",\"docType\":\"\(docType)\"}".utf8),
+            payload: deletePayload,
             deviceId: deviceId,
             userId: userId,
             localTimestamp: Date(),
@@ -370,7 +388,9 @@ public final class DocumentEngine {
             )
         }
         guard let row = row else { return nil }
-        return try documentFromRow(row)
+        var doc = try documentFromRow(row)
+        doc.children = try fetchChildren(parentId: doc.id)
+        return doc
     }
 
     // MARK: - List
@@ -392,6 +412,11 @@ public final class DocumentEngine {
         }
 
         var documents = try rows.map { try documentFromRow($0) }
+
+        // Load child rows for each document.
+        for i in documents.indices {
+            documents[i].children = try fetchChildren(parentId: documents[i].id)
+        }
 
         // Apply in-memory filters on field values.
         if let filters = filters {
@@ -417,8 +442,11 @@ public final class DocumentEngine {
 
         let allowedKeys = Set(docType.fields.filter { $0.allowOnSubmit }.map { $0.key })
 
-        for (key, newValue) in document.fields {
+        // Check all keys from both old and new to detect additions, changes, and removals.
+        let allKeys = Set(document.fields.keys).union(existing.fields.keys)
+        for key in allKeys {
             let oldValue = existing.fields[key]
+            let newValue = document.fields[key]
             if oldValue != newValue && !allowedKeys.contains(key) {
                 throw DocumentEngineError.fieldImmutableAfterSubmit(
                     fieldKey: key, documentId: document.id
@@ -430,21 +458,30 @@ public final class DocumentEngine {
     /// ADR-013: Find submitted documents that link to the given document ID.
     ///
     /// Checks all registered DocTypes for Link fields, then queries only those DocTypes
-    /// for submitted documents whose payload contains the target ID. This is more targeted
-    /// than a full table scan but still uses a JSON payload search; a dedicated link reference
-    /// table would be more efficient for large datasets.
+    /// for submitted documents whose link field values match the target ID using
+    /// JSON extraction for precision.
     private func findLinkedSubmittedDocuments(documentId: String) throws -> [String] {
-        // Gather DocType IDs that have Link fields (potential linkers).
+        // Gather DocTypes that have Link fields (potential linkers).
         let allDocTypes = registry.all()
-        let linkingDocTypeIds = allDocTypes
+        let linkingDocTypes = allDocTypes
             .filter { dt in dt.fields.contains(where: { $0.type == .link }) }
-            .map { $0.id }
 
-        guard !linkingDocTypeIds.isEmpty else { return [] }
+        guard !linkingDocTypes.isEmpty else { return [] }
 
-        // Query each linking DocType for submitted documents whose payload references documentId.
+        // Query each linking DocType for submitted documents whose link field values
+        // match the target documentId using JSON extraction for precision.
         var blockingIds: [String] = []
-        for docTypeId in linkingDocTypeIds {
+        for dt in linkingDocTypes {
+            let linkFieldKeys = dt.fields.filter { $0.type == .link }.map { $0.key }
+            // Build a condition that checks each link field with json_extract.
+            let conditions = linkFieldKeys.map { key in
+                "json_extract(payload, '$.\(key)') = ?"
+            }.joined(separator: " OR ")
+
+            var arguments: [any DatabaseValueConvertible] = [dt.id]
+            arguments.append(contentsOf: linkFieldKeys.map { _ in documentId as any DatabaseValueConvertible })
+            arguments.append(documentId)
+
             let rows = try database.read { db in
                 try Row.fetchAll(
                     db,
@@ -452,10 +489,10 @@ public final class DocumentEngine {
                         SELECT id FROM documents
                         WHERE docStatus = 1
                           AND doctype = ?
-                          AND payload LIKE ?
+                          AND (\(conditions))
                           AND id != ?
                         """,
-                    arguments: [docTypeId, "%\(documentId)%", documentId]
+                    arguments: StatementArguments(arguments)
                 )
             }
             blockingIds.append(contentsOf: rows.compactMap { $0["id"] as String? })
@@ -506,6 +543,39 @@ public final class DocumentEngine {
     private func parseDate(_ string: String?) -> Date? {
         guard let string = string else { return nil }
         return ISO8601DateFormatter().date(from: string)
+    }
+
+    /// Load child rows for a given parent document from the database.
+    private func fetchChildren(parentId: String) throws -> [String: [ChildRow]] {
+        let childRows = try database.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, tableName, rowIndex, payload
+                    FROM document_children
+                    WHERE parentId = ?
+                    ORDER BY rowIndex ASC
+                    """,
+                arguments: [parentId]
+            )
+        }
+        var children: [String: [ChildRow]] = [:]
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        for row in childRows {
+            let childId: String = row["id"] ?? ""
+            let tableName: String = row["tableName"] ?? ""
+            let rowIndex: Int = row["rowIndex"] ?? 0
+            let childPayloadString: String = row["payload"] ?? "{}"
+            var fields: [String: FieldValue] = [:]
+            if let payloadData = childPayloadString.data(using: .utf8) {
+                fields = (try? decoder.decode([String: FieldValue].self, from: payloadData)) ?? [:]
+            }
+            children[tableName, default: []].append(
+                ChildRow(id: childId, rowIndex: rowIndex, fields: fields)
+            )
+        }
+        return children
     }
 
     // MARK: - Errors

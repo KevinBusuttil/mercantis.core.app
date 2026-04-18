@@ -105,7 +105,7 @@ public struct NavigationShell: View {
             Text("Inbox")
                 .navigationTitle("Inbox")
         case .search:
-            CommandBarView(isPresented: .constant(true))
+            CommandBarView(isPresented: $showCommandBar)
         case .modules:
             Text("Modules")
                 .navigationTitle("Modules")

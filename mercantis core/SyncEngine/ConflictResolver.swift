@@ -31,7 +31,12 @@ public struct ConflictResolver {
     ) -> Resolution {
         switch syncPolicy.conflictResolution {
         case .lastWriteWins:
-            return .accepted
+            // Accept only if the remote version is at least as new as local.
+            if remoteMutation.syncVersion >= localSyncVersion {
+                return .accepted
+            } else {
+                return .conflicted(localVersion: localSyncVersion, remoteVersion: remoteMutation.syncVersion)
+            }
         case .versionChecked:
             if remoteMutation.syncVersion == localSyncVersion {
                 return .accepted
