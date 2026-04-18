@@ -496,7 +496,7 @@ The Realtime Updates subsystem keeps the UI consistent with the underlying docum
 
 The UI Shell provides a generic, metadata-driven SwiftUI interface:
 
-- **`NavigationShell`** — Top-level navigation: `NavigationSplitView` on macOS/iPad, tab bar on iPhone. Sections: Home, Inbox, Search, Modules, Reports, Settings.
+- **`NavigationShell`** — Top-level navigation: `NavigationSplitView` on macOS/iPad, tab bar on iPhone. Sections: Home, Inbox, Search, Modules, Reports, Settings, Setup. Setup uses shared shell routing so Setup screen actions and app `CommandMenu` actions open workspaces in the main content area.
 - **`GenericFormView`** — Dynamically renders a form from a `DocType` and a `Document`: text fields, toggles, date pickers, select dropdowns, child tables, etc.
 - **`GenericListView`** — Sortable, filterable list/table of documents driven by `DocType` metadata.
 - **`CommandBarView`** — Spotlight-like search overlay for navigating across DocTypes and documents.
