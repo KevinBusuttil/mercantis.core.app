@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 final class UIShellRouter: ObservableObject {
     @Published var selectedSection: NavigationSection? = .home
