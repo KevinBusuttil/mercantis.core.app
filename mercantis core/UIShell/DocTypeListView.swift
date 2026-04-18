@@ -27,6 +27,7 @@ public struct DocTypeListView: View {
                         Button("Edit") {
                             selectedDocType = docType
                         }
+                        .buttonStyle(MercantisSecondaryButtonStyle())
                     } else {
                         Text("Built-in")
                             .font(.caption)
@@ -42,9 +43,11 @@ public struct DocTypeListView: View {
                 Button("New DocType") {
                     showingNewDocType = true
                 }
+                .buttonStyle(MercantisPrimaryButtonStyle())
                 Button("Visual Builder") {
                     showingFormBuilder = true
                 }
+                .buttonStyle(MercantisSecondaryButtonStyle())
             }
         }
         .onAppear {

@@ -34,9 +34,13 @@ public struct CommandBarView: View {
             Divider()
             resultList
         }
-        .background(.regularMaterial)
+        .background(MercantisTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         .frame(maxWidth: 600)
         .onDisappear { query = "" }
     }
@@ -66,7 +70,7 @@ public struct CommandBarView: View {
             Button("Cancel") {
                 isPresented = false
             }
-            .foregroundStyle(.blue)
+            .buttonStyle(MercantisSecondaryButtonStyle())
         }
         .padding()
     }
@@ -112,7 +116,7 @@ public struct CommandBarView: View {
             HStack(spacing: 12) {
                 Image(systemName: result.icon)
                     .frame(width: 20)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(MercantisTheme.primary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(result.title)

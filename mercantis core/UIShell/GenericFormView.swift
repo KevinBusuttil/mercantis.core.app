@@ -36,6 +36,8 @@ public struct GenericFormView: View {
                 fieldRow(for: field)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(MercantisTheme.background)
         .navigationTitle(docType.name)
     }
 
@@ -94,6 +96,7 @@ public struct GenericFormView: View {
                 Text(binding.wrappedValue).foregroundStyle(.secondary)
             } else {
                 TextField(field.label, text: binding)
+                    .mercantisInput()
             }
         }
     }
@@ -105,6 +108,7 @@ public struct GenericFormView: View {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
                 TextField(field.label, text: strBinding)
+                    .mercantisInput()
 #if os(iOS)
                     .keyboardType(.decimalPad)
 #endif
@@ -143,6 +147,7 @@ public struct GenericFormView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+                .mercantisInput()
             }
         }
     }
@@ -155,6 +160,7 @@ public struct GenericFormView: View {
             } else {
                 HStack {
                     TextField(field.linkedDocType ?? "Link", text: strBinding)
+                        .mercantisInput()
                     Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
                 }
             }
