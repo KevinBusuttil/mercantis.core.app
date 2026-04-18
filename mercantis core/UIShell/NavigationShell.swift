@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-@MainActor
 final class UIShellRouter: ObservableObject {
     @Published var selectedSection: NavigationSection? = .home
     @Published var setupDestination: SetupDestination = .overview
