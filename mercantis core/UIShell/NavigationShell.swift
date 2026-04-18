@@ -284,10 +284,7 @@ public struct NavigationShell: View {
     private var setupSidebarSection: some View {
         Group {
             Button {
-                isSetupExpanded.toggle()
-                if router.selectedSection != .setup {
-                    router.showSetupOverview()
-                }
+                toggleSetupSection()
             } label: {
                 HStack {
                     Label(NavigationSection.setup.title, systemImage: NavigationSection.setup.icon)
@@ -798,12 +795,12 @@ public struct NavigationShell: View {
         } label: {
             HStack(spacing: 10) {
                 Spacer()
-                    .frame(width: setupSubItemIndentationWidth)
+                    .frame(width: SidebarLayout.setupSubItemIndentationWidth)
                 Image(systemName: icon)
-                    .frame(width: setupSubItemIconWidth)
+                    .frame(width: SidebarLayout.setupSubItemIconWidth)
                 Text(title)
             }
-            .padding(.leading, setupSubItemLeadingPadding)
+            .padding(.leading, SidebarLayout.setupSubItemLeadingPadding)
         }
         .buttonStyle(.plain)
         .listRowBackground(sidebarRowBackground(isActive: isActive))
@@ -820,9 +817,15 @@ public struct NavigationShell: View {
         }
     }
 
-    private var setupSubItemIndentationWidth: CGFloat { 18 }
-    private var setupSubItemIconWidth: CGFloat { 16 }
-    private var setupSubItemLeadingPadding: CGFloat { 14 }
+    private func toggleSetupSection() {
+        if router.selectedSection == .setup {
+            isSetupExpanded.toggle()
+            router.selectedItem = .setup
+        } else {
+            isSetupExpanded = true
+            router.showSetupOverview()
+        }
+    }
 
     private var moduleNames: [String] {
         Array(Set(tooling.docTypes.map(\.module))).sorted()
@@ -1001,4 +1004,10 @@ private enum RecentDestination: Hashable, Identifiable {
 
 extension Notification.Name {
     static let mercantisOpenCommandBar = Notification.Name("mercantis.openCommandBar")
+}
+
+private enum SidebarLayout {
+    static let setupSubItemIndentationWidth: CGFloat = 18
+    static let setupSubItemIconWidth: CGFloat = 16
+    static let setupSubItemLeadingPadding: CGFloat = 14
 }
