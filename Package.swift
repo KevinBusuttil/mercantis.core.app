@@ -29,9 +29,6 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "MercantisCLI/Sources",
-            swiftSettings: [
-                .unsafeFlags(["-parse-as-library"])
-            ],
             linkerSettings: [
                 .linkedLibrary("sqlite3")
             ]

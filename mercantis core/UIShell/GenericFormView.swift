@@ -99,7 +99,7 @@ public struct GenericFormView: View {
     }
 
     private func numberField(field: FieldDefinition, isReadOnly: Bool) -> some View {
-        let strBinding = stringBinding(for: field)
+        let strBinding = numberBinding(for: field)
         return LabeledContent(field.label) {
             if isReadOnly {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
@@ -229,6 +229,30 @@ public struct GenericFormView: View {
             set: { newValue in
                 let str = ISO8601DateFormatter().string(from: newValue)
                 document.fields[field.key] = .string(str)
+            }
+        )
+    }
+
+    /// Binding for number/decimal/currency fields that persists as proper numeric types.
+    private func numberBinding(for field: FieldDefinition) -> Binding<String> {
+        Binding<String>(
+            get: {
+                switch document.fields[field.key] {
+                case .int(let i): return "\(i)"
+                case .double(let d): return "\(d)"
+                case .string(let s): return s
+                default: return ""
+                }
+            },
+            set: { newValue in
+                if field.type == .number, let intVal = Int(newValue) {
+                    document.fields[field.key] = .int(intVal)
+                } else if let doubleVal = Double(newValue) {
+                    document.fields[field.key] = .double(doubleVal)
+                } else {
+                    // Keep as string while user is still typing (e.g. partial input like "1.")
+                    document.fields[field.key] = .string(newValue)
+                }
             }
         )
     }

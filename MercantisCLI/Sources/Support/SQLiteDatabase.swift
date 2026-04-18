@@ -66,7 +66,8 @@ final class SQLiteDatabase {
         try bind(parameters, to: statement)
 
         var rows: [[String: String]] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = sqlite3_step(statement)
+        while stepResult == SQLITE_ROW {
             var row: [String: String] = [:]
             let columnCount = sqlite3_column_count(statement)
 
@@ -81,6 +82,11 @@ final class SQLiteDatabase {
                 }
             }
             rows.append(row)
+            stepResult = sqlite3_step(statement)
+        }
+
+        guard stepResult == SQLITE_DONE else {
+            throw SQLiteDatabaseError.stepFailed(String(cString: sqlite3_errmsg(db)))
         }
 
         return rows

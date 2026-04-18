@@ -23,6 +23,7 @@ public final class SyncEngine {
     /// The last known server sequence we have received. Persisted in-memory for
     /// simplicity; a production version would store this in SQLite.
     private var lastServerSequence: Int64 = 0
+    private let sequenceLock = NSLock()
 
     public init(
         database: MercantisDatabase,
@@ -108,8 +109,13 @@ public final class SyncEngine {
 
     /// Pull and apply remote mutations from the cloud adapter.
     public func pullAndApplyRemoteMutations() async throws {
+        let currentSequence: Int64
+        sequenceLock.lock()
+        currentSequence = lastServerSequence
+        sequenceLock.unlock()
+
         let remoteMutations = try await cloudAdapter.pullMutations(
-            since: SyncVersion(serverSequence: lastServerSequence)
+            since: SyncVersion(serverSequence: currentSequence)
         )
         guard !remoteMutations.isEmpty else { return }
 
@@ -117,7 +123,11 @@ public final class SyncEngine {
 
         // Update our bookmark.
         if let maxSeq = remoteMutations.map({ $0.serverSequence }).max() {
-            lastServerSequence = maxSeq
+            sequenceLock.lock()
+            if maxSeq > lastServerSequence {
+                lastServerSequence = maxSeq
+            }
+            sequenceLock.unlock()
         }
     }
 
@@ -206,10 +216,10 @@ public final class SyncEngine {
     // MARK: - Private Helpers
 
     private func applyRemoteUpsert(_ mutation: MutationRecord) throws {
-        // Decode the payload to determine the document's DocType.
-        guard let payloadDict = try? JSONDecoder().decode([String: String].self, from: mutation.payload),
-              let docTypeName = payloadDict["docType"],
-              let documentId = payloadDict["id"] else {
+        // Decode the payload to determine the document's DocType and fields.
+        guard let payloadDict = try? JSONSerialization.jsonObject(with: mutation.payload) as? [String: Any],
+              let docTypeName = payloadDict["docType"] as? String,
+              let documentId = payloadDict["id"] as? String else {
             try storeMutationAsApplied(mutation)
             return
         }
@@ -231,11 +241,48 @@ public final class SyncEngine {
 
         switch resolution {
         case .accepted:
-            // Apply the remote mutation: update the document row and mark synced.
+            // Apply the remote mutation: update all document columns and mark synced.
+            let company = payloadDict["company"] as? String ?? ""
+            let status = payloadDict["status"] as? String ?? ""
+            let updatedAt = payloadDict["updatedAt"] as? String ?? ISO8601DateFormatter().string(from: Date())
+            let docStatus = payloadDict["docStatus"] as? Int ?? 0
+            let amendedFrom = payloadDict["amendedFrom"] as? String
+            let payloadJSON: String
+            if let fieldsObj = payloadDict["fields"] {
+                payloadJSON = (try? String(data: JSONSerialization.data(withJSONObject: fieldsObj), encoding: .utf8)) ?? "{}"
+            } else {
+                payloadJSON = "{}"
+            }
+
             try database.write { db in
                 try db.execute(
-                    sql: "UPDATE documents SET syncVersion = ?, syncState = ? WHERE id = ?",
-                    arguments: [mutation.syncVersion, SyncState.synced.rawValue, documentId]
+                    sql: """
+                        INSERT INTO documents
+                            (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            company     = excluded.company,
+                            status      = excluded.status,
+                            updatedAt   = excluded.updatedAt,
+                            syncVersion = excluded.syncVersion,
+                            syncState   = excluded.syncState,
+                            docStatus   = excluded.docStatus,
+                            amendedFrom = excluded.amendedFrom,
+                            payload     = excluded.payload
+                        """,
+                    arguments: [
+                        documentId,
+                        docTypeName,
+                        company,
+                        status,
+                        updatedAt,
+                        updatedAt,
+                        mutation.syncVersion,
+                        SyncState.synced.rawValue,
+                        docStatus,
+                        amendedFrom,
+                        payloadJSON
+                    ]
                 )
             }
             try storeMutationAsApplied(mutation)

@@ -33,14 +33,12 @@ public struct ReportResult: Sendable {
 /// by user roles at runtime. (ADR-004)
 public final class ReportEngine {
 
-    private let database: MercantisDatabase
     private let documentEngine: DocumentEngine
 
     /// All available report definitions, keyed by report id.
     private var reportDefinitions: [String: ReportDefinition] = [:]
 
-    public init(database: MercantisDatabase, documentEngine: DocumentEngine) {
-        self.database = database
+    public init(documentEngine: DocumentEngine) {
         self.documentEngine = documentEngine
     }
 

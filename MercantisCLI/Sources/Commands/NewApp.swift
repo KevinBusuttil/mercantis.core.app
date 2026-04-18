@@ -70,7 +70,7 @@ struct NewApp: ParsableCommand {
         let manifestData = try encoder.encode(manifest)
         try manifestData.write(to: manifestURL)
 
-        let patchesIndexURL = rootURL.appendingPathComponent("patches.json")
+        let patchesIndexURL = rootURL.appendingPathComponent("patches").appendingPathComponent("patches.json")
         let emptyPatches = try JSONEncoder().encode(PatchesIndex(patches: []))
         try emptyPatches.write(to: patchesIndexURL)
 

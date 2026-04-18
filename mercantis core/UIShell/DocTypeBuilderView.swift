@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @MainActor
 final class DocTypeToolingContext: ObservableObject {
@@ -319,9 +320,11 @@ public struct DocTypeBuilderView: View {
         }
         .navigationTitle(existingDocType == nil ? "New DocType" : "Edit DocType")
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .automatic) {
                 EditButton()
             }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button("Save", action: save)
             }

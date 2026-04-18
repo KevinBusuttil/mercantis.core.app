@@ -19,23 +19,53 @@ public final class EventBus: @unchecked Sendable {
         public let payload: [String: String]
     }
 
-    private var handlers: [String: [Handler]] = [:]
+    /// Token returned by `subscribe` to allow unsubscribing.
+    public final class SubscriptionToken: Sendable {
+        nonisolated(unsafe) var isActive = true
+        let id: UUID
+        init() { self.id = UUID() }
+    }
+
+    private struct Entry {
+        let id: UUID
+        let handler: Handler
+        weak var token: SubscriptionToken?
+    }
+
+    private var handlers: [String: [Entry]] = [:]
     private let lock = NSLock()
 
     public init() {}
 
-    public func subscribe(to eventName: String, handler: @escaping Handler) {
+    /// Subscribe to an event. Keep the returned token alive; when it is
+    /// deallocated or you call `unsubscribe`, the handler is removed.
+    @discardableResult
+    public func subscribe(to eventName: String, handler: @escaping Handler) -> SubscriptionToken {
+        let token = SubscriptionToken()
         lock.lock()
         defer { lock.unlock() }
-        handlers[eventName, default: []].append(handler)
+        handlers[eventName, default: []].append(Entry(id: token.id, handler: handler, token: token))
+        return token
+    }
+
+    /// Remove a subscription by its token.
+    public func unsubscribe(_ token: SubscriptionToken) {
+        token.isActive = false
+        lock.lock()
+        defer { lock.unlock() }
+        for key in handlers.keys {
+            handlers[key]?.removeAll(where: { $0.id == token.id })
+        }
     }
 
     public func publish(_ event: Event) {
         lock.lock()
+        // Prune entries whose token has been released.
+        handlers[event.name]?.removeAll(where: { $0.token == nil || !($0.token?.isActive ?? false) })
         let eventHandlers = handlers[event.name] ?? []
         lock.unlock()
-        for handler in eventHandlers {
-            handler(event)
+        for entry in eventHandlers {
+            entry.handler(event)
         }
     }
 }
