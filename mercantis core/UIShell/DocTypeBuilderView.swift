@@ -101,7 +101,7 @@ struct EditableField: Identifiable, Hashable {
         self.visibilityExpression = visibilityExpression
     }
 
-    init(_ field: FieldDefinition) {
+    nonisolated init(_ field: FieldDefinition) {
         self.init(
             key: field.key,
             label: field.label,
@@ -161,7 +161,7 @@ struct EditablePermission: Identifiable, Hashable {
         self.canAmend = canAmend
     }
 
-    init(_ permission: PermissionRule) {
+    nonisolated init(_ permission: PermissionRule) {
         self.init(
             role: permission.role,
             canRead: permission.canRead,
@@ -196,7 +196,7 @@ struct EditableIndex: Identifiable, Hashable {
         self.unique = unique
     }
 
-    init(_ index: IndexDefinition) {
+    nonisolated init(_ index: IndexDefinition) {
         self.init(fieldKey: index.fieldKey, unique: index.unique)
     }
 
