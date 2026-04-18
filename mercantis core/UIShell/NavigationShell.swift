@@ -41,6 +41,7 @@ enum SetupDestination: Hashable {
 public struct NavigationShell: View {
 
     @EnvironmentObject private var router: UIShellRouter
+    @EnvironmentObject private var tooling: DocTypeToolingContext
     @State private var showCommandBar = false
 
     public init() {}
@@ -156,28 +157,26 @@ public struct NavigationShell: View {
             DocTypeListView()
                 .navigationTitle("Setup")
         case .newDocType:
-            DocTypeBuilderView {
-                router.showSetupOverview()
-            }
+            DocTypeBuilderView(onSave: handleSetupWorkspaceSaved)
             .navigationTitle("New DocType")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Back to Setup") {
-                        router.showSetupOverview()
-                    }
-                }
-            }
+            .toolbar { setupBackToOverviewToolbar }
         case .visualBuilder:
-            FormBuilderView {
-                router.showSetupOverview()
-            }
+            FormBuilderView(onSave: handleSetupWorkspaceSaved)
             .navigationTitle("Visual Builder")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Back to Setup") {
-                        router.showSetupOverview()
-                    }
-                }
+            .toolbar { setupBackToOverviewToolbar }
+        }
+    }
+
+    private func handleSetupWorkspaceSaved() {
+        tooling.reload()
+        router.showSetupOverview()
+    }
+
+    @ToolbarContentBuilder
+    private var setupBackToOverviewToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Back to Setup") {
+                router.showSetupOverview()
             }
         }
     }
