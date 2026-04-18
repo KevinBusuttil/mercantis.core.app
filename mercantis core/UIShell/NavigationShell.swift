@@ -285,10 +285,10 @@ public struct NavigationShell: View {
         Group {
             Button {
                 isSetupExpanded.toggle()
-                if router.selectedSection == .setup {
-                    router.selectedItem = .setup
-                } else {
+                if router.selectedSection != .setup {
                     router.showSetupOverview()
+                } else {
+                    router.selectedItem = .setup
                 }
             } label: {
                 HStack {
@@ -795,7 +795,6 @@ public struct NavigationShell: View {
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            isSetupExpanded = true
             action()
         } label: {
             HStack(spacing: 10) {
