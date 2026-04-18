@@ -71,7 +71,6 @@ private struct MercantisInputModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
-            .accessibilityElement(children: .contain)
     }
 }
 
@@ -89,7 +88,6 @@ private struct MercantisPickerModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
-            .accessibilityElement(children: .contain)
     }
 }
 

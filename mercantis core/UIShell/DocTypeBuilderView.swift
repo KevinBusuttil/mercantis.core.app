@@ -432,7 +432,8 @@ public struct DocTypeBuilderView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(MercantisTheme.textPrimary)
                 } else {
-                    Color.clear
+                    Spacer()
+                        .accessibilityHidden(true)
                 }
             }
             .frame(width: formLabelWidth, alignment: .leading)
