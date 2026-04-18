@@ -59,6 +59,10 @@ public struct DocTypeListView: View {
                     tooling.reload()
                 }
             }
+            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
+            #if os(macOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
             .environmentObject(tooling)
         }
         .sheet(isPresented: $showingNewDocType) {
@@ -67,6 +71,10 @@ public struct DocTypeListView: View {
                     tooling.reload()
                 }
             }
+            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
+            #if os(macOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
             .environmentObject(tooling)
         }
         .sheet(isPresented: $showingFormBuilder) {
@@ -75,6 +83,10 @@ public struct DocTypeListView: View {
                     tooling.reload()
                 }
             }
+            .frame(minWidth: 960, idealWidth: 1200, minHeight: 640, idealHeight: 820)
+            #if os(macOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
             .environmentObject(tooling)
         }
     }
