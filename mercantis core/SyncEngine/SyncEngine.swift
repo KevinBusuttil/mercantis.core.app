@@ -244,6 +244,7 @@ public final class SyncEngine {
             // Apply the remote mutation: update all document columns and mark synced.
             let company = payloadDict["company"] as? String ?? ""
             let status = payloadDict["status"] as? String ?? ""
+            let createdAt = payloadDict["createdAt"] as? String ?? ISO8601DateFormatter().string(from: mutation.localTimestamp)
             let updatedAt = payloadDict["updatedAt"] as? String ?? ISO8601DateFormatter().string(from: Date())
             let docStatus = payloadDict["docStatus"] as? Int ?? 0
             let amendedFrom = payloadDict["amendedFrom"] as? String
@@ -275,7 +276,7 @@ public final class SyncEngine {
                         docTypeName,
                         company,
                         status,
-                        updatedAt,
+                        createdAt,
                         updatedAt,
                         mutation.syncVersion,
                         SyncState.synced.rawValue,
