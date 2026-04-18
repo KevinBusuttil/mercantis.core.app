@@ -792,13 +792,11 @@ public struct NavigationShell: View {
             action()
         } label: {
             HStack(spacing: 10) {
-                Spacer()
-                    .frame(width: SidebarLayout.setupSubItemIndentationWidth)
                 Image(systemName: icon)
                     .frame(width: SidebarLayout.setupSubItemIconWidth)
                 Text(title)
             }
-            .padding(.leading, SidebarLayout.setupSubItemLeadingPadding)
+            .padding(.leading, SidebarLayout.setupSubItemIndentationWidth)
         }
         .buttonStyle(.plain)
         .listRowBackground(sidebarRowBackground(isActive: isActive))
@@ -818,7 +816,7 @@ public struct NavigationShell: View {
     private func toggleSetupSection() {
         if router.selectedSection == .setup {
             isSetupExpanded.toggle()
-            router.selectedItem = WorkspaceSelection.setup
+            router.selectedItem = .setup
         } else {
             isSetupExpanded = true
             router.showSetupOverview()
@@ -1007,5 +1005,4 @@ extension Notification.Name {
 private enum SidebarLayout {
     static let setupSubItemIndentationWidth: CGFloat = 18
     static let setupSubItemIconWidth: CGFloat = 16
-    static let setupSubItemLeadingPadding: CGFloat = 14
 }
