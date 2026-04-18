@@ -79,6 +79,7 @@ public struct NavigationShell: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
 
     @State private var showCommandBar = false
+    @State private var isSetupExpanded = false
     @State private var activeDocument: Document?
     @State private var recents: [RecentDestination] = []
 
@@ -114,8 +115,6 @@ public struct NavigationShell: View {
     private var splitShell: some View {
         NavigationSplitView {
             sidebar
-        } content: {
-            contextColumn
         } detail: {
             detailColumn
         }
@@ -134,9 +133,20 @@ public struct NavigationShell: View {
     }
 
     private var sidebar: some View {
-        List(splitSections, selection: $router.selectedSection) { section in
-            Label(section.title, systemImage: section.icon)
-                .tag(section as NavigationSection?)
+        List {
+            ForEach(splitSections, id: \.self) { section in
+                if section == .setup {
+                    setupSidebarSection
+                } else {
+                    Button {
+                        selectSection(section)
+                    } label: {
+                        Label(section.title, systemImage: section.icon)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == section))
+                }
+            }
         }
         .navigationTitle("Mercantis")
         .toolbar {
@@ -146,28 +156,6 @@ public struct NavigationShell: View {
                 }
                 .keyboardShortcut("k", modifiers: .command)
             }
-        }
-    }
-
-    @ViewBuilder
-    private var contextColumn: some View {
-        switch router.selectedSection {
-        case .home, .modules:
-            moduleBrowser
-        case .reports:
-            reportBrowser
-        case .dashboards:
-            dashboardBrowser
-        case .recents:
-            recentsBrowser
-        case .setup:
-            setupNavigation
-        case .settings:
-            settingsContext
-        case .inbox:
-            inboxContext
-        default:
-            moduleBrowser
         }
     }
 
@@ -183,7 +171,24 @@ public struct NavigationShell: View {
         case .setup:
             setupDetailView
         case nil:
-            homeDetail
+            switch router.selectedSection {
+            case .home, .modules:
+                homeDetail
+            case .reports:
+                reportBrowser
+            case .dashboards:
+                dashboardBrowser
+            case .recents:
+                recentsBrowser
+            case .settings:
+                settingsContext
+            case .inbox:
+                inboxContext
+            case .setup:
+                setupDetailView
+            default:
+                homeDetail
+            }
         }
     }
 
@@ -276,19 +281,48 @@ public struct NavigationShell: View {
         .navigationTitle("Recents")
     }
 
-    private var setupNavigation: some View {
-        List {
-            Button("Setup Home") {
-                router.showSetupOverview()
+    private var setupSidebarSection: some View {
+        Group {
+            Button {
+                isSetupExpanded.toggle()
+                if router.selectedSection == .setup {
+                    router.selectedItem = .setup
+                } else {
+                    router.showSetupOverview()
+                }
+            } label: {
+                HStack {
+                    Label(NavigationSection.setup.title, systemImage: NavigationSection.setup.icon)
+                    Spacer()
+                    Image(systemName: isSetupExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Button("New DocType") {
-                router.openNewDocType()
-            }
-            Button("Visual Builder") {
-                router.openVisualBuilder()
+            .buttonStyle(.plain)
+            .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == .setup))
+
+            if isSetupExpanded {
+                setupSidebarSubItem(
+                    title: "Setup Home",
+                    icon: "house",
+                    isActive: router.setupDestination == .overview,
+                    action: router.showSetupOverview
+                )
+                setupSidebarSubItem(
+                    title: "New DocType",
+                    icon: "hammer",
+                    isActive: router.setupDestination == .newDocType,
+                    action: router.openNewDocType
+                )
+                setupSidebarSubItem(
+                    title: "Visual Builder",
+                    icon: "wand.and.stars",
+                    isActive: router.setupDestination == .visualBuilder,
+                    action: router.openVisualBuilder
+                )
             }
         }
-        .navigationTitle("Setup")
     }
 
     private var settingsContext: some View {
@@ -742,6 +776,50 @@ public struct NavigationShell: View {
 
     private var splitSections: [NavigationSection] {
         [.home, .inbox, .reports, .dashboards, .recents, .setup, .settings]
+    }
+
+    private func selectSection(_ section: NavigationSection) {
+        router.selectedSection = section
+        if section == .setup {
+            isSetupExpanded = true
+            router.showSetupOverview()
+        } else {
+            router.selectedItem = nil
+        }
+    }
+
+    private func setupSidebarSubItem(
+        title: String,
+        icon: String,
+        isActive: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            isSetupExpanded = true
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Spacer()
+                    .frame(width: 18)
+                Image(systemName: icon)
+                    .frame(width: 16)
+                Text(title)
+            }
+            .padding(.leading, 14)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(sidebarRowBackground(isActive: isActive))
+    }
+
+    private func sidebarRowBackground(isActive: Bool) -> some View {
+        Group {
+            if isActive {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(0.14))
+            } else {
+                Color.clear
+            }
+        }
     }
 
     private var moduleNames: [String] {
