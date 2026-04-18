@@ -49,6 +49,7 @@ public struct CommandBarView: View {
         "dashboard": "dashboard",
         "setup": "setup"
     ]
+    private static let maxPrefixTokens = 1
 
     @Binding var isPresented: Bool
     let actions: [CommandBarAction]
@@ -103,7 +104,7 @@ public struct CommandBarView: View {
         }
 
         let lower = trimmedQuery.lowercased()
-        let tokens = lower.split(maxSplits: 1, whereSeparator: \.isWhitespace)
+        let tokens = lower.split(maxSplits: Self.maxPrefixTokens, whereSeparator: \.isWhitespace)
         if let head = tokens.first.map(String.init),
            let badge = Self.prefixMap[head] {
             let rest = tokens.count > 1

@@ -98,7 +98,7 @@ public struct NavigationShell: View {
             if router.selectedModule == nil {
                 router.selectedModule = moduleNames.first
             }
-            initializeExpandedModulesIfNeeded()
+            ensureInitialModuleExpanded()
         }
         .onChange(of: router.selectedItem) { _, _ in
             expandSelectedModuleIfNeeded()
@@ -248,9 +248,7 @@ public struct NavigationShell: View {
                 .keyboardShortcut("k", modifiers: .command)
             }
             ToolbarItem(placement: .automatic) {
-                Button(action: { showCommandBar = true }) {
-                    EmptyView()
-                }
+                Button("Open Command Bar") { showCommandBar = true }
                 .keyboardShortcut("g", modifiers: .command)
                 .opacity(0)
                 .frame(width: 0, height: 0)
@@ -872,11 +870,11 @@ public struct NavigationShell: View {
     }
 
     private var topSplitSections: [NavigationSection] {
-        Array(splitSections.prefix(3))
+        splitSections.filter { [.home, .inbox, .recents].contains($0) }
     }
 
     private var bottomSplitSections: [NavigationSection] {
-        Array(splitSections.suffix(2))
+        splitSections.filter { [.setup, .settings].contains($0) }
     }
 
     private func selectSection(_ section: NavigationSection) {
@@ -931,7 +929,7 @@ public struct NavigationShell: View {
         }
     }
 
-    private func initializeExpandedModulesIfNeeded() {
+    private func ensureInitialModuleExpanded() {
         guard expandedModules.isEmpty else { return }
         guard let selectedModule = selectedModuleForCurrentContext() else { return }
         expandedModules = [selectedModule]
