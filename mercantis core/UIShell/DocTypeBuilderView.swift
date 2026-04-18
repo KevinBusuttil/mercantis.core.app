@@ -311,7 +311,7 @@ public struct DocTypeBuilderView: View {
                                     .mercantisInput()
                             }
                             Button("Remove Field", role: .destructive) {
-                                removeField(with: field.wrappedValue.id)
+                                removeField(with: field.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
@@ -339,7 +339,7 @@ public struct DocTypeBuilderView: View {
                             checkboxRow("Submit", isOn: $permission.canSubmit)
                             checkboxRow("Amend", isOn: $permission.canAmend)
                             Button("Remove Permission", role: .destructive) {
-                                removePermission(with: permission.wrappedValue.id)
+                                removePermission(with: permission.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
@@ -378,7 +378,7 @@ public struct DocTypeBuilderView: View {
                             }
                             checkboxRow("Unique", isOn: $index.unique)
                             Button("Remove Index", role: .destructive) {
-                                removeIndex(with: index.wrappedValue.id)
+                                removeIndex(with: index.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
