@@ -123,7 +123,7 @@ public struct FormBuilderView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(sections[sectionIndex].columns[columnIndex]) { field in
                 let isSelected = field.id == selectedFieldID
-                Text(field.label.isEmpty ? (field.key.isEmpty ? "Untitled Field" : field.key) : field.label)
+                Text(displayName(for: field))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(isSelected ? .blue.opacity(0.2) : .secondary.opacity(0.12))
@@ -214,6 +214,16 @@ public struct FormBuilderView: View {
         sections.flatMap { $0.columns.flatMap { $0 } }
     }
 
+    private func displayName(for field: EditableField) -> String {
+        if !field.label.isEmpty {
+            return field.label
+        }
+        if !field.key.isEmpty {
+            return field.key
+        }
+        return "Untitled Field"
+    }
+
     private var previewDocType: DocType {
         let fields = allFields.map(\.fieldDefinition)
         return DocType(
@@ -254,8 +264,7 @@ public struct FormBuilderView: View {
 
     private func save() {
         validationError = nil
-        var docType = previewDocType
-        docType.isCustom = true
+        let docType = previewDocType
 
         do {
             try tooling.save(docType: docType)

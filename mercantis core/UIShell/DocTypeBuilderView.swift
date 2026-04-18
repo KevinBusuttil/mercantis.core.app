@@ -13,14 +13,14 @@ final class DocTypeToolingContext: ObservableObject {
         do {
             database = try MercantisDatabase(databaseURL: dbURL)
         } catch {
-            fatalError("Failed to initialize metadata database: \(error)")
+            fatalError("Failed to initialize metadata database at \(dbURL.path). Verify the app has write access to Application Support. Error: \(error)")
         }
 
         registry = MetadataRegistry(database: database)
         do {
             try BuiltInDocTypes.registerAll(in: registry, validator: validator)
         } catch {
-            // Keep running even if registration was already persisted.
+            print("Warning: Failed to register built-in DocTypes. Existing persisted metadata may still be used. Error: \(error)")
         }
         reload()
     }
@@ -351,9 +351,11 @@ public struct DocTypeBuilderView: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        let sanitizedId = docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isBuiltIn = BuiltInDocTypes.all.contains(where: { $0.id == sanitizedId })
 
-        var docType = DocType(
-            id: docTypeId.trimmingCharacters(in: .whitespacesAndNewlines),
+        let docType = DocType(
+            id: sanitizedId,
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             module: module.trimmingCharacters(in: .whitespacesAndNewlines),
             appId: existingDocType?.appId ?? "custom.local",
@@ -370,14 +372,8 @@ public struct DocTypeBuilderView: View {
                 .filter { !$0.fieldKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty },
             searchFields: searchFieldList,
             titleField: titleField.trimmingCharacters(in: .whitespacesAndNewlines),
-            isCustom: existingDocType?.isCustom ?? true
+            isCustom: !isBuiltIn
         )
-
-        if BuiltInDocTypes.all.contains(where: { $0.id == docType.id }) {
-            docType.isCustom = false
-        } else {
-            docType.isCustom = true
-        }
 
         do {
             try tooling.save(docType: docType)

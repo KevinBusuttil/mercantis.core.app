@@ -89,6 +89,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         indexes = try container.decode([IndexDefinition].self, forKey: .indexes)
         searchFields = try container.decode([String].self, forKey: .searchFields)
         titleField = try container.decode(String.self, forKey: .titleField)
+        // Older payloads don't include `isCustom`; treat them as system/non-custom by default.
         isCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
     }
 }
