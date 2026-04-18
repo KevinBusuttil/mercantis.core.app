@@ -168,9 +168,7 @@ public struct NavigationShell: View {
             reportDetail(reportId: id)
         case .dashboard(let id):
             dashboardDetail(dashboardId: id)
-        case .setup:
-            setupDetailView
-        case nil:
+        default:
             switch router.selectedSection {
             case .home, .modules:
                 homeDetail
@@ -820,7 +818,7 @@ public struct NavigationShell: View {
     private func toggleSetupSection() {
         if router.selectedSection == .setup {
             isSetupExpanded.toggle()
-            router.selectedItem = .setup
+            router.selectedItem = WorkspaceSelection.setup
         } else {
             isSetupExpanded = true
             router.showSetupOverview()
