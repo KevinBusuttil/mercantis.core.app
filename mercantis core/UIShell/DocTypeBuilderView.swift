@@ -442,10 +442,11 @@ public struct DocTypeBuilderView: View {
     }
 
     private func checkboxRow(_ label: String, isOn: Binding<Bool>) -> some View {
-        labeledFormRow(nil) {
+        HStack {
             Toggle(label, isOn: isOn)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.leading, formLabelWidth + 12)
     }
 
     private func save() {
