@@ -7,14 +7,48 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A49A6832F93B75700371EE1 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 0A49A6822F93B75700371EE1 /* libsqlite3.tbd */; };
+		0A49A6862F93B78A00371EE1 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = 0A49A6852F93B78A00371EE1 /* ArgumentParser */; };
 		0AA63F262F8C4305006B68B5 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 0AA63F252F8C4305006B68B5 /* GRDB */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		0A49A64E2F93B67F00371EE1 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0A49A6502F93B67F00371EE1 /* MercantisCLI */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MercantisCLI; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A49A6822F93B75700371EE1 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		0AA63F162F8C4305006B68B5 /* mercantis core.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mercantis core.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0A49A6752F93B70E00371EE1 /* Exceptions for "MercantisCLI" folder in "MercantisCLI" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				main.swift,
+			);
+			target = 0A49A64F2F93B67F00371EE1 /* MercantisCLI */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0A49A6512F93B67F00371EE1 /* MercantisCLI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0A49A6752F93B70E00371EE1 /* Exceptions for "MercantisCLI" folder in "MercantisCLI" target */,
+			);
+			path = MercantisCLI;
+			sourceTree = "<group>";
+		};
 		0AA63F182F8C4305006B68B5 /* mercantis core */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "mercantis core";
@@ -23,6 +57,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0A49A64D2F93B67F00371EE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A49A6862F93B78A00371EE1 /* ArgumentParser in Frameworks */,
+				0A49A6832F93B75700371EE1 /* libsqlite3.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0AA63F132F8C4305006B68B5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -34,10 +77,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A49A6812F93B75700371EE1 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0A49A6822F93B75700371EE1 /* libsqlite3.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		0AA63F0D2F8C4304006B68B5 = {
 			isa = PBXGroup;
 			children = (
 				0AA63F182F8C4305006B68B5 /* mercantis core */,
+				0A49A6512F93B67F00371EE1 /* MercantisCLI */,
+				0A49A6812F93B75700371EE1 /* Frameworks */,
 				0AA63F172F8C4305006B68B5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				0AA63F162F8C4305006B68B5 /* mercantis core.app */,
+				0A49A6502F93B67F00371EE1 /* MercantisCLI */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,6 +107,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0A49A64F2F93B67F00371EE1 /* MercantisCLI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A49A6542F93B67F00371EE1 /* Build configuration list for PBXNativeTarget "MercantisCLI" */;
+			buildPhases = (
+				0A49A64D2F93B67F00371EE1 /* Frameworks */,
+				0A49A64E2F93B67F00371EE1 /* CopyFiles */,
+				0A49A6742F93B70D00371EE1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0A49A6512F93B67F00371EE1 /* MercantisCLI */,
+			);
+			name = MercantisCLI;
+			packageProductDependencies = (
+				0A49A6852F93B78A00371EE1 /* ArgumentParser */,
+			);
+			productName = MercantisCLI;
+			productReference = 0A49A6502F93B67F00371EE1 /* MercantisCLI */;
+			productType = "com.apple.product-type.tool";
+		};
 		0AA63F152F8C4305006B68B5 /* mercantis core */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0AA63F212F8C4305006B68B5 /* Build configuration list for PBXNativeTarget "mercantis core" */;
@@ -86,6 +163,9 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					0A49A64F2F93B67F00371EE1 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 					0AA63F152F8C4305006B68B5 = {
 						CreatedOnToolsVersion = 26.4;
 					};
@@ -100,15 +180,17 @@
 			);
 			mainGroup = 0AA63F0D2F8C4304006B68B5;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB" */,
+				0A49A6842F93B78A00371EE1 /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0AA63F172F8C4305006B68B5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			packageReferences = (
-				0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
-			);
 			targets = (
 				0AA63F152F8C4305006B68B5 /* mercantis core */,
+				0A49A64F2F93B67F00371EE1 /* MercantisCLI */,
 			);
 		};
 /* End PBXProject section */
@@ -124,6 +206,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0A49A6742F93B70D00371EE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0AA63F122F8C4305006B68B5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -133,26 +222,33 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/groue/GRDB.swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 6.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		0AA63F252F8C4305006B68B5 /* GRDB */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
-			productName = GRDB;
-		};
-/* End XCSwiftPackageProductDependency section */
-
 /* Begin XCBuildConfiguration section */
+		0A49A6552F93B67F00371EE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0A49A6562F93B67F00371EE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		0AA63F1F2F8C4305006B68B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -354,6 +450,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0A49A6542F93B67F00371EE1 /* Build configuration list for PBXNativeTarget "MercantisCLI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A49A6552F93B67F00371EE1 /* Debug */,
+				0A49A6562F93B67F00371EE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0AA63F112F8C4304006B68B5 /* Build configuration list for PBXProject "mercantis core" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -373,6 +478,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0A49A6842F93B78A00371EE1 /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-argument-parser.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.1;
+			};
+		};
+		0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A49A6852F93B78A00371EE1 /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A49A6842F93B78A00371EE1 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
+		0AA63F252F8C4305006B68B5 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AA63F242F8C4305006B68B5 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0AA63F0E2F8C4304006B68B5 /* Project object */;
 }
