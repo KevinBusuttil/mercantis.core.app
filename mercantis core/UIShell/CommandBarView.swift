@@ -7,25 +7,55 @@
 
 import SwiftUI
 
+public struct CommandBarAction: Identifiable {
+    public let id: String
+    public let title: String
+    public let subtitle: String?
+    public let icon: String
+    public let badge: String?
+    public let keywords: [String]
+    public let isQuickAction: Bool
+    public let action: () -> Void
+
+    public init(
+        id: String,
+        title: String,
+        subtitle: String? = nil,
+        icon: String,
+        badge: String? = nil,
+        keywords: [String] = [],
+        isQuickAction: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.badge = badge
+        self.keywords = keywords
+        self.isQuickAction = isQuickAction
+        self.action = action
+    }
+}
+
 /// A Spotlight-like search/command overlay.
-///
-/// Activated by ⌘K (desktop) or from the search tab (iPhone). Lets users search
-/// across all registered DocTypes and navigate quickly to documents.
 public struct CommandBarView: View {
 
     @Binding var isPresented: Bool
-    @State private var query = ""
-    @State private var results: [CommandResult] = []
+    let actions: [CommandBarAction]
+    let showsCancel: Bool
 
-    /// Optional list of registered DocType names for result categorisation.
-    var docTypeNames: [String]
+    @State private var query = ""
+    @State private var selectedIndex = 0
 
     public init(
         isPresented: Binding<Bool>,
-        docTypeNames: [String] = []
+        actions: [CommandBarAction],
+        showsCancel: Bool = true
     ) {
         self._isPresented = isPresented
-        self.docTypeNames = docTypeNames
+        self.actions = actions
+        self.showsCancel = showsCancel
     }
 
     public var body: some View {
@@ -41,74 +71,91 @@ public struct CommandBarView: View {
                 .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
-        .frame(maxWidth: 600)
-        .onDisappear { query = "" }
+        .frame(maxWidth: 720)
+        .onDisappear {
+            query = ""
+            selectedIndex = 0
+        }
+        .onMoveCommand(perform: moveSelection)
+        #if os(macOS)
+        .onExitCommand {
+            guard showsCancel else { return }
+            isPresented = false
+        }
+        #endif
     }
 
-    // MARK: - Search Field
+    private var filteredActions: [CommandBarAction] {
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let quick = actions.filter(\.isQuickAction)
+            let topMatches = actions.filter { !$0.isQuickAction }.prefix(8)
+            return quick + topMatches
+        }
+
+        let lower = query.lowercased()
+        return actions.filter { action in
+            action.title.lowercased().contains(lower)
+                || (action.subtitle?.lowercased().contains(lower) ?? false)
+                || action.keywords.contains(where: { $0.lowercased().contains(lower) })
+        }
+    }
 
     private var searchField: some View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("Search or jump to…", text: $query)
+            TextField("Jump to module, DocType, report, dashboard…", text: $query)
                 .font(.title3)
                 .textFieldStyle(.plain)
-                .onChange(of: query) { _, newValue in
-                    updateResults(for: newValue)
+                .onChange(of: query) { _, _ in
+                    selectedIndex = 0
+                }
+                .onSubmit {
+                    triggerSelection()
                 }
 
             if !query.isEmpty {
-                Button(action: { query = ""; results = [] }) {
+                Button(action: {
+                    query = ""
+                    selectedIndex = 0
+                }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
 
-            Button("Cancel") {
-                isPresented = false
+            if showsCancel {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .buttonStyle(MercantisSecondaryButtonStyle())
             }
-            .buttonStyle(MercantisSecondaryButtonStyle())
         }
         .padding()
     }
 
-    // MARK: - Result List
-
     @ViewBuilder
     private var resultList: some View {
-        if results.isEmpty && !query.isEmpty {
-            Text("No results for \"\(query)\"")
+        if filteredActions.isEmpty {
+            Text(query.isEmpty ? "No commands available." : "No results for \"\(query)\"")
                 .foregroundStyle(.secondary)
                 .padding()
-        } else if results.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Quick Actions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-                ForEach(quickActions) { action in
-                    commandRow(result: action)
-                }
-            }
-            .padding(.bottom, 8)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(results) { result in
-                        commandRow(result: result)
+                    ForEach(Array(filteredActions.enumerated()), id: \.element.id) { index, result in
+                        commandRow(result: result, isSelected: index == selectedIndex)
                     }
                 }
                 .padding(.vertical, 8)
             }
-            .frame(maxHeight: 400)
+            .frame(maxHeight: 420)
         }
     }
 
-    private func commandRow(result: CommandResult) -> some View {
+    private func commandRow(result: CommandBarAction, isSelected: Bool) -> some View {
         Button(action: {
             result.action()
             isPresented = false
@@ -141,7 +188,9 @@ public struct CommandBarView: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            .background(isSelected ? MercantisTheme.surfaceMuted : Color.clear)
         }
         .buttonStyle(.plain)
         #if os(iOS)
@@ -149,71 +198,21 @@ public struct CommandBarView: View {
         #endif
     }
 
-    // MARK: - Results Logic
-
-    private func updateResults(for text: String) {
-        guard !text.isEmpty else {
-            results = []
-            return
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        guard !filteredActions.isEmpty else { return }
+        switch direction {
+        case .down:
+            selectedIndex = min(selectedIndex + 1, filteredActions.count - 1)
+        case .up:
+            selectedIndex = max(selectedIndex - 1, 0)
+        default:
+            break
         }
-        let lower = text.lowercased()
-
-        // Search DocType names.
-        let docTypeResults = docTypeNames
-            .filter { $0.lowercased().contains(lower) }
-            .map { name in
-                CommandResult(
-                    id: "doctype-\(name)",
-                    title: name,
-                    subtitle: "DocType",
-                    icon: "doc.text",
-                    badge: "DocType",
-                    action: {}
-                )
-            }
-
-        results = docTypeResults
     }
 
-    // MARK: - Quick Actions
-
-    private var quickActions: [CommandResult] {
-        [
-            CommandResult(
-                id: "qa-new",
-                title: "Create New Document",
-                subtitle: "Choose a DocType",
-                icon: "plus.circle",
-                badge: nil,
-                action: {}
-            ),
-            CommandResult(
-                id: "qa-home",
-                title: "Go to Home",
-                subtitle: nil,
-                icon: "house",
-                badge: nil,
-                action: {}
-            ),
-            CommandResult(
-                id: "qa-inbox",
-                title: "Go to Inbox",
-                subtitle: nil,
-                icon: "tray",
-                badge: nil,
-                action: {}
-            ),
-        ]
+    private func triggerSelection() {
+        guard filteredActions.indices.contains(selectedIndex) else { return }
+        filteredActions[selectedIndex].action()
+        isPresented = false
     }
-}
-
-// MARK: - Command Result
-
-private struct CommandResult: Identifiable {
-    let id: String
-    let title: String
-    let subtitle: String?
-    let icon: String
-    let badge: String?
-    let action: () -> Void
 }

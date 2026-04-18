@@ -8,9 +8,6 @@
 import SwiftUI
 
 /// A SwiftUI view that renders a form dynamically from a `DocType` and a `Document`.
-///
-/// Each `FieldDefinition` in the DocType is rendered as an appropriate control:
-/// text, toggle, date picker, select dropdown, number field, etc.
 public struct GenericFormView: View {
 
     let docType: DocType
@@ -31,17 +28,50 @@ public struct GenericFormView: View {
     }
 
     public var body: some View {
-        Form {
-            ForEach(visibleFields) { field in
-                fieldRow(for: field)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(sectionGroups) { section in
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(section.title)
+                                .font(.headline)
+
+                            LazyVGrid(columns: gridColumns(for: proxy.size.width), alignment: .leading, spacing: 12) {
+                                ForEach(section.fields) { field in
+                                    fieldCard(for: field)
+                                }
+                            }
+                        }
+                        .mercantisCard()
+                    }
+                }
+                .padding()
             }
+            .background(MercantisTheme.background)
         }
-        .scrollContentBackground(.hidden)
-        .background(MercantisTheme.background)
         .navigationTitle(docType.name)
     }
 
-    // MARK: - Visible Fields
+    private func gridColumns(for width: CGFloat) -> [GridItem] {
+        width > 900
+            ? [GridItem(.flexible()), GridItem(.flexible())]
+            : [GridItem(.flexible())]
+    }
+
+    private var sectionGroups: [FieldSectionGroup] {
+        let grouped = Dictionary(grouping: visibleFields) { field in
+            field.section?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? field.section!
+                : "Main"
+        }
+
+        return grouped.keys.sorted().map { key in
+            let fields = grouped[key, default: []].sorted { lhs, rhs in
+                (lhs.column ?? .max) < (rhs.column ?? .max)
+            }
+            return FieldSectionGroup(title: key, fields: fields)
+        }
+    }
 
     private var visibleFields: [FieldDefinition] {
         docType.fields.filter { field in
@@ -53,45 +83,53 @@ public struct GenericFormView: View {
         }
     }
 
-    // MARK: - Field Row
+    @ViewBuilder
+    private func fieldCard(for field: FieldDefinition) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(field.label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            fieldRow(for: field)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(MercantisTheme.surfaceMuted)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
 
     @ViewBuilder
     private func fieldRow(for field: FieldDefinition) -> some View {
         let isReadOnly = isReadOnly(field: field)
 
         switch field.type {
-        case .text, .longText, .email, .phone:
+        case .text, .email, .phone:
             textField(field: field, isReadOnly: isReadOnly)
-
+        case .longText:
+            longTextField(field: field, isReadOnly: isReadOnly)
         case .number, .decimal, .currency:
             numberField(field: field, isReadOnly: isReadOnly)
-
         case .boolean:
             toggleField(field: field, isReadOnly: isReadOnly)
-
         case .date, .datetime:
             dateField(field: field, isReadOnly: isReadOnly)
-
         case .select, .status:
             selectField(field: field, isReadOnly: isReadOnly)
-
+        case .multiselect:
+            multiselectField(field: field, isReadOnly: isReadOnly)
         case .link:
             linkField(field: field, isReadOnly: isReadOnly)
-
         case .formula:
             formulaField(field: field)
-
-        case .multiselect, .table, .attachment:
-            Text(field.label)
-                .foregroundStyle(.secondary)
+        case .table:
+            tableField(field: field)
+        case .attachment:
+            attachmentField(field: field, isReadOnly: isReadOnly)
         }
     }
 
-    // MARK: - Control Builders
-
     private func textField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let binding = stringBinding(for: field)
-        return LabeledContent(field.label) {
+        return Group {
             if isReadOnly {
                 Text(binding.wrappedValue).foregroundStyle(.secondary)
             } else {
@@ -101,9 +139,24 @@ public struct GenericFormView: View {
         }
     }
 
+    private func longTextField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let binding = stringBinding(for: field)
+        return Group {
+            if isReadOnly {
+                Text(binding.wrappedValue).foregroundStyle(.secondary)
+            } else {
+                TextEditor(text: binding)
+                    .frame(minHeight: 90)
+                    .padding(6)
+                    .background(MercantisTheme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
     private func numberField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let strBinding = numberBinding(for: field)
-        return LabeledContent(field.label) {
+        return Group {
             if isReadOnly {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
@@ -118,24 +171,26 @@ public struct GenericFormView: View {
 
     private func toggleField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let binding = boolBinding(for: field)
-        return Toggle(field.label, isOn: binding)
+        return Toggle("", isOn: binding)
+            .labelsHidden()
             .disabled(isReadOnly)
     }
 
     private func dateField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let binding = dateBinding(for: field)
         return DatePicker(
-            field.label,
+            "",
             selection: binding,
             displayedComponents: field.type == .datetime ? [.date, .hourAndMinute] : [.date]
         )
+        .labelsHidden()
         .disabled(isReadOnly)
     }
 
     private func selectField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let options = field.options ?? []
         let strBinding = stringBinding(for: field)
-        return LabeledContent(field.label) {
+        return Group {
             if isReadOnly {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
@@ -152,17 +207,69 @@ public struct GenericFormView: View {
         }
     }
 
+    private func multiselectField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let options = field.options ?? []
+        let selection = stringBinding(for: field)
+        let selectedValues = Set(selection.wrappedValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        return FlowLayout(spacing: 6) {
+            ForEach(options, id: \.self) { option in
+                let isSelected = selectedValues.contains(option)
+                Button(option) {
+                    guard !isReadOnly else { return }
+                    var values = selectedValues
+                    if isSelected {
+                        values.remove(option)
+                    } else {
+                        values.insert(option)
+                    }
+                    selection.wrappedValue = values.sorted().joined(separator: ",")
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(isSelected ? MercantisTheme.primary.opacity(0.2) : MercantisTheme.surface)
+                .clipShape(Capsule())
+            }
+        }
+    }
+
     private func linkField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let strBinding = stringBinding(for: field)
-        return LabeledContent(field.label) {
+        return Group {
             if isReadOnly {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
                 HStack {
                     TextField(field.linkedDocType ?? "Link", text: strBinding)
                         .mercantisInput()
-                    Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.right.square")
+                        .foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    private func tableField(field: FieldDefinition) -> some View {
+        let rows = document.children[field.key, default: []]
+        return HStack {
+            Text("\(rows.count) row\(rows.count == 1 ? "" : "s")")
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("Table")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func attachmentField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let binding = stringBinding(for: field)
+        return Group {
+            if isReadOnly {
+                Text(binding.wrappedValue.isEmpty ? "No attachment" : binding.wrappedValue)
+                    .foregroundStyle(.secondary)
+            } else {
+                TextField("Attachment reference", text: binding)
+                    .mercantisInput()
             }
         }
     }
@@ -178,12 +285,8 @@ public struct GenericFormView: View {
         case .string(let s): display = s
         default: display = "—"
         }
-        return LabeledContent(field.label) {
-            Text(display).foregroundStyle(.secondary)
-        }
+        return Text(display).foregroundStyle(.secondary)
     }
-
-    // MARK: - Read-Only Check
 
     private func isReadOnly(field: FieldDefinition) -> Bool {
         guard let expr = field.readOnlyExpression, !expr.isEmpty else { return false }
@@ -192,8 +295,6 @@ public struct GenericFormView: View {
             context: document.fields
         )) ?? false
     }
-
-    // MARK: - Bindings
 
     private func stringBinding(for field: FieldDefinition) -> Binding<String> {
         Binding<String>(
@@ -239,7 +340,6 @@ public struct GenericFormView: View {
         )
     }
 
-    /// Binding for number/decimal/currency fields that persists as proper numeric types.
     private func numberBinding(for field: FieldDefinition) -> Binding<String> {
         Binding<String>(
             get: {
@@ -256,10 +356,27 @@ public struct GenericFormView: View {
                 } else if let doubleVal = Double(newValue) {
                     document.fields[field.key] = .double(doubleVal)
                 } else {
-                    // Keep as string while user is still typing (e.g. partial input like "1.")
                     document.fields[field.key] = .string(newValue)
                 }
             }
         )
+    }
+}
+
+private struct FieldSectionGroup: Identifiable {
+    let id = UUID()
+    let title: String
+    let fields: [FieldDefinition]
+}
+
+private struct FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .center, spacing: spacing) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

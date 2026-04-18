@@ -214,6 +214,11 @@ public struct FormBuilderView: View {
                     .mercantisInput()
                 TextField("Child DocType", text: binding.childDocType)
                     .mercantisInput()
+                TextField("Section", text: binding.section)
+                    .mercantisInput()
+                Stepper(value: binding.column, in: 0...4) {
+                    Text(binding.column.wrappedValue <= 0 ? "Auto Column" : "Column \(binding.column.wrappedValue)")
+                }
             } else {
                 Text("Select a field on the canvas to edit properties.")
                     .foregroundStyle(.secondary)

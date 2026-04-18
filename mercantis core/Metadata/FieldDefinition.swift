@@ -87,6 +87,9 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var isSearchable: Bool
     public var isSynced: Bool
     public var allowOnSubmit: Bool                 // If true, this field can be edited on submitted documents (ADR-013)
+    public var section: String?                    // logical form section/group
+    public var column: Int?                        // preferred form column in wide layouts
+    public var collapsible: Bool                   // marks the section/group as collapsible
 
     public init(
         key: String,
@@ -104,7 +107,10 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         permissions: FieldPermission? = nil,
         isSearchable: Bool = false,
         isSynced: Bool = true,
-        allowOnSubmit: Bool = false
+        allowOnSubmit: Bool = false,
+        section: String? = nil,
+        column: Int? = nil,
+        collapsible: Bool = false
     ) {
         self.key = key
         self.label = label
@@ -122,6 +128,9 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         self.isSearchable = isSearchable
         self.isSynced = isSynced
         self.allowOnSubmit = allowOnSubmit
+        self.section = section
+        self.column = column
+        self.collapsible = collapsible
     }
 }
 
