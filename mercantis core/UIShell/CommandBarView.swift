@@ -41,6 +41,15 @@ public struct CommandBarAction: Identifiable {
 /// A Spotlight-like search/command overlay.
 public struct CommandBarView: View {
 
+    private static let prefixMap: [String: String] = [
+        "new": "create",
+        "list": "doctype",
+        "open": "doctype",
+        "report": "report",
+        "dashboard": "dashboard",
+        "setup": "setup"
+    ]
+
     @Binding var isPresented: Bool
     let actions: [CommandBarAction]
     let showsCancel: Bool
@@ -86,18 +95,34 @@ public struct CommandBarView: View {
     }
 
     private var filteredActions: [CommandBarAction] {
-        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.isEmpty {
             let quick = actions.filter(\.isQuickAction)
             let topMatches = actions.filter { !$0.isQuickAction }.prefix(8)
             return quick + topMatches
         }
 
-        let lower = query.lowercased()
-        return actions.filter { action in
-            action.title.lowercased().contains(lower)
-                || (action.subtitle?.lowercased().contains(lower) ?? false)
-                || action.keywords.contains(where: { $0.lowercased().contains(lower) })
+        let lower = trimmedQuery.lowercased()
+        let tokens = lower.split(maxSplits: 1, whereSeparator: \.isWhitespace)
+        if let head = tokens.first.map(String.init),
+           let badge = Self.prefixMap[head] {
+            let rest = tokens.count > 1
+                ? String(tokens[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+
+            return actions.filter { action in
+                action.badge?.lowercased() == badge
+                    && (rest.isEmpty || actionMatches(action, query: rest))
+            }
         }
+
+        return actions.filter { actionMatches($0, query: lower) }
+    }
+
+    private func actionMatches(_ action: CommandBarAction, query: String) -> Bool {
+        action.title.lowercased().contains(query)
+            || (action.subtitle?.lowercased().contains(query) ?? false)
+            || action.keywords.contains(where: { $0.lowercased().contains(query) })
     }
 
     private var searchField: some View {

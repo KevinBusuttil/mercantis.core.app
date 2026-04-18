@@ -80,6 +80,7 @@ public struct NavigationShell: View {
 
     @State private var showCommandBar = false
     @State private var isSetupExpanded = false
+    @State private var expandedModules: Set<String> = []
     @State private var activeDocument: Document?
     @State private var recents: [RecentDestination] = []
 
@@ -97,6 +98,13 @@ public struct NavigationShell: View {
             if router.selectedModule == nil {
                 router.selectedModule = moduleNames.first
             }
+            initializeExpandedModulesIfNeeded()
+        }
+        .onChange(of: router.selectedItem) { _, _ in
+            expandSelectedModuleIfNeeded()
+        }
+        .onChange(of: router.selectedModule) { _, _ in
+            expandSelectedModuleIfNeeded()
         }
     }
 
@@ -134,7 +142,90 @@ public struct NavigationShell: View {
 
     private var sidebar: some View {
         List {
-            ForEach(splitSections, id: \.self) { section in
+            ForEach(topSplitSections, id: \.self) { section in
+                Button {
+                    selectSection(section)
+                } label: {
+                    Label(section.title, systemImage: section.icon)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == section))
+            }
+
+            if !moduleNames.isEmpty {
+                Section {
+                    ForEach(moduleNames, id: \.self) { module in
+                        DisclosureGroup(
+                            isExpanded: Binding(
+                                get: { expandedModules.contains(module) },
+                                set: { isExpanded in
+                                    if isExpanded {
+                                        expandedModules.insert(module)
+                                    } else {
+                                        expandedModules.remove(module)
+                                    }
+                                }
+                            )
+                        ) {
+                            ForEach(docTypes(in: module), id: \.id) { docType in
+                                Button {
+                                    router.openDocType(docType.id, module: module)
+                                    addRecent(.docType(docType.id))
+                                } label: {
+                                    Label(docType.name, systemImage: "doc.text")
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(
+                                    sidebarRowBackground(
+                                        isActive: router.selectedItem == .docType(docType.id)
+                                    )
+                                )
+                            }
+
+                            ForEach(reports(in: module), id: \.id) { report in
+                                Button {
+                                    router.openReport(report.id, module: module)
+                                    addRecent(.report(report.id))
+                                } label: {
+                                    Label(report.name, systemImage: "chart.bar.doc.horizontal")
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(
+                                    sidebarRowBackground(
+                                        isActive: router.selectedItem == .report(report.id)
+                                    )
+                                )
+                            }
+
+                            ForEach(dashboards(in: module), id: \.id) { dashboard in
+                                Button {
+                                    router.openDashboard(dashboard.id, module: module)
+                                    addRecent(.dashboard(dashboard.id))
+                                } label: {
+                                    Label(dashboard.name, systemImage: "rectangle.3.group")
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(
+                                    sidebarRowBackground(
+                                        isActive: router.selectedItem == .dashboard(dashboard.id)
+                                    )
+                                )
+                            }
+                        } label: {
+                            Text(module.uppercased())
+                                .font(MercantisType.meta)
+                                .tracking(0.6)
+                        }
+                        .listRowBackground(sidebarRowBackground(isActive: isModuleActive(module)))
+                    }
+                } header: {
+                    Text("Modules")
+                        .font(MercantisType.meta)
+                        .tracking(0.6)
+                }
+            }
+
+            ForEach(bottomSplitSections, id: \.self) { section in
                 if section == .setup {
                     setupSidebarSection
                 } else {
@@ -155,6 +246,15 @@ public struct NavigationShell: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .keyboardShortcut("k", modifiers: .command)
+            }
+            ToolbarItem(placement: .automatic) {
+                Button(action: { showCommandBar = true }) {
+                    EmptyView()
+                }
+                .keyboardShortcut("g", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
             }
         }
     }
@@ -768,7 +868,15 @@ public struct NavigationShell: View {
     // MARK: - Helpers
 
     private var splitSections: [NavigationSection] {
-        [.home, .inbox, .reports, .dashboards, .recents, .setup, .settings]
+        [.home, .inbox, .recents, .setup, .settings]
+    }
+
+    private var topSplitSections: [NavigationSection] {
+        Array(splitSections.prefix(3))
+    }
+
+    private var bottomSplitSections: [NavigationSection] {
+        Array(splitSections.suffix(2))
     }
 
     private func selectSection(_ section: NavigationSection) {
@@ -821,6 +929,36 @@ public struct NavigationShell: View {
             isSetupExpanded = true
             router.showSetupOverview()
         }
+    }
+
+    private func initializeExpandedModulesIfNeeded() {
+        guard expandedModules.isEmpty else { return }
+        guard let selectedModule = selectedModuleForCurrentContext() else { return }
+        expandedModules = [selectedModule]
+    }
+
+    private func expandSelectedModuleIfNeeded() {
+        guard let selectedModule = selectedModuleForCurrentContext() else { return }
+        expandedModules.insert(selectedModule)
+    }
+
+    private func selectedModuleForCurrentContext() -> String? {
+        switch router.selectedItem {
+        case .docType(let id):
+            return tooling.docType(withId: id)?.module
+        case .report(let id):
+            return tooling.report(withId: id).flatMap(moduleForReport)
+        case .dashboard(let id):
+            return tooling.dashboard(withId: id).flatMap(moduleForDashboard)
+        case .setup:
+            return nil
+        case nil:
+            return router.selectedModule
+        }
+    }
+
+    private func isModuleActive(_ module: String) -> Bool {
+        selectedModuleForCurrentContext() == module
     }
 
     private var moduleNames: [String] {
