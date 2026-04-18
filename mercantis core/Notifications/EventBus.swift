@@ -21,7 +21,12 @@ public final class EventBus: @unchecked Sendable {
 
     /// Token returned by `subscribe` to allow unsubscribing.
     public final class SubscriptionToken: Sendable {
-        nonisolated(unsafe) var isActive = true
+        private let _lock = NSLock()
+        private var _isActive = true
+        var isActive: Bool {
+            get { _lock.lock(); defer { _lock.unlock() }; return _isActive }
+            set { _lock.lock(); defer { _lock.unlock() }; _isActive = newValue }
+        }
         let id: UUID
         init() { self.id = UUID() }
     }
