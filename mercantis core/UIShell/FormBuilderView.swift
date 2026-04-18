@@ -11,6 +11,7 @@ public struct FormBuilderView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let onSave: (() -> Void)?
+    private let compactLayoutBreakpoint: CGFloat = 1180
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -31,7 +32,7 @@ public struct FormBuilderView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width < 1180 {
+            if proxy.size.width < compactLayoutBreakpoint {
                 compactLayout
             } else {
                 expandedLayout

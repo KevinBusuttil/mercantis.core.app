@@ -273,18 +273,18 @@ public struct DocTypeBuilderView: View {
 
                 MercantisSectionHeading(title: "Fields")
                 VStack(spacing: 12) {
-                    ForEach(Array(fields.indices), id: \.self) { index in
+                    ForEach($fields) { $field in
                         VStack(alignment: .leading, spacing: 10) {
                             labeledFormRow("Key") {
-                                TextField("field_key", text: $fields[index].key)
+                                TextField("field_key", text: $field.key)
                                     .mercantisInput()
                             }
                             labeledFormRow("Label") {
-                                TextField("Field Label", text: $fields[index].label)
+                                TextField("Field Label", text: $field.label)
                                     .mercantisInput()
                             }
                             labeledFormRow("Type") {
-                                Picker("Type", selection: $fields[index].type) {
+                                Picker("Type", selection: $field.type) {
                                     ForEach(FieldType.allCases, id: \.self) { type in
                                         Text(type.rawValue).tag(type)
                                     }
@@ -293,25 +293,25 @@ public struct DocTypeBuilderView: View {
                                 .labelsHidden()
                                 .mercantisPicker()
                             }
-                            checkboxRow("Required", isOn: $fields[index].required)
+                            checkboxRow("Required", isOn: $field.required)
                             labeledFormRow("Options") {
-                                TextField("comma-separated options", text: $fields[index].optionsText)
+                                TextField("comma-separated options", text: $field.optionsText)
                                     .mercantisInput()
                             }
                             labeledFormRow("Linked DocType") {
-                                TextField("Linked DocType", text: $fields[index].linkedDocType)
+                                TextField("Linked DocType", text: $field.linkedDocType)
                                     .mercantisInput()
                             }
                             labeledFormRow("Child DocType") {
-                                TextField("Child DocType", text: $fields[index].childDocType)
+                                TextField("Child DocType", text: $field.childDocType)
                                     .mercantisInput()
                             }
                             labeledFormRow("Visibility") {
-                                TextField("Expression", text: $fields[index].visibilityExpression)
+                                TextField("Expression", text: $field.visibilityExpression)
                                     .mercantisInput()
                             }
                             Button("Remove Field", role: .destructive) {
-                                fields.remove(at: index)
+                                removeField(with: field.wrappedValue.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
@@ -326,20 +326,20 @@ public struct DocTypeBuilderView: View {
 
                 MercantisSectionHeading(title: "Permission Rules")
                 VStack(spacing: 12) {
-                    ForEach(Array(permissions.indices), id: \.self) { index in
+                    ForEach($permissions) { $permission in
                         VStack(alignment: .leading, spacing: 10) {
                             labeledFormRow("Role") {
-                                TextField("Role", text: $permissions[index].role)
+                                TextField("Role", text: $permission.role)
                                     .mercantisInput()
                             }
-                            checkboxRow("Read", isOn: $permissions[index].canRead)
-                            checkboxRow("Write", isOn: $permissions[index].canWrite)
-                            checkboxRow("Create", isOn: $permissions[index].canCreate)
-                            checkboxRow("Delete", isOn: $permissions[index].canDelete)
-                            checkboxRow("Submit", isOn: $permissions[index].canSubmit)
-                            checkboxRow("Amend", isOn: $permissions[index].canAmend)
+                            checkboxRow("Read", isOn: $permission.canRead)
+                            checkboxRow("Write", isOn: $permission.canWrite)
+                            checkboxRow("Create", isOn: $permission.canCreate)
+                            checkboxRow("Delete", isOn: $permission.canDelete)
+                            checkboxRow("Submit", isOn: $permission.canSubmit)
+                            checkboxRow("Amend", isOn: $permission.canAmend)
                             Button("Remove Permission", role: .destructive) {
-                                permissions.remove(at: index)
+                                removePermission(with: permission.wrappedValue.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
@@ -370,15 +370,15 @@ public struct DocTypeBuilderView: View {
 
                 MercantisSectionHeading(title: "Indexes")
                 VStack(spacing: 12) {
-                    ForEach(Array(indexes.indices), id: \.self) { index in
+                    ForEach($indexes) { $index in
                         VStack(alignment: .leading, spacing: 10) {
                             labeledFormRow("Field Key") {
-                                TextField("Field Key", text: $indexes[index].fieldKey)
+                                TextField("Field Key", text: $index.fieldKey)
                                     .mercantisInput()
                             }
-                            checkboxRow("Unique", isOn: $indexes[index].unique)
+                            checkboxRow("Unique", isOn: $index.unique)
                             Button("Remove Index", role: .destructive) {
-                                indexes.remove(at: index)
+                                removeIndex(with: index.wrappedValue.id)
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
@@ -447,6 +447,18 @@ public struct DocTypeBuilderView: View {
                 .labelsHidden()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func removeField(with id: UUID) {
+        fields.removeAll { $0.id == id }
+    }
+
+    private func removePermission(with id: UUID) {
+        permissions.removeAll { $0.id == id }
+    }
+
+    private func removeIndex(with id: UUID) {
+        indexes.removeAll { $0.id == id }
     }
 
     private func save() {
