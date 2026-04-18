@@ -1,0 +1,203 @@
+{
+  "id": "app.mercantis.library-management",
+  "name": "Library Management",
+  "version": "0.0.1",
+  "minimumCoreVersion": "0.1.0",
+  "description": "App for managing Articles, Members, Memberships and Transactions for Libraries.",
+  "iconAsset": "icon-book",
+
+  "doctypes": [
+    {
+      "id": "Article",
+      "name": "Article",
+      "module": "LibraryManagement",
+      "appId": "app.mercantis.library-management",
+      "isChildTable": false,
+      "isSubmittable": false,
+      "fields": [
+        { "key": "article_name", "label": "Article Name", "type": "text",       "required": true,  "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "author",       "label": "Author",       "type": "text",       "required": true,  "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "status",       "label": "Status",       "type": "select",     "required": true,  "options": ["Active","Inactive","Discontinued"], "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "publisher",    "label": "Publisher",    "type": "text",       "required": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "language",     "label": "Language",     "type": "text",       "required": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "isbn",         "label": "ISBN",         "type": "text",       "required": false, "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "image",        "label": "Image",        "type": "attachment", "required": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "description",  "label": "Description",  "type": "longText",   "required": true,  "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] }
+      ],
+      "permissions": [
+        { "role": "Librarian", "canRead": true, "canWrite": true, "canCreate": true, "canDelete": true, "canSubmit": false, "canAmend": false }
+      ],
+      "syncPolicy": { "conflictResolution": "lastWriteWins", "immutableAfterSubmit": false },
+      "indexes": [
+        { "name": "idx_article_status", "fields": ["status"] },
+        { "name": "idx_article_isbn",   "fields": ["isbn"]   }
+      ],
+      "searchFields": ["article_name", "author"],
+      "titleField": "article_name",
+      "isCustom": false
+    },
+
+    {
+      "id": "LibraryMember",
+      "name": "Library Member",
+      "module": "LibraryManagement",
+      "appId": "app.mercantis.library-management",
+      "isChildTable": false,
+      "isSubmittable": false,
+      "fields": [
+        { "key": "first_name", "label": "First Name", "type": "text",     "required": true,  "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "last_name",  "label": "Last Name",  "type": "text",     "required": false, "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "email_id",   "label": "Email Id",   "type": "email",    "required": true,  "isSearchable": true,  "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "phone",      "label": "Phone",      "type": "phone",    "required": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "address",    "label": "Address",    "type": "longText", "required": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] }
+      ],
+      "permissions": [
+        { "role": "Librarian", "canRead": true, "canWrite": true, "canCreate": true, "canDelete": true, "canSubmit": false, "canAmend": false }
+      ],
+      "syncPolicy": { "conflictResolution": "lastWriteWins", "immutableAfterSubmit": false },
+      "indexes": [
+        { "name": "uniq_member_email", "fields": ["email_id"], "unique": true }
+      ],
+      "searchFields": ["first_name", "last_name", "email_id"],
+      "titleField": "first_name",
+      "isCustom": false
+    },
+
+    {
+      "id": "LibraryMembership",
+      "name": "Library Membership",
+      "module": "LibraryManagement",
+      "appId": "app.mercantis.library-management",
+      "isChildTable": false,
+      "isSubmittable": false,
+      "fields": [
+        { "key": "library_member",    "label": "Library Member",   "type": "link",    "required": true,  "linkedDocType": "LibraryMember", "isSearchable": true, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "member_first_name", "label": "Member First Name","type": "formula", "required": false, "formulaExpression": "library_member.first_name", "readOnlyExpression": "true", "isSearchable": false, "isSynced": false, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "member_last_name",  "label": "Member Last Name", "type": "formula", "required": false, "formulaExpression": "library_member.last_name",  "readOnlyExpression": "true", "isSearchable": false, "isSynced": false, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "from_date",         "label": "From Date",        "type": "date",    "required": true,  "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "to_date",           "label": "To Date",          "type": "date",    "required": true,  "isSearchable": false, "isSynced": true, "allowOnSubmit": false,
+          "validationRules": [
+            { "expression": "to_date >= from_date", "message": "To Date must be on or after From Date" }
+          ]
+        },
+        { "key": "paid",              "label": "Paid",             "type": "boolean", "required": false, "defaultValue": false, "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] }
+      ],
+      "permissions": [
+        { "role": "Librarian", "canRead": true, "canWrite": true, "canCreate": true, "canDelete": true, "canSubmit": false, "canAmend": false }
+      ],
+      "syncPolicy": { "conflictResolution": "lastWriteWins", "immutableAfterSubmit": false },
+      "indexes": [
+        { "name": "idx_membership_member", "fields": ["library_member"] }
+      ],
+      "searchFields": ["library_member"],
+      "titleField": "library_member",
+      "isCustom": false
+    },
+
+    {
+      "id": "LibraryTransaction",
+      "name": "Library Transaction",
+      "module": "LibraryManagement",
+      "appId": "app.mercantis.library-management",
+      "isChildTable": false,
+      "isSubmittable": true,
+      "fields": [
+        { "key": "transaction_type", "label": "Transaction Type", "type": "select",   "required": true,  "options": ["Issue","Return"], "isSearchable": true, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "transaction_date", "label": "Transaction Date", "type": "datetime", "required": true,  "defaultValue": "now()", "isSearchable": false, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "article",          "label": "Article",          "type": "link",     "required": true,  "linkedDocType": "Article", "isSearchable": true, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "article_name",     "label": "Article Name",     "type": "formula",  "required": false, "formulaExpression": "article.article_name", "readOnlyExpression": "true", "isSearchable": false, "isSynced": false, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "library_member",   "label": "Library Member",   "type": "link",     "required": true,  "linkedDocType": "LibraryMember", "isSearchable": true, "isSynced": true, "allowOnSubmit": false, "validationRules": [] },
+        { "key": "member_name",      "label": "Member Name",      "type": "formula",  "required": false, "formulaExpression": "library_member.first_name + ' ' + library_member.last_name", "readOnlyExpression": "true", "isSearchable": false, "isSynced": false, "allowOnSubmit": false, "validationRules": [] }
+      ],
+      "permissions": [
+        { "role": "Librarian", "canRead": true, "canWrite": true, "canCreate": true, "canDelete": true, "canSubmit": true, "canAmend": false }
+      ],
+      "syncPolicy": { "conflictResolution": "appendOnly", "immutableAfterSubmit": true },
+      "indexes": [
+        { "name": "idx_txn_article_date", "fields": ["article","transaction_date"] },
+        { "name": "idx_txn_member_date",  "fields": ["library_member","transaction_date"] }
+      ],
+      "searchFields": ["article", "library_member", "transaction_type"],
+      "titleField": "article_name",
+      "isCustom": false
+    },
+
+    {
+      "id": "LibraryManagementSettings",
+      "name": "Library Management Settings",
+      "module": "LibraryManagement",
+      "appId": "app.mercantis.library-management",
+      "isChildTable": false,
+      "isSubmittable": false,
+      "fields": [
+        { "key": "loan_period", "label": "Loan Period (days)", "type": "number", "required": true, "defaultValue": 30, "isSearchable": false, "isSynced": true, "allowOnSubmit": false,
+          "validationRules": [
+            { "expression": "loan_period > 0", "message": "Loan period must be positive." }
+          ]
+        }
+      ],
+      "permissions": [
+        { "role": "Librarian", "canRead": true, "canWrite": true, "canCreate": true, "canDelete": false, "canSubmit": false, "canAmend": false }
+      ],
+      "syncPolicy": { "conflictResolution": "lastWriteWins", "immutableAfterSubmit": false },
+      "indexes": [],
+      "searchFields": [],
+      "titleField": "loan_period",
+      "isCustom": false
+    }
+  ],
+
+  "workflows": [],
+  "permissions": [],
+  "reports": [
+    {
+      "id": "ArticlesOnLoan",
+      "name": "Articles On Loan",
+      "docType": "LibraryTransaction",
+      "columns": ["article_name", "library_member", "member_name", "transaction_date", "transaction_type"],
+      "filters": [
+        { "fieldKey": "transaction_type", "label": "Transaction Type", "defaultValue": "Issue" }
+      ]
+    }
+  ],
+
+  "automationRules": [
+    {
+      "id": "notify_overdue_articles",
+      "name": "Notify Overdue Articles (daily)",
+      "docType": "LibraryTransaction",
+      "triggerEvent": "onSchedule",
+      "conditionExpression": "document.transaction_type == \"Issue\" && date_diff(today(), document.transaction_date) > settings(\"LibraryManagementSettings\").loan_period",
+      "actions": [
+        {
+          "type": "send_notification",
+          "parameters": {
+            "channel": "email",
+            "recipientExpression": "lookup(\"LibraryMember\", document.library_member).email_id",
+            "subject": "Library Articles Overdue",
+            "bodyTemplate": "<h2>Following Items are Overdue</h2><p>Please return them as soon as possible.</p><ul><li>{{ document.article_name }} ({{ document.article }}) due on {{ format_date(add_days(document.transaction_date, settings(\"LibraryManagementSettings\").loan_period)) }}</li></ul>"
+          }
+        }
+      ]
+    }
+  ],
+
+  "dashboards": [],
+  "localizations": [],
+
+  "extensionPoints": {
+    "schedulerEvents": {
+      "daily": ["automation:notify_overdue_articles"]
+    },
+    "documentEventSubscriptions": [],
+    "roleHomePages": {
+      "Library Member": "Article"
+    },
+    "namingStrategies": [
+      { "docType": "Article",            "strategy": "series", "prefix": "AR-",   "padding": 7 },
+      { "docType": "LibraryMember",      "strategy": "series", "prefix": "MEM-",  "padding": 5 },
+      { "docType": "LibraryMembership",  "strategy": "series", "prefix": "LM-",   "padding": 7 },
+      { "docType": "LibraryTransaction", "strategy": "series", "prefix": "LTRN-", "padding": 7 }
+    ]
+  }
+}
