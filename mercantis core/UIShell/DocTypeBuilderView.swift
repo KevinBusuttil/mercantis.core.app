@@ -81,7 +81,7 @@ struct EditableField: Identifiable, Hashable {
     var childDocType: String
     var visibilityExpression: String
 
-    init(
+    nonisolated init(
         key: String = "",
         label: String = "",
         type: FieldType = .text,
@@ -143,7 +143,7 @@ struct EditablePermission: Identifiable, Hashable {
     var canSubmit: Bool
     var canAmend: Bool
 
-    init(
+    nonisolated init(
         role: String = "",
         canRead: Bool = true,
         canWrite: Bool = false,
@@ -191,7 +191,7 @@ struct EditableIndex: Identifiable, Hashable {
     var fieldKey: String
     var unique: Bool
 
-    init(fieldKey: String = "", unique: Bool = false) {
+    nonisolated init(fieldKey: String = "", unique: Bool = false) {
         self.fieldKey = fieldKey
         self.unique = unique
     }
