@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct mercantis_coreApp: App {
+    @StateObject private var docTypeTooling = DocTypeToolingContext()
+
     var body: some Scene {
         WindowGroup {
             NavigationShell()
+                .environmentObject(docTypeTooling)
         }
     }
 }

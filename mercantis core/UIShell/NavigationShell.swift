@@ -68,6 +68,10 @@ public struct NavigationShell: View {
             detailView(for: .settings)
                 .tabItem { Label("Settings", systemImage: "gear") }
                 .tag(NavigationSection.settings as NavigationSection?)
+
+            detailView(for: .setup)
+                .tabItem { Label("Setup", systemImage: "wrench.and.screwdriver") }
+                .tag(NavigationSection.setup as NavigationSection?)
         }
     }
 
@@ -111,6 +115,9 @@ public struct NavigationShell: View {
         case .settings:
             Text("Settings")
                 .navigationTitle("Settings")
+        case .setup:
+            DocTypeListView()
+                .navigationTitle("Setup")
         case nil:
             Text("Select a section")
         }
@@ -120,7 +127,7 @@ public struct NavigationShell: View {
 // MARK: - Navigation Section
 
 public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
-    case home, inbox, search, modules, reports, settings
+    case home, inbox, search, modules, reports, settings, setup
 
     public var id: String { rawValue }
 
@@ -132,6 +139,7 @@ public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
         case .modules:  return "Modules"
         case .reports:  return "Reports"
         case .settings: return "Settings"
+        case .setup:    return "Setup"
         }
     }
 
@@ -143,6 +151,7 @@ public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
         case .modules:  return "square.grid.2x2"
         case .reports:  return "chart.bar"
         case .settings: return "gear"
+        case .setup:    return "wrench.and.screwdriver"
         }
     }
 }

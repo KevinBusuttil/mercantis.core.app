@@ -23,26 +23,6 @@ struct NewDocType: ParsableCommand {
         let fields = try promptFields()
         let titleField = promptTitleField(from: fields)
         let permissions = try promptPermissions(isSubmittable: isSubmittable)
-
-        if let app {
-            try appendDocTypeToManifest(at: app, id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, titleField: titleField, permissions: permissions)
-        } else {
-            try writeStandaloneDocType(id: id, name: name, module: module, isSubmittable: isSubmittable, isSingle: isSingle, isChildTable: isChildTable, naming: naming, fields: fields, titleField: titleField, permissions: permissions)
-        }
-    }
-
-    private func writeStandaloneDocType(
-        id: String,
-        name: String,
-        module: String,
-        isSubmittable: Bool,
-        isSingle: Bool,
-        isChildTable: Bool,
-        naming: NamingConfig,
-        fields: [FieldDefinitionTemplate],
-        titleField: String,
-        permissions: [PermissionRuleTemplate]
-    ) throws {
         let payload = makeDocTypePayload(
             id: id,
             name: name,
@@ -57,8 +37,18 @@ struct NewDocType: ParsableCommand {
             permissions: permissions
         )
 
+        try SchemaValidator().validate(payload)
+
+        if let app {
+            try appendDocTypeToManifest(at: app, payload: payload)
+        } else {
+            try writeStandaloneDocType(payload: payload)
+        }
+    }
+
+    private func writeStandaloneDocType(payload: DocTypeTemplate) throws {
         let outputURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("\(id).doctype.json")
+            .appendingPathComponent("\(payload.id).doctype.json")
         if FileManager.default.fileExists(atPath: outputURL.path) {
             throw ValidationError("File already exists at \(outputURL.path)")
         }
@@ -74,16 +64,7 @@ struct NewDocType: ParsableCommand {
 
     private func appendDocTypeToManifest(
         at appDirectory: String,
-        id: String,
-        name: String,
-        module: String,
-        isSubmittable: Bool,
-        isSingle: Bool,
-        isChildTable: Bool,
-        naming: NamingConfig,
-        fields: [FieldDefinitionTemplate],
-        titleField: String,
-        permissions: [PermissionRuleTemplate]
+        payload: DocTypeTemplate
     ) throws {
         let appURL = URL(fileURLWithPath: appDirectory)
         var isDirectory: ObjCBool = false
@@ -101,23 +82,11 @@ struct NewDocType: ParsableCommand {
             throw ValidationError("manifest.json must be a JSON object")
         }
 
-        let appId = (manifestObject["id"] as? String) ?? ""
-        let payload = makeDocTypePayload(
-            id: id,
-            name: name,
-            module: module,
-            appId: appId,
-            isSubmittable: isSubmittable,
-            isSingle: isSingle,
-            isChildTable: isChildTable,
-            naming: naming,
-            fields: fields,
-            titleField: titleField,
-            permissions: permissions
-        )
+        var payloadForManifest = payload
+        payloadForManifest.appId = (manifestObject["id"] as? String) ?? ""
 
         var doctypes = manifestObject["doctypes"] as? [Any] ?? []
-        doctypes.append(try jsonObject(payload))
+        doctypes.append(try jsonObject(payloadForManifest))
         manifestObject["doctypes"] = doctypes
 
         let updatedData = try JSONSerialization.data(withJSONObject: manifestObject, options: [.prettyPrinted])
@@ -436,7 +405,7 @@ struct NewDocType: ParsableCommand {
         let id: String
         let name: String
         let module: String
-        let appId: String
+        var appId: String
         let isChildTable: Bool
         let isSubmittable: Bool
         let isSingle: Bool
@@ -451,6 +420,37 @@ struct NewDocType: ParsableCommand {
         let namingFormat: String?
         let searchFields: [String]
         let titleField: String
+    }
+
+    private struct SchemaValidator {
+        func validate(_ docType: DocTypeTemplate) throws {
+            guard !docType.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError("DocType ID cannot be empty.")
+            }
+
+            var seen = Set<String>()
+            for field in docType.fields {
+                let key = field.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !key.isEmpty else {
+                    throw ValidationError("Field key cannot be empty.")
+                }
+                guard !seen.contains(key) else {
+                    throw ValidationError("Duplicate field key: \(key)")
+                }
+                seen.insert(key)
+
+                if field.type == "link" && (field.linkedDocType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw ValidationError("Link field '\(key)' requires linkedDocType.")
+                }
+                if field.type == "table" && (field.childDocType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw ValidationError("Table field '\(key)' requires childDocType.")
+                }
+            }
+
+            if !docType.titleField.isEmpty && !docType.fields.contains(where: { $0.key == docType.titleField }) {
+                throw ValidationError("Title field '\(docType.titleField)' was not found in fields.")
+            }
+        }
     }
 
     private struct FieldDefinitionTemplate: Codable {

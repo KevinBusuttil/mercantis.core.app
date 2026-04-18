@@ -8,7 +8,7 @@
 import Foundation
 
 /// How conflicts are resolved during sync for a given DocType. (ADR-006)
-public enum ConflictResolution: String, Codable, Sendable {
+public enum ConflictResolution: String, Codable, Sendable, CaseIterable {
     /// Descriptive, non-financial fields. Higher server sequence wins. (ADR-006 Policy 1)
     case lastWriteWins
     /// Financial/inventory documents. Concurrent edits require human resolution. (ADR-006 Policy 2)

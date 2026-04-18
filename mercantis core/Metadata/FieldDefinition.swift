@@ -8,7 +8,7 @@
 import Foundation
 
 /// The type of a field in a DocType.
-public enum FieldType: String, Codable, Sendable {
+public enum FieldType: String, Codable, Sendable, CaseIterable {
     case text
     case longText
     case number
