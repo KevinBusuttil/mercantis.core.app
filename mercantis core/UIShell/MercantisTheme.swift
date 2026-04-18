@@ -120,6 +120,7 @@ struct MercantisSectionHeading: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MercantisTheme.textMuted)
                 .tracking(0.5)
+                .accessibilityAddTraits(.isHeader)
         }
     }
 }
