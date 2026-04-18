@@ -119,7 +119,7 @@ struct MercantisSectionHeading: View {
             Text(title.uppercased())
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MercantisTheme.textMuted)
-                .tracking(0.8)
+                .tracking(1.0)
         }
     }
 }

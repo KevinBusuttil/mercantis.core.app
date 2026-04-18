@@ -211,6 +211,7 @@ public struct DocTypeBuilderView: View {
 
     private let existingDocType: DocType?
     private let onSave: (() -> Void)?
+    private let formLabelWidth: CGFloat = 190
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -245,23 +246,23 @@ public struct DocTypeBuilderView: View {
 
                 MercantisSectionHeading(title: "Basic Info")
                 VStack(spacing: 12) {
-                    formRow("DocType ID") {
+                    labeledFormRow("DocType ID") {
                         TextField("DocType ID", text: $docTypeId)
                             .mercantisInput()
                     }
-                    formRow("Name") {
+                    labeledFormRow("Name") {
                         TextField("Name", text: $name)
                             .mercantisInput()
                     }
-                    formRow("Module") {
+                    labeledFormRow("Module") {
                         TextField("Module", text: $module)
                             .mercantisInput()
                     }
-                    formRow("Title Field") {
+                    labeledFormRow("Title Field") {
                         TextField("Title Field", text: $titleField)
                             .mercantisInput()
                     }
-                    formRow("Search Fields") {
+                    labeledFormRow("Search Fields") {
                         TextField("comma-separated", text: $searchFields)
                             .mercantisInput()
                     }
@@ -274,15 +275,15 @@ public struct DocTypeBuilderView: View {
                 VStack(spacing: 12) {
                     ForEach(Array(fields.indices), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 10) {
-                            formRow("Key") {
+                            labeledFormRow("Key") {
                                 TextField("field_key", text: $fields[index].key)
                                     .mercantisInput()
                             }
-                            formRow("Label") {
+                            labeledFormRow("Label") {
                                 TextField("Field Label", text: $fields[index].label)
                                     .mercantisInput()
                             }
-                            formRow("Type") {
+                            labeledFormRow("Type") {
                                 Picker("Type", selection: $fields[index].type) {
                                     ForEach(FieldType.allCases, id: \.self) { type in
                                         Text(type.rawValue).tag(type)
@@ -293,19 +294,19 @@ public struct DocTypeBuilderView: View {
                                 .mercantisPicker()
                             }
                             checkboxRow("Required", isOn: $fields[index].required)
-                            formRow("Options") {
+                            labeledFormRow("Options") {
                                 TextField("comma-separated options", text: $fields[index].optionsText)
                                     .mercantisInput()
                             }
-                            formRow("Linked DocType") {
+                            labeledFormRow("Linked DocType") {
                                 TextField("Linked DocType", text: $fields[index].linkedDocType)
                                     .mercantisInput()
                             }
-                            formRow("Child DocType") {
+                            labeledFormRow("Child DocType") {
                                 TextField("Child DocType", text: $fields[index].childDocType)
                                     .mercantisInput()
                             }
-                            formRow("Visibility") {
+                            labeledFormRow("Visibility") {
                                 TextField("Expression", text: $fields[index].visibilityExpression)
                                     .mercantisInput()
                             }
@@ -327,7 +328,7 @@ public struct DocTypeBuilderView: View {
                 VStack(spacing: 12) {
                     ForEach(Array(permissions.indices), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 10) {
-                            formRow("Role") {
+                            labeledFormRow("Role") {
                                 TextField("Role", text: $permissions[index].role)
                                     .mercantisInput()
                             }
@@ -353,7 +354,7 @@ public struct DocTypeBuilderView: View {
 
                 MercantisSectionHeading(title: "Sync Policy")
                 VStack(spacing: 12) {
-                    formRow("Conflict Resolution") {
+                    labeledFormRow("Conflict Resolution") {
                         Picker("Conflict Resolution", selection: $conflictResolution) {
                             ForEach(ConflictResolution.allCases, id: \.self) { value in
                                 Text(value.rawValue).tag(value)
@@ -371,7 +372,7 @@ public struct DocTypeBuilderView: View {
                 VStack(spacing: 12) {
                     ForEach(Array(indexes.indices), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 10) {
-                            formRow("Field Key") {
+                            labeledFormRow("Field Key") {
                                 TextField("Field Key", text: $indexes[index].fieldKey)
                                     .mercantisInput()
                             }
@@ -423,7 +424,7 @@ public struct DocTypeBuilderView: View {
         }
     }
 
-    private func formRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
+    private func labeledFormRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Group {
                 if let label, !label.isEmpty {
@@ -434,14 +435,14 @@ public struct DocTypeBuilderView: View {
                     Color.clear
                 }
             }
-            .frame(width: 190, alignment: .leading)
+            .frame(width: formLabelWidth, alignment: .leading)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func checkboxRow(_ label: String, isOn: Binding<Bool>) -> some View {
-        formRow(nil) {
+        labeledFormRow(nil) {
             Toggle(label, isOn: isOn)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
