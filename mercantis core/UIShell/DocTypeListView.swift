@@ -2,10 +2,9 @@ import SwiftUI
 
 public struct DocTypeListView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
+    @EnvironmentObject private var router: UIShellRouter
 
     @State private var selectedDocType: DocType?
-    @State private var showingNewDocType = false
-    @State private var showingFormBuilder = false
 
     public init() {}
 
@@ -41,11 +40,11 @@ public struct DocTypeListView: View {
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 Button("New DocType") {
-                    showingNewDocType = true
+                    router.openNewDocType()
                 }
                 .buttonStyle(MercantisPrimaryButtonStyle())
                 Button("Visual Builder") {
-                    showingFormBuilder = true
+                    router.openVisualBuilder()
                 }
                 .buttonStyle(MercantisSecondaryButtonStyle())
             }
@@ -60,30 +59,6 @@ public struct DocTypeListView: View {
                 }
             }
             .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
-            #if os(macOS)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            #endif
-            .environmentObject(tooling)
-        }
-        .sheet(isPresented: $showingNewDocType) {
-            NavigationStack {
-                DocTypeBuilderView {
-                    tooling.reload()
-                }
-            }
-            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
-            #if os(macOS)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            #endif
-            .environmentObject(tooling)
-        }
-        .sheet(isPresented: $showingFormBuilder) {
-            NavigationStack {
-                FormBuilderView {
-                    tooling.reload()
-                }
-            }
-            .frame(minWidth: 960, idealWidth: 1200, minHeight: 640, idealHeight: 820)
             #if os(macOS)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif

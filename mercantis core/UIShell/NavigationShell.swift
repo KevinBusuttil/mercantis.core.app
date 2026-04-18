@@ -7,13 +7,40 @@
 
 import SwiftUI
 
+@MainActor
+final class UIShellRouter: ObservableObject {
+    @Published var selectedSection: NavigationSection? = .home
+    @Published var setupDestination: SetupDestination = .overview
+
+    func showSetupOverview() {
+        selectedSection = .setup
+        setupDestination = .overview
+    }
+
+    func openNewDocType() {
+        selectedSection = .setup
+        setupDestination = .newDocType
+    }
+
+    func openVisualBuilder() {
+        selectedSection = .setup
+        setupDestination = .visualBuilder
+    }
+}
+
+enum SetupDestination: Hashable {
+    case overview
+    case newDocType
+    case visualBuilder
+}
+
 /// The top-level navigation shell for Mercantis Core.
 ///
 /// On macOS and iPad it uses a `NavigationSplitView` with a sidebar.
 /// On iPhone it uses a tab bar.
 public struct NavigationShell: View {
 
-    @State private var selectedSection: NavigationSection? = .home
+    @EnvironmentObject private var router: UIShellRouter
     @State private var showCommandBar = false
 
     public init() {}
@@ -32,7 +59,7 @@ public struct NavigationShell: View {
         NavigationSplitView {
             sidebar
         } detail: {
-            detailView(for: selectedSection)
+            detailView(for: router.selectedSection)
         }
         .overlay(alignment: .top) {
             if showCommandBar {
@@ -48,7 +75,7 @@ public struct NavigationShell: View {
     // MARK: - iPhone Layout
 
     private var iPhoneLayout: some View {
-        TabView(selection: $selectedSection) {
+        TabView(selection: $router.selectedSection) {
             detailView(for: .home)
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(NavigationSection.home as NavigationSection?)
@@ -78,7 +105,7 @@ public struct NavigationShell: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(NavigationSection.allCases, selection: $selectedSection) { section in
+        List(NavigationSection.allCases, selection: $router.selectedSection) { section in
             Label(section.title, systemImage: section.icon)
                 .tag(section)
         }
@@ -116,10 +143,42 @@ public struct NavigationShell: View {
             Text("Settings")
                 .navigationTitle("Settings")
         case .setup:
-            DocTypeListView()
-                .navigationTitle("Setup")
+            setupDetailView
         case nil:
             Text("Select a section")
+        }
+    }
+
+    @ViewBuilder
+    private var setupDetailView: some View {
+        switch router.setupDestination {
+        case .overview:
+            DocTypeListView()
+                .navigationTitle("Setup")
+        case .newDocType:
+            DocTypeBuilderView {
+                router.showSetupOverview()
+            }
+            .navigationTitle("New DocType")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Back to Setup") {
+                        router.showSetupOverview()
+                    }
+                }
+            }
+        case .visualBuilder:
+            FormBuilderView {
+                router.showSetupOverview()
+            }
+            .navigationTitle("Visual Builder")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Back to Setup") {
+                        router.showSetupOverview()
+                    }
+                }
+            }
         }
     }
 }
