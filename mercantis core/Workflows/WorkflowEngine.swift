@@ -26,7 +26,7 @@ public final class WorkflowEngine {
         document: Document,
         expressionEvaluator: ExpressionEvaluator
     ) throws -> [WorkflowTransition] {
-        return try workflow.transitions.filter { transition in
+        return workflow.transitions.filter { transition in
             guard transition.from == currentState else { return false }
             guard transition.allowedRoles.contains(where: { userRoles.contains($0) }) else { return false }
 

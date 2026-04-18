@@ -109,10 +109,7 @@ public final class SyncEngine {
 
     /// Pull and apply remote mutations from the cloud adapter.
     public func pullAndApplyRemoteMutations() async throws {
-        let currentSequence: Int64
-        sequenceLock.lock()
-        currentSequence = lastServerSequence
-        sequenceLock.unlock()
+        let currentSequence = readLastServerSequence()
 
         let remoteMutations = try await cloudAdapter.pullMutations(
             since: SyncVersion(serverSequence: currentSequence)
@@ -123,11 +120,7 @@ public final class SyncEngine {
 
         // Update our bookmark.
         if let maxSeq = remoteMutations.map({ $0.serverSequence }).max() {
-            sequenceLock.lock()
-            if maxSeq > lastServerSequence {
-                lastServerSequence = maxSeq
-            }
-            sequenceLock.unlock()
+            updateLastServerSequence(toAtLeast: maxSeq)
         }
     }
 
@@ -214,6 +207,20 @@ public final class SyncEngine {
     }
 
     // MARK: - Private Helpers
+
+    private func readLastServerSequence() -> Int64 {
+        sequenceLock.lock()
+        defer { sequenceLock.unlock() }
+        return lastServerSequence
+    }
+
+    private func updateLastServerSequence(toAtLeast value: Int64) {
+        sequenceLock.lock()
+        defer { sequenceLock.unlock() }
+        if value > lastServerSequence {
+            lastServerSequence = value
+        }
+    }
 
     private func applyRemoteUpsert(_ mutation: MutationRecord) throws {
         // Decode the payload to determine the document's DocType and fields.
