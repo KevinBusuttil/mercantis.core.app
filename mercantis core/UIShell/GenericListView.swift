@@ -57,7 +57,6 @@ public struct GenericListView: View {
         HStack {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search \(docType.name)…", text: $searchText)
-                .mercantisInput()
 #if os(iOS)
                 .textInputAutocapitalization(.never)
 #endif

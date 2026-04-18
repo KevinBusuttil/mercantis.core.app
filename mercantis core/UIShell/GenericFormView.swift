@@ -147,7 +147,7 @@ public struct GenericFormView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .mercantisInput()
+                .mercantisPicker()
             }
         }
     }

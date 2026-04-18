@@ -46,6 +46,18 @@ struct MercantisSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+struct MercantisDestructiveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(configuration.isPressed ? MercantisTheme.danger.opacity(0.82) : MercantisTheme.danger)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 private struct MercantisInputModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -59,6 +71,25 @@ private struct MercantisInputModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
+            .accessibilityElement(children: .contain)
+    }
+}
+
+private struct MercantisPickerModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(MercantisTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(MercantisTheme.border, lineWidth: 1)
+            )
+            .accessibilityElement(children: .contain)
     }
 }
 
@@ -75,6 +106,7 @@ private struct MercantisCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
             )
+            .accessibilityElement(children: .contain)
     }
 }
 
@@ -99,5 +131,9 @@ extension View {
 
     func mercantisCard() -> some View {
         modifier(MercantisCardModifier())
+    }
+
+    func mercantisPicker() -> some View {
+        modifier(MercantisPickerModifier())
     }
 }

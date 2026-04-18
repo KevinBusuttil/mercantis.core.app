@@ -203,7 +203,7 @@ public struct FormBuilderView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .mercantisInput()
+                .mercantisPicker()
                 Toggle("Required", isOn: binding.required)
                 TextField("Options", text: binding.optionsText)
                     .mercantisInput()

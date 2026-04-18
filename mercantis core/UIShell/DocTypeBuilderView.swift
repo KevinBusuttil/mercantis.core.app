@@ -290,7 +290,7 @@ public struct DocTypeBuilderView: View {
                                 }
                                 .pickerStyle(.menu)
                                 .labelsHidden()
-                                .mercantisInput()
+                                .mercantisPicker()
                             }
                             checkboxRow("Required", isOn: $fields[index].required)
                             formRow("Options") {
@@ -312,7 +312,7 @@ public struct DocTypeBuilderView: View {
                             Button("Remove Field", role: .destructive) {
                                 fields.remove(at: index)
                             }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
+                            .buttonStyle(MercantisDestructiveButtonStyle())
                         }
                         .mercantisCard()
                     }
@@ -340,7 +340,7 @@ public struct DocTypeBuilderView: View {
                             Button("Remove Permission", role: .destructive) {
                                 permissions.remove(at: index)
                             }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
+                            .buttonStyle(MercantisDestructiveButtonStyle())
                         }
                         .mercantisCard()
                     }
@@ -361,7 +361,7 @@ public struct DocTypeBuilderView: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
-                        .mercantisInput()
+                        .mercantisPicker()
                     }
                     checkboxRow("Immutable After Submit", isOn: $immutableAfterSubmit)
                 }
@@ -379,7 +379,7 @@ public struct DocTypeBuilderView: View {
                             Button("Remove Index", role: .destructive) {
                                 indexes.remove(at: index)
                             }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
+                            .buttonStyle(MercantisDestructiveButtonStyle())
                         }
                         .mercantisCard()
                     }
@@ -423,19 +423,25 @@ public struct DocTypeBuilderView: View {
         }
     }
 
-    private func formRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func formRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(MercantisTheme.textPrimary)
-                .frame(width: 190, alignment: .leading)
+            Group {
+                if let label, !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MercantisTheme.textPrimary)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 190, alignment: .leading)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func checkboxRow(_ label: String, isOn: Binding<Bool>) -> some View {
-        formRow("") {
+        formRow(nil) {
             Toggle(label, isOn: isOn)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
