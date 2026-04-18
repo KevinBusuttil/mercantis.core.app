@@ -287,8 +287,6 @@ public struct NavigationShell: View {
                 isSetupExpanded.toggle()
                 if router.selectedSection != .setup {
                     router.showSetupOverview()
-                } else {
-                    router.selectedItem = .setup
                 }
             } label: {
                 HStack {
@@ -784,6 +782,7 @@ public struct NavigationShell: View {
             isSetupExpanded = true
             router.showSetupOverview()
         } else {
+            isSetupExpanded = false
             router.selectedItem = nil
         }
     }
@@ -799,12 +798,12 @@ public struct NavigationShell: View {
         } label: {
             HStack(spacing: 10) {
                 Spacer()
-                    .frame(width: 18)
+                    .frame(width: setupSubItemIndentationWidth)
                 Image(systemName: icon)
-                    .frame(width: 16)
+                    .frame(width: setupSubItemIconWidth)
                 Text(title)
             }
-            .padding(.leading, 14)
+            .padding(.leading, setupSubItemLeadingPadding)
         }
         .buttonStyle(.plain)
         .listRowBackground(sidebarRowBackground(isActive: isActive))
@@ -820,6 +819,10 @@ public struct NavigationShell: View {
             }
         }
     }
+
+    private var setupSubItemIndentationWidth: CGFloat { 18 }
+    private var setupSubItemIconWidth: CGFloat { 16 }
+    private var setupSubItemLeadingPadding: CGFloat { 14 }
 
     private var moduleNames: [String] {
         Array(Set(tooling.docTypes.map(\.module))).sorted()
