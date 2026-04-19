@@ -1,9 +1,43 @@
 import SwiftUI
 
-private struct FormBuilderSection: Identifiable {
+private struct BuilderPaletteGroup: Identifiable {
+    let id: String
+    let title: String
+    let controls: [BuilderControlItem]
+}
+
+private struct BuilderControlItem: Identifiable {
+    enum Kind {
+        case field(FieldType)
+        case section
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let kind: Kind
+
+    var dragToken: String {
+        switch kind {
+        case .field(let type):
+            return "field:\(type.rawValue)"
+        case .section:
+            return "layout:section"
+        }
+    }
+}
+
+private struct BuilderStatusItem: Identifiable {
+    let id: String
+    let title: String
+    let isComplete: Bool
+}
+
+private struct BuilderTimelineEvent: Identifiable {
     let id = UUID()
-    var title: String
-    var columns: [[EditableField]]
+    let title: String
+    let timestamp: Date
 }
 
 public struct FormBuilderView: View {
@@ -11,7 +45,6 @@ public struct FormBuilderView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let onSave: (() -> Void)?
-    private let compactLayoutMaxWidth: CGFloat = 1180
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -20,27 +53,90 @@ public struct FormBuilderView: View {
     @State private var isChildTable = false
     @State private var titleField = ""
     @State private var searchFields = ""
+    @State private var fields: [EditableField] = []
+    @State private var uniqueFieldKeys: Set<String> = []
     @State private var selectedFieldID: UUID?
-    @State private var sections: [FormBuilderSection] = [
-        FormBuilderSection(title: "Main", columns: [[], []])
-    ]
+    @State private var selectedSourceDocTypeID = ""
+
+    @State private var paletteSearchText = ""
+    @State private var expandedPaletteGroupIDs: Set<String> = []
+    @State private var nextGeneratedSection = 1
     @State private var validationError: String?
+    @State private var isDeployed = false
+    @State private var timelineEvents: [BuilderTimelineEvent] = []
+
+    private let paletteGroups: [BuilderPaletteGroup] = [
+        BuilderPaletteGroup(
+            id: "data",
+            title: "Data",
+            controls: [
+                BuilderControlItem(id: "text", title: "Text", subtitle: "Single line value", icon: "character.textbox", kind: .field(.text)),
+                BuilderControlItem(id: "longText", title: "Long Text", subtitle: "Multi-line text", icon: "text.alignleft", kind: .field(.longText)),
+                BuilderControlItem(id: "check", title: "Check", subtitle: "Boolean toggle", icon: "checkmark.square", kind: .field(.boolean)),
+                BuilderControlItem(id: "date", title: "Date", subtitle: "Calendar date", icon: "calendar", kind: .field(.date)),
+                BuilderControlItem(id: "datetime", title: "DateTime", subtitle: "Date and time", icon: "calendar.badge.clock", kind: .field(.datetime))
+            ]
+        ),
+        BuilderPaletteGroup(
+            id: "relations",
+            title: "Relations",
+            controls: [
+                BuilderControlItem(id: "link", title: "Link", subtitle: "Reference another DocType", icon: "link", kind: .field(.link)),
+                BuilderControlItem(id: "table", title: "Table", subtitle: "Child row collection", icon: "tablecells", kind: .field(.table))
+            ]
+        ),
+        BuilderPaletteGroup(
+            id: "choice",
+            title: "Choice / Selection",
+            controls: [
+                BuilderControlItem(id: "select", title: "Select", subtitle: "Single option list", icon: "list.bullet", kind: .field(.select)),
+                BuilderControlItem(id: "multiselect", title: "Multi Select", subtitle: "Multiple options", icon: "checklist", kind: .field(.multiselect))
+            ]
+        ),
+        BuilderPaletteGroup(
+            id: "numeric",
+            title: "Numeric",
+            controls: [
+                BuilderControlItem(id: "int", title: "Int", subtitle: "Whole number", icon: "number", kind: .field(.number)),
+                BuilderControlItem(id: "float", title: "Float", subtitle: "Decimal number", icon: "sum", kind: .field(.decimal)),
+                BuilderControlItem(id: "currency", title: "Currency", subtitle: "Monetary value", icon: "dollarsign.circle", kind: .field(.currency))
+            ]
+        ),
+        BuilderPaletteGroup(
+            id: "layout",
+            title: "Layout",
+            controls: [
+                BuilderControlItem(id: "sectionBreak", title: "Section Break", subtitle: "Create a metadata section", icon: "rectangle.split.1x2", kind: .section)
+            ]
+        ),
+        BuilderPaletteGroup(
+            id: "advanced",
+            title: "Advanced",
+            controls: [
+                BuilderControlItem(id: "formula", title: "Formula", subtitle: "Computed expression", icon: "function", kind: .field(.formula)),
+                BuilderControlItem(id: "attachment", title: "Attachment", subtitle: "Upload file", icon: "paperclip", kind: .field(.attachment))
+            ]
+        )
+    ]
 
     public init(onSave: (() -> Void)? = nil) {
         self.onSave = onSave
     }
 
     public var body: some View {
-        GeometryReader { proxy in
-            if proxy.size.width < compactLayoutMaxWidth {
-                compactLayout
-            } else {
-                expandedLayout
-            }
+        HSplitView {
+            controlsPalette
+                .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
+
+            metadataCanvas
+                .frame(minWidth: 480, idealWidth: 720, maxWidth: .infinity)
+
+            inspectorPane
+                .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
         }
-        .navigationTitle("Form Builder")
+        .navigationTitle("Visual Builder")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button("Save", action: save)
                     .buttonStyle(MercantisPrimaryButtonStyle())
             }
@@ -56,155 +152,257 @@ public struct FormBuilderView: View {
             }
         }
         .background(MercantisTheme.background)
-    }
-
-    private var expandedLayout: some View {
-        HStack(spacing: 0) {
-            fieldPalette
-                .frame(width: 180)
-            Divider()
-            canvas
-                .frame(minWidth: 360, maxWidth: .infinity)
-                .layoutPriority(1)
-            Divider()
-            inspector
-                .frame(width: 280)
-            Divider()
-            preview
-                .frame(minWidth: 320, maxWidth: .infinity)
-        }
-    }
-
-    private var compactLayout: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                fieldPalette
-                canvas
-                inspector
-                preview
+        .onAppear {
+            if expandedPaletteGroupIDs.isEmpty {
+                expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            .padding()
+            if module.isEmpty, let firstModule = tooling.moduleNames.first {
+                module = firstModule
+            }
+            if docTypeId.isEmpty, fields.isEmpty {
+                loadInitialDocType()
+            }
         }
     }
 
-    private var fieldPalette: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Field Palette")
+    private var controlsPalette: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Controls")
                 .font(.headline)
+
+            TextField("Search controls", text: $paletteSearchText)
+                .textFieldStyle(.roundedBorder)
+
             ScrollView {
-                ForEach(FieldType.allCases, id: \.self) { fieldType in
-                    Text(fieldType.rawValue)
-                        .font(.callout)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(6)
-                        .background(MercantisTheme.surfaceMuted)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .draggable(fieldType.rawValue)
-                }
-            }
-            Spacer()
-        }
-        .mercantisCard()
-    }
-
-    private var canvas: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                basicInfoCard
-
-                ForEach(Array(sections.indices), id: \.self) { sectionIndex in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(sections[sectionIndex].title)
-                            .font(.headline)
-
-                        HStack(alignment: .top, spacing: 12) {
-                            ForEach(Array(sections[sectionIndex].columns.indices), id: \.self) { columnIndex in
-                                dropColumn(sectionIndex: sectionIndex, columnIndex: columnIndex)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(filteredPaletteGroups) { group in
+                        DisclosureGroup(
+                            isExpanded: Binding(
+                                get: { expandedPaletteGroupIDs.contains(group.id) },
+                                set: { isExpanded in
+                                    if isExpanded {
+                                        expandedPaletteGroupIDs.insert(group.id)
+                                    } else {
+                                        expandedPaletteGroupIDs.remove(group.id)
+                                    }
+                                }
+                            )
+                        ) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(group.controls) { control in
+                                    Button {
+                                        insert(control: control)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: control.icon)
+                                                .frame(width: 16)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(control.title)
+                                                Text(control.subtitle)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                        .padding(.vertical, 6)
+                                        .padding(.horizontal, 8)
+                                        .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .draggable(control.dragToken)
+                                }
                             }
+                            .padding(.top, 6)
+                        } label: {
+                            Text(group.title)
+                                .font(.subheadline.weight(.semibold))
                         }
                     }
                 }
             }
+
+            Spacer(minLength: 0)
+        }
+        .mercantisCard()
+    }
+
+    private var metadataCanvas: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                builderHeader
+
+                if canvasSections.isEmpty {
+                    ContentUnavailableView("No fields in layout", systemImage: "square.stack.3d.down.right")
+                        .frame(maxWidth: .infinity, minHeight: 280)
+                        .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    ForEach(canvasSections) { section in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(section.title)
+                                .font(.headline)
+
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(section.groups) { group in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(group.title)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+
+                                        ForEach(group.fields) { field in
+                                            canvasFieldRow(field)
+                                        }
+
+                                        if group.fields.isEmpty {
+                                            Text("Drop field here")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                                    .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
+                                    .dropDestination(for: String.self) { items, _ in
+                                        guard let token = items.first else { return false }
+                                        return insertFromDragToken(token, intoSection: section.title)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(.separator, lineWidth: 1)
+                        )
+                    }
+                }
+            }
             .padding()
         }
         .mercantisCard()
     }
 
-    private var basicInfoCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("DocType")
-                .font(.headline)
-            TextField("DocType ID", text: $docTypeId)
-                .mercantisInput()
-            TextField("Name", text: $name)
-                .mercantisInput()
-            Picker("Module", selection: $module) {
-                if module.isEmpty || !tooling.moduleNames.contains(module) {
-                    Text("Select Module").tag("")
+    @ViewBuilder
+    private func canvasFieldRow(_ field: CanvasFieldViewModel) -> some View {
+        let selected = selectedFieldBinding?.wrappedValue.key == field.key
+        Button {
+            if let selectedField = fields.first(where: { $0.key == field.key }) {
+                selectedFieldID = selectedField.id
+            }
+        } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(field.label)
+                        .font(.callout)
+                    Text("\(field.key) · \(field.type.rawValue)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                ForEach(tooling.moduleNames, id: \.self) { moduleName in
-                    Text(moduleName).tag(moduleName)
+                Spacer()
+                if field.isRequired {
+                    Image(systemName: "asterisk")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if field.readOnlyExpression?.lowercased() == "true" {
+                    Image(systemName: "lock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .mercantisPicker()
-            TextField("Title Field", text: $titleField)
-                .mercantisInput()
-            TextField("Search Fields (comma-separated)", text: $searchFields)
-                .mercantisInput()
-            Toggle("Submittable", isOn: $isSubmittable)
-            Toggle("Child Table", isOn: $isChildTable)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                selected ? MercantisTheme.primary.opacity(0.18) : .clear,
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(selected ? MercantisTheme.primary.opacity(0.45) : .separator.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var builderHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Metadata Canvas")
+                .font(.headline)
+            Text("Sections and groups are projected from ResolvedMeta field section and column hints.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("DocType ID", text: $docTypeId)
+                    .mercantisInput()
+                TextField("Display Name", text: $name)
+                    .mercantisInput()
+                Picker("Module", selection: $module) {
+                    if module.isEmpty || !tooling.moduleNames.contains(module) {
+                        Text("Select Module").tag("")
+                    }
+                    ForEach(tooling.moduleNames, id: \.self) { moduleName in
+                        Text(moduleName).tag(moduleName)
+                    }
+                }
+                .pickerStyle(.menu)
+                .mercantisPicker()
+                HStack {
+                    Toggle("Submittable", isOn: $isSubmittable)
+                    Toggle("Child Table", isOn: $isChildTable)
+                }
+                TextField("Title Field", text: $titleField)
+                    .mercantisInput()
+                TextField("Search Fields (comma-separated)", text: $searchFields)
+                    .mercantisInput()
+            }
+            .padding(10)
+            .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
+
+            HStack(spacing: 10) {
+                Picker("Source", selection: $selectedSourceDocTypeID) {
+                    Text("Current Draft").tag("")
+                    ForEach(tooling.docTypes.filter { !$0.isChildTable }, id: \.id) { docType in
+                        Text(docType.name).tag(docType.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: selectedSourceDocTypeID) { _, value in
+                    guard !value.isEmpty else { return }
+                    loadDocType(id: value)
+                }
+
+                Button("Clear Selection") {
+                    selectedFieldID = nil
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var inspectorPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                fieldInspectorCard
+                statusHistoryCard
+                timelineCard
+            }
+            .padding(.bottom, 4)
         }
         .mercantisCard()
     }
 
-    private func dropColumn(sectionIndex: Int, columnIndex: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(sections[sectionIndex].columns[columnIndex]) { field in
-                let isSelected = field.id == selectedFieldID
-                Text(displayName(for: field))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(isSelected ? MercantisTheme.primary.opacity(0.2) : MercantisTheme.surfaceMuted)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .onTapGesture {
-                        selectedFieldID = field.id
-                    }
-            }
-
-            Text("Drop field here")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .background(MercantisTheme.surfaceMuted)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .dropDestination(for: String.self) { items, _ in
-            guard let rawValue = items.first, let type = FieldType(rawValue: rawValue) else { return false }
-            let nextCount = sections[sectionIndex].columns[columnIndex].count + 1
-            sections[sectionIndex].columns[columnIndex].append(
-                EditableField(
-                    key: "field_\(nextCount)",
-                    label: "Field \(nextCount)",
-                    type: type
-                )
-            )
-            return true
-        }
-    }
-
-    private var inspector: some View {
+    private var fieldInspectorCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Inspector")
+            Text("Active Field Properties")
                 .font(.headline)
 
             if let binding = selectedFieldBinding {
                 TextField("Key", text: binding.key)
                     .mercantisInput()
+                    .onChange(of: binding.key.wrappedValue) { oldValue, newValue in
+                        syncUniqueKeyChange(oldKey: oldValue, newKey: newValue)
+                    }
                 TextField("Label", text: binding.label)
                     .mercantisInput()
                 Picker("Type", selection: binding.type) {
@@ -215,83 +413,137 @@ public struct FormBuilderView: View {
                 .pickerStyle(.menu)
                 .mercantisPicker()
                 Toggle("Required", isOn: binding.required)
-                TextField("Options", text: binding.optionsText)
+                Toggle(
+                    "Read Only",
+                    isOn: Binding(
+                        get: { binding.readOnlyExpression.wrappedValue.lowercased() == "true" },
+                        set: { binding.readOnlyExpression.wrappedValue = $0 ? "true" : "" }
+                    )
+                )
+                Toggle(
+                    "Unique",
+                    isOn: Binding(
+                        get: { uniqueFieldKeys.contains(binding.key.wrappedValue) },
+                        set: { isUnique in
+                            if isUnique {
+                                uniqueFieldKeys.insert(binding.key.wrappedValue)
+                            } else {
+                                uniqueFieldKeys.remove(binding.key.wrappedValue)
+                            }
+                        }
+                    )
+                )
+                TextField("Options (comma-separated)", text: binding.optionsText)
                     .mercantisInput()
                 TextField("Linked DocType", text: binding.linkedDocType)
-                    .mercantisInput()
-                TextField("Visibility Expression", text: binding.visibilityExpression)
                     .mercantisInput()
                 TextField("Child DocType", text: binding.childDocType)
                     .mercantisInput()
                 TextField("Section", text: binding.section)
                     .mercantisInput()
                 Stepper(value: binding.column, in: 0...4) {
-                    Text(binding.column.wrappedValue <= 0 ? "Auto Column" : "Column \(binding.column.wrappedValue)")
+                    Text(binding.column.wrappedValue <= 0 ? "Group: Primary" : "Group: Column \(binding.column.wrappedValue)")
                 }
+                TextField("Visibility Expression", text: binding.visibilityExpression)
+                    .mercantisInput()
+                Text("Placeholder/help text are not yet represented in the core field metadata model.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
-                Text("Select a field on the canvas to edit properties.")
+                Text("Select a field from the canvas to edit properties.")
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
         }
         .mercantisCard()
     }
 
-    private var preview: some View {
+    private var statusHistoryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Live Preview")
+            Text("Status History")
                 .font(.headline)
-            GenericFormView(
-                docType: previewDocType,
-                document: .constant(previewDocument)
-            )
-            .disabled(true)
+
+            ForEach(statusItems) { item in
+                HStack(spacing: 8) {
+                    Image(systemName: item.isComplete ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(item.isComplete ? .green : .secondary)
+                    Text(item.title)
+                        .font(.callout)
+                    Spacer()
+                }
+            }
         }
         .mercantisCard()
+    }
+
+    private var timelineCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Timeline")
+                .font(.headline)
+
+            if timelineEvents.isEmpty {
+                Text("No recent builder activity")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(timelineEvents.prefix(10)) { event in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.title)
+                            .font(.callout)
+                        Text(event.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .mercantisCard()
+    }
+
+    private var filteredPaletteGroups: [BuilderPaletteGroup] {
+        let query = paletteSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return paletteGroups }
+
+        return paletteGroups.compactMap { group in
+            let controls = group.controls.filter { control in
+                control.title.lowercased().contains(query) || control.subtitle.lowercased().contains(query)
+            }
+            guard !controls.isEmpty else { return nil }
+            return BuilderPaletteGroup(id: group.id, title: group.title, controls: controls)
+        }
     }
 
     private var selectedFieldBinding: Binding<EditableField>? {
         guard let selectedFieldID else { return nil }
-
-        for sectionIndex in sections.indices {
-            for columnIndex in sections[sectionIndex].columns.indices {
-                if let fieldIndex = sections[sectionIndex].columns[columnIndex].firstIndex(where: { $0.id == selectedFieldID }) {
-                    return $sections[sectionIndex].columns[columnIndex][fieldIndex]
-                }
-            }
-        }
-
-        return nil
+        guard let index = fields.firstIndex(where: { $0.id == selectedFieldID }) else { return nil }
+        return $fields[index]
     }
 
-    private var allFields: [EditableField] {
-        sections.flatMap { $0.columns.flatMap { $0 } }
-    }
-
-    private func displayName(for field: EditableField) -> String {
-        if !field.label.isEmpty {
-            return field.label
-        }
-        if !field.key.isEmpty {
-            return field.key
-        }
-        return "Untitled Field"
+    private var statusItems: [BuilderStatusItem] {
+        [
+            BuilderStatusItem(id: "draft", title: "Draft defined", isComplete: !docTypeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+            BuilderStatusItem(id: "layout", title: "Layout validated", isComplete: !canvasSections.isEmpty),
+            BuilderStatusItem(id: "deployed", title: "Fields deployed", isComplete: isDeployed)
+        ]
     }
 
     private var previewDocType: DocType {
-        let fields = allFields.map(\.fieldDefinition)
+        let normalizedDocTypeId = docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModule = module.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let outputFields = fields.map(\.fieldDefinition)
         return DocType(
-            id: docTypeId.isEmpty ? "PreviewDocType" : docTypeId,
-            name: name.isEmpty ? "Preview DocType" : name,
-            module: module.isEmpty ? "Setup" : module,
+            id: normalizedDocTypeId.isEmpty ? "PreviewDocType" : normalizedDocTypeId,
+            name: normalizedName.isEmpty ? "Preview DocType" : normalizedName,
+            module: normalizedModule.isEmpty ? "Setup" : normalizedModule,
             appId: "custom.local",
             isChildTable: isChildTable,
             isSubmittable: isSubmittable,
-            fields: fields,
+            fields: outputFields,
             permissions: [],
             syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
-            indexes: [],
+            indexes: uniqueFieldKeys.sorted().map { IndexDefinition(fieldKey: $0, unique: true) },
             searchFields: searchFields
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -301,20 +553,98 @@ public struct FormBuilderView: View {
         )
     }
 
-    private var previewDocument: Document {
-        let values = Dictionary(uniqueKeysWithValues: allFields.map { ($0.key, FieldValue.string("")) })
-        return Document(
-            id: UUID().uuidString,
-            docType: previewDocType.id,
-            company: "",
-            status: "Draft",
-            createdAt: Date(),
-            updatedAt: Date(),
-            syncVersion: 0,
-            syncState: .local,
-            fields: values,
-            children: [:]
-        )
+    private var resolvedMeta: ResolvedMeta {
+        tooling.resolvedMeta(forDefinition: previewDocType)
+    }
+
+    private var canvasSections: [CanvasSectionViewModel] {
+        ResolvedMetaCanvasAdapter.project(resolvedMeta)
+    }
+
+    private func insert(control: BuilderControlItem, targetSection: String? = nil) {
+        switch control.kind {
+        case .field(let type):
+            let section = targetSection ?? fields.last?.section ?? "Main"
+            let nextKey = nextFieldKey(for: type)
+            fields.append(
+                EditableField(
+                    key: nextKey,
+                    label: nextKey.replacingOccurrences(of: "_", with: " ").capitalized,
+                    type: type,
+                    section: section
+                )
+            )
+            selectedFieldID = fields.last?.id
+            trackEvent("Field added: \(nextKey)")
+        case .section:
+            let sectionName = "Section \(nextGeneratedSection)"
+            nextGeneratedSection += 1
+            trackEvent("Section created: \(sectionName)")
+            if let binding = selectedFieldBinding {
+                binding.section.wrappedValue = sectionName
+            }
+        }
+    }
+
+    private func insertFromDragToken(_ token: String, intoSection section: String) -> Bool {
+        guard let item = paletteGroups
+            .flatMap(\.controls)
+            .first(where: { $0.dragToken == token }) else {
+            return false
+        }
+        insert(control: item, targetSection: section)
+        return true
+    }
+
+    private func nextFieldKey(for fieldType: FieldType) -> String {
+        let base = fieldType.rawValue.lowercased()
+        var index = 1
+        var candidate = "\(base)_\(index)"
+        let existing = Set(fields.map(\.key))
+        while existing.contains(candidate) {
+            index += 1
+            candidate = "\(base)_\(index)"
+        }
+        return candidate
+    }
+
+    private func loadInitialDocType() {
+        guard let firstDocType = tooling.docTypes.first(where: { !$0.isChildTable }) else { return }
+        selectedSourceDocTypeID = firstDocType.id
+        loadDocType(id: firstDocType.id)
+    }
+
+    private func loadDocType(id: String) {
+        guard let docType = tooling.docType(withId: id) else { return }
+        let meta = tooling.resolvedMeta(for: id)
+
+        docTypeId = docType.id
+        name = docType.name
+        module = docType.module
+        isSubmittable = docType.isSubmittable
+        isChildTable = docType.isChildTable
+        titleField = docType.titleField
+        searchFields = docType.searchFields.joined(separator: ", ")
+        uniqueFieldKeys = Set(docType.indexes.filter(\.unique).map(\.fieldKey))
+
+        if let meta {
+            fields = meta.fields.map(EditableField.init)
+        } else {
+            fields = docType.fields.map(EditableField.init)
+        }
+        selectedFieldID = fields.first?.id
+        trackEvent("Loaded DocType: \(docType.id)")
+    }
+
+    private func syncUniqueKeyChange(oldKey: String, newKey: String) {
+        guard oldKey != newKey else { return }
+        if uniqueFieldKeys.remove(oldKey) != nil {
+            uniqueFieldKeys.insert(newKey)
+        }
+    }
+
+    private func trackEvent(_ title: String) {
+        timelineEvents.insert(BuilderTimelineEvent(title: title, timestamp: Date()), at: 0)
     }
 
     private func save() {
@@ -323,6 +653,8 @@ public struct FormBuilderView: View {
 
         do {
             try tooling.save(docType: docType)
+            isDeployed = true
+            trackEvent("Fields deployed")
             onSave?()
             dismiss()
         } catch {
