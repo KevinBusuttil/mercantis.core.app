@@ -107,11 +107,10 @@ public struct DocTypeListView: View {
             }
         }
         .onChange(of: tooling.docTypes.map(\.id)) { _, ids in
-            if let selectedDocTypeID, !ids.contains(selectedDocTypeID) {
-                self.selectedDocTypeID = ids.first
-            } else if selectedDocTypeID == nil {
-                self.selectedDocTypeID = ids.first
+            if let selectedDocTypeID, ids.contains(selectedDocTypeID) {
+                return
             }
+            self.selectedDocTypeID = ids.first
         }
         .sheet(item: $selectedDocType) { docType in
             NavigationStack {
