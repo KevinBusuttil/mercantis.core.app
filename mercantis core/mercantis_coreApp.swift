@@ -15,17 +15,22 @@ struct mercantis_coreApp: App {
     @StateObject private var shellRouter = UIShellRouter()
 
     var body: some Scene {
+        mainWindow
+
+        #if os(macOS)
+        visualBuilderWindow
+        #endif
+    }
+
+    @SceneBuilder
+    private var mainWindow: some Scene {
+        #if os(macOS)
         WindowGroup {
             NavigationShell()
                 .environmentObject(docTypeTooling)
                 .environmentObject(shellRouter)
-                #if os(macOS)
                 .font(.system(size: 13, weight: .regular, design: .default))
-                #else
-                .font(.system(size: 15, weight: .regular, design: .default))
-                #endif
         }
-        #if os(macOS)
         .commands {
             CommandMenu("DocTypes") {
                 Button("Open DocTypes") {
@@ -34,7 +39,18 @@ struct mercantis_coreApp: App {
                 .keyboardShortcut("d", modifiers: [.command, .option])
             }
         }
+        #else
+        WindowGroup {
+            NavigationShell()
+                .environmentObject(docTypeTooling)
+                .environmentObject(shellRouter)
+                .font(.system(size: 15, weight: .regular, design: .default))
+        }
+        #endif
+    }
 
+    #if os(macOS)
+    private var visualBuilderWindow: some Scene {
         WindowGroup("Visual Builder", id: Self.visualBuilderWindowID, for: String.self) { $docTypeID in
             NavigationStack {
                 if let selectedDocTypeID = docTypeID {
@@ -53,6 +69,6 @@ struct mercantis_coreApp: App {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .environmentObject(docTypeTooling)
         }
-        #endif
     }
+    #endif
 }
