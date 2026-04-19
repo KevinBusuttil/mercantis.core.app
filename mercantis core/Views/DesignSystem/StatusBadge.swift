@@ -11,13 +11,30 @@ private enum StatusBadgeType: String {
     case failed
     case draft
     case pending
+
+    var accessibilityLabel: String {
+        switch self {
+        case .submitted, .done, .completed, .validated:
+            "success status"
+        case .warning, .attention:
+            "warning status"
+        case .error, .failed:
+            "error status"
+        case .draft, .pending:
+            "pending status"
+        }
+    }
 }
 
 struct StatusBadge: View {
     let text: String
 
+    private var badgeType: StatusBadgeType? {
+        StatusBadgeType(rawValue: text.lowercased())
+    }
+
     private var tone: MercantisSemanticTone {
-        switch StatusBadgeType(rawValue: text.lowercased()) {
+        switch badgeType {
         case .submitted, .done, .completed, .validated:
             return .success
         case .warning, .attention:
@@ -38,6 +55,7 @@ struct StatusBadge: View {
             .padding(.vertical, 4)
             .background(MercantisTheme.fillSoft(for: tone), in: Capsule())
             .foregroundStyle(MercantisTheme.tint(for: tone))
+            .accessibilityLabel("\(text), \(badgeType?.accessibilityLabel ?? "informational status")")
     }
 }
 

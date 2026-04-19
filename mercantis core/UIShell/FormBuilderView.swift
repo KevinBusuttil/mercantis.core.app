@@ -295,16 +295,17 @@ public struct FormBuilderView: View {
                         .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 12))
                 } else {
                     ForEach(canvasSections) { section in
-                        let sectionHasSelection = section.groups.contains {
+                        let selectedGroupID = section.groups.first {
                             $0.fields.contains { $0.key == selectedFieldKey }
-                        }
+                        }?.id
+                        let sectionHasSelection = selectedGroupID != nil
                         VStack(alignment: .leading, spacing: 10) {
                             Text(section.title)
                                 .font(.headline)
 
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(section.groups) { group in
-                                    let groupHasSelection = sectionHasSelection && group.fields.contains { $0.key == selectedFieldKey }
+                                    let groupHasSelection = selectedGroupID == group.id
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(group.title)
                                             .font(.caption.weight(.semibold))

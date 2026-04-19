@@ -18,6 +18,8 @@ enum MercantisTheme {
     static let accent = Color.accentColor
     static let accentFillSoft = Color.accentColor.opacity(0.12)
     static let accentBorder = Color.accentColor.opacity(0.34)
+    static let softFillOpacity = 0.14
+    static let warningFillOpacity = 0.16
     static let success = Color(red: 22 / 255, green: 163 / 255, blue: 74 / 255)
     static let warning = Color(red: 202 / 255, green: 138 / 255, blue: 4 / 255)
     static let danger = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)
@@ -68,13 +70,13 @@ enum MercantisTheme {
         case .accent:
             accentFillSoft
         case .success:
-            success.opacity(0.14)
+            success.opacity(softFillOpacity)
         case .warning:
-            warning.opacity(0.16)
+            warning.opacity(warningFillOpacity)
         case .danger:
-            danger.opacity(0.14)
+            danger.opacity(softFillOpacity)
         case .info:
-            info.opacity(0.14)
+            info.opacity(softFillOpacity)
         case .muted:
             mutedBadge
         }
