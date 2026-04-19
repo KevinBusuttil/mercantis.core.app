@@ -538,8 +538,6 @@ public struct FormBuilderView: View {
                         .foregroundStyle(MercantisTheme.tint(for: item.tone))
                     Text(item.title)
                         .font(.callout)
-                    Text(item.tone.timelineBadgeText)
-                        .mercantisSemanticBadge(tone: item.tone)
                     Spacer()
                 }
             }
@@ -566,13 +564,9 @@ public struct FormBuilderView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(event.title)
                                 .font(.callout)
-                            HStack(spacing: 6) {
-                                Text(event.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(event.tone.timelineBadgeText)
-                                    .mercantisSemanticBadge(tone: event.tone)
-                            }
+                            Text(event.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -783,25 +777,6 @@ public struct FormBuilderView: View {
         } catch {
             validationError = tooling.errorMessage(for: error)
             trackEvent("Save failed", tone: .danger)
-        }
-    }
-}
-
-private extension MercantisSemanticTone {
-    var timelineBadgeText: String {
-        switch self {
-        case .accent:
-            "ACTIVE"
-        case .success:
-            "SUCCESS"
-        case .warning:
-            "WARNING"
-        case .danger:
-            "ERROR"
-        case .info:
-            "INFO"
-        case .muted:
-            "NOTE"
         }
     }
 }

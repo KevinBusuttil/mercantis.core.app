@@ -98,7 +98,7 @@ struct MercantisPrimaryButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? MercantisTheme.primaryPressed : MercantisTheme.accent)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(MercantisTheme.accentBorder, lineWidth: 1)
+                    .stroke(MercantisTheme.accentBorder.opacity(configuration.isPressed ? 0.7 : 1), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
