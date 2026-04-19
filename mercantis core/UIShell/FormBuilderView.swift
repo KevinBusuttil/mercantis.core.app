@@ -190,11 +190,15 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if !hasAttemptedInitialDocTypeLoad, docTypeId.isEmpty, fields.isEmpty {
+            if shouldLoadInitialDocType {
                 loadInitialDocType()
                 hasAttemptedInitialDocTypeLoad = true
             }
         }
+    }
+
+    private var shouldLoadInitialDocType: Bool {
+        !hasAttemptedInitialDocTypeLoad && docTypeId.isEmpty && fields.isEmpty
     }
 
     private var controlsPalette: some View {
