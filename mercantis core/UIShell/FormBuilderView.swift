@@ -194,7 +194,6 @@ public struct FormBuilderView: View {
             guard !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty else { return }
             // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
             await Task.yield()
-            guard !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty else { return }
             loadInitialDocType()
             hasLoadedInitialDocType = true
         }
