@@ -45,7 +45,7 @@ private enum BuilderPaneWidth {
     static let controlsIdeal: CGFloat = 260
     static let controlsMax: CGFloat = 320
     static let canvasMin: CGFloat = 360
-    static let canvasIdeal: CGFloat = 720
+    static let canvasIdeal: CGFloat = 640
     static let inspectorMin: CGFloat = 260
     static let inspectorIdeal: CGFloat = 320
     static let inspectorMax: CGFloat = 380
@@ -191,7 +191,8 @@ public struct FormBuilderView: View {
             }
             if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
                 hasLoadedInitialDocType = true
-                DispatchQueue.main.async {
+                Task { @MainActor in
+                    guard docTypeId.isEmpty, fields.isEmpty else { return }
                     // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
                     loadInitialDocType()
                 }
