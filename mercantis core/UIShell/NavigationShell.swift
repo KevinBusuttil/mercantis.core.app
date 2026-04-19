@@ -7,7 +7,9 @@
 
 import SwiftUI
 import Combine
-#if os(iOS)
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
 import UIKit
 #endif
 
@@ -175,68 +177,7 @@ public struct NavigationShell: View {
             if !filteredModuleNames.isEmpty {
                 Section {
                     ForEach(filteredModuleNames, id: \.self) { module in
-                        DisclosureGroup(
-                            isExpanded: Binding(
-                                get: { expandedModules.contains(module) },
-                                set: { isExpanded in
-                                    if isExpanded {
-                                        expandedModules.insert(module)
-                                    } else {
-                                        expandedModules.remove(module)
-                                    }
-                                }
-                            )
-                        ) {
-                            ForEach(docTypes(in: module), id: \.id) { docType in
-                                Button {
-                                    router.openDocType(docType.id, module: module)
-                                    addRecent(.docType(docType.id))
-                                } label: {
-                                    Label(docType.name, systemImage: "doc.text")
-                                }
-                                .buttonStyle(.plain)
-                                .listRowBackground(
-                                    sidebarRowBackground(
-                                        isActive: router.selectedItem == .docType(docType.id)
-                                    )
-                                )
-                            }
-
-                            ForEach(reports(in: module), id: \.id) { report in
-                                Button {
-                                    router.openReport(report.id, module: module)
-                                    addRecent(.report(report.id))
-                                } label: {
-                                    Label(report.name, systemImage: "chart.bar.doc.horizontal")
-                                }
-                                .buttonStyle(.plain)
-                                .listRowBackground(
-                                    sidebarRowBackground(
-                                        isActive: router.selectedItem == .report(report.id)
-                                    )
-                                )
-                            }
-
-                            ForEach(dashboards(in: module), id: \.id) { dashboard in
-                                Button {
-                                    router.openDashboard(dashboard.id, module: module)
-                                    addRecent(.dashboard(dashboard.id))
-                                } label: {
-                                    Label(dashboard.name, systemImage: "rectangle.3.group")
-                                }
-                                .buttonStyle(.plain)
-                                .listRowBackground(
-                                    sidebarRowBackground(
-                                        isActive: router.selectedItem == .dashboard(dashboard.id)
-                                    )
-                                )
-                            }
-                        } label: {
-                            Text(module.uppercased())
-                                .font(MercantisType.meta)
-                                .tracking(0.6)
-                        }
-                        .listRowBackground(sidebarRowBackground(isActive: isModuleActive(module)))
+                        moduleDisclosureGroup(for: module)
                     }
                 } header: {
                     Text(NavigationSection.modules.title)
@@ -261,7 +202,7 @@ public struct NavigationShell: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(DesignSystemPalette.windowBackground)
+        .background(sidebarBackgroundColor)
         .searchable(text: $sidebarSearchText, placement: .sidebar, prompt: "Search workspace content")
         .navigationTitle("Mercantis")
         .toolbar {
@@ -933,6 +874,86 @@ public struct NavigationShell: View {
         }
     }
 
+    private func moduleExpansionBinding(for module: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedModules.contains(module) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedModules.insert(module)
+                } else {
+                    expandedModules.remove(module)
+                }
+            }
+        )
+    }
+
+    private func moduleDisclosureGroup(for module: String) -> some View {
+        DisclosureGroup(isExpanded: moduleExpansionBinding(for: module)) {
+            moduleDocTypeRows(in: module)
+            moduleReportRows(in: module)
+            moduleDashboardRows(in: module)
+        } label: {
+            Text(module.uppercased())
+                .font(MercantisType.meta)
+                .tracking(0.6)
+        }
+        .listRowBackground(sidebarRowBackground(isActive: isModuleActive(module)))
+    }
+
+    @ViewBuilder
+    private func moduleDocTypeRows(in module: String) -> some View {
+        ForEach(docTypes(in: module), id: \.id) { docType in
+            moduleDocTypeRow(docType, module: module)
+        }
+    }
+
+    private func moduleDocTypeRow(_ docType: DocType, module: String) -> some View {
+        Button {
+            router.openDocType(docType.id, module: module)
+            addRecent(.docType(docType.id))
+        } label: {
+            Label(docType.name, systemImage: "doc.text")
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .docType(docType.id)))
+    }
+
+    @ViewBuilder
+    private func moduleReportRows(in module: String) -> some View {
+        ForEach(reports(in: module), id: \.id) { report in
+            moduleReportRow(report, module: module)
+        }
+    }
+
+    private func moduleReportRow(_ report: ReportDefinition, module: String) -> some View {
+        Button {
+            router.openReport(report.id, module: module)
+            addRecent(.report(report.id))
+        } label: {
+            Label(report.name, systemImage: "chart.bar.doc.horizontal")
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .report(report.id)))
+    }
+
+    @ViewBuilder
+    private func moduleDashboardRows(in module: String) -> some View {
+        ForEach(dashboards(in: module), id: \.id) { dashboard in
+            moduleDashboardRow(dashboard, module: module)
+        }
+    }
+
+    private func moduleDashboardRow(_ dashboard: DashboardDefinition, module: String) -> some View {
+        Button {
+            router.openDashboard(dashboard.id, module: module)
+            addRecent(.dashboard(dashboard.id))
+        } label: {
+            Label(dashboard.name, systemImage: "rectangle.3.group")
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .dashboard(dashboard.id)))
+    }
+
     private func selectSection(_ section: NavigationSection) {
         router.selectedSection = section
         if section == .setup {
@@ -973,6 +994,16 @@ public struct NavigationShell: View {
                 Color.clear
             }
         }
+    }
+
+    private var sidebarBackgroundColor: Color {
+        #if os(macOS)
+        Color(nsColor: .windowBackgroundColor)
+        #elseif os(iOS)
+        Color(uiColor: .systemBackground)
+        #else
+        Color.clear
+        #endif
     }
 
     private func toggleSetupSection() {
