@@ -18,6 +18,7 @@ public final class DocumentEngine {
     private let registry: MetadataRegistry
     private let validator: SchemaValidator
     private let eventBus: EventBus
+    private let eventEmitter: EventEmitter
     private let deviceId: String
     private let userId: String
 
@@ -26,12 +27,14 @@ public final class DocumentEngine {
         registry: MetadataRegistry,
         eventBus: EventBus,
         deviceId: String,
-        userId: String
+        userId: String,
+        eventEmitter: EventEmitter? = nil
     ) {
         self.database = database
         self.registry = registry
         self.validator = SchemaValidator()
         self.eventBus = eventBus
+        self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -171,11 +174,9 @@ public final class DocumentEngine {
             )
         }
 
-        eventBus.publish(EventBus.Event(
-            name: "document.saved",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentSavedEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -226,11 +227,9 @@ public final class DocumentEngine {
             )
         }
 
-        eventBus.publish(EventBus.Event(
-            name: "document.deleted",
-            docType: docType,
+        eventEmitter.publish(DocumentDeletedEvent(
             documentId: id,
-            payload: [:]
+            docType: docType
         ))
     }
 
@@ -258,11 +257,9 @@ public final class DocumentEngine {
         document.updatedAt = Date()
         try save(document)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.submitted",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentSubmittedEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -300,11 +297,9 @@ public final class DocumentEngine {
         document.updatedAt = Date()
         try save(document)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.cancelled",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentCancelledEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -360,11 +355,10 @@ public final class DocumentEngine {
 
         try save(amended)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.amended",
-            docType: document.docType,
-            documentId: newId,
-            payload: ["amendedFrom": document.id]
+        eventEmitter.publish(DocumentAmendedEvent(
+            newDocumentId: newId,
+            amendedFrom: document.id,
+            docType: document.docType
         ))
 
         return amended
