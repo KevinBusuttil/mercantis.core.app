@@ -88,6 +88,24 @@ public final class DocumentEngine {
         let payloadData = try encoder.encode(document.fields)
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
 
+        // ADR-023: Optimistic concurrency check via modifiedAt (updatedAt) timestamp.
+        // If the document already exists, compare its stored updatedAt against the
+        // in-memory value. If they differ, another save occurred between load and save.
+        let existingUpdatedAt = try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT updatedAt FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
+                arguments: [document.id, document.docType]
+            )
+        }
+        if let row = existingUpdatedAt {
+            let storedTimestamp: String? = row["updatedAt"]
+            let inMemoryTimestamp = ISO8601DateFormatter().string(from: document.updatedAt)
+            if let storedTimestamp, storedTimestamp != inMemoryTimestamp {
+                throw DocumentEngineError.concurrencyConflict(documentId: document.id)
+            }
+        }
+
         // Build the mutation record.
         let mutation = MutationRecord(
             id: UUID(),
@@ -102,7 +120,9 @@ public final class DocumentEngine {
         let mutationPayloadString = String(data: mutation.payload, encoding: .utf8) ?? "{}"
         let mutationTimestamp = ISO8601DateFormatter().string(from: mutation.localTimestamp)
         let createdAtString = ISO8601DateFormatter().string(from: document.createdAt)
-        let updatedAtString = ISO8601DateFormatter().string(from: document.updatedAt)
+        // ADR-023: Set updatedAt to the current time on every successful save.
+        let saveTimestamp = Date()
+        let updatedAtString = ISO8601DateFormatter().string(from: saveTimestamp)
 
         try database.write { db in
             // Upsert the document row.
