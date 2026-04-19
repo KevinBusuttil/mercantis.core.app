@@ -25,23 +25,11 @@ struct mercantis_coreApp: App {
         }
         #if os(macOS)
         .commands {
-            CommandMenu("Setup") {
-                Button("Setup Home") {
-                    shellRouter.showSetupOverview()
+            CommandMenu("DocTypes") {
+                Button("Open DocTypes") {
+                    shellRouter.openDocTypes()
                 }
-                .keyboardShortcut("0", modifiers: [.command, .option])
-
-                Divider()
-
-                Button("New DocType") {
-                    shellRouter.openNewDocType()
-                }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-
-                Button("Visual Builder") {
-                    shellRouter.openVisualBuilder()
-                }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .keyboardShortcut("d", modifiers: [.command, .option])
             }
         }
         #endif
