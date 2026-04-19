@@ -14,10 +14,9 @@ struct mercantis_coreApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationShell()
+            LiquidGlassShellView()
                 .environmentObject(docTypeTooling)
                 .environmentObject(shellRouter)
-                .tint(MercantisTheme.primary)
                 #if os(macOS)
                 .font(.system(size: 13, weight: .regular, design: .default))
                 #else
