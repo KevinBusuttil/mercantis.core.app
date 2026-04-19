@@ -79,6 +79,18 @@ public final class MetaComposer {
         registry.all().compactMap { resolve(docType: $0.id) }
     }
 
+    /// Resolve metadata for an in-memory DocType definition without requiring registry persistence.
+    ///
+    /// Useful for builder/editor surfaces that need runtime-accurate projections while a DocType
+    /// is still being drafted.
+    public func resolve(
+        docTypeDefinition base: DocType,
+        customFields: [CustomField] = [],
+        propertySetters: [PropertySetter] = []
+    ) -> ResolvedMeta {
+        compose(base: base, customFields: customFields, propertySetters: propertySetters)
+    }
+
     // MARK: - Cache Invalidation
 
     /// Invalidate the cached `ResolvedMeta` for a specific DocType.
@@ -97,11 +109,22 @@ public final class MetaComposer {
     // MARK: - Composition
 
     private func compose(base: DocType) -> ResolvedMeta {
+        compose(
+            base: base,
+            customFields: customFieldsByDocType[base.id] ?? [],
+            propertySetters: propertySettersByDocType[base.id] ?? []
+        )
+    }
+
+    private func compose(
+        base: DocType,
+        customFields: [CustomField],
+        propertySetters: [PropertySetter]
+    ) -> ResolvedMeta {
         // Step 1: Convert base fields to resolved fields.
         var resolvedFields = base.fields.map { resolveField($0, isCustom: false) }
 
         // Step 2: Merge custom fields at their insertAfter positions.
-        let customFields = customFieldsByDocType[base.id] ?? []
         for customField in customFields {
             let resolved = resolveField(customField.fieldDefinition, isCustom: true)
             if let insertAfter = customField.insertAfter,
@@ -114,8 +137,7 @@ public final class MetaComposer {
         }
 
         // Step 3: Apply property setters.
-        let setters = propertySettersByDocType[base.id] ?? []
-        for setter in setters {
+        for setter in propertySetters {
             if let index = resolvedFields.firstIndex(where: { $0.key == setter.fieldKey }) {
                 resolvedFields[index] = applyPropertySetter(setter, to: resolvedFields[index])
             }

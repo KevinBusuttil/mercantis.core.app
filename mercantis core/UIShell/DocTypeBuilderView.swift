@@ -15,6 +15,7 @@ final class DocTypeToolingContext: ObservableObject {
     let registry: MetadataRegistry
     private let database: MercantisDatabase
     private let eventBus = EventBus()
+    private lazy var metaComposer = MetaComposer(registry: registry)
     private lazy var documentEngine = DocumentEngine(
         database: database,
         registry: registry,
@@ -70,16 +71,26 @@ final class DocTypeToolingContext: ObservableObject {
     func save(docType: DocType) throws {
         try validator.validate(docType)
         try registry.register(docType)
+        metaComposer.invalidateAll()
         reload()
     }
 
     func delete(docTypeId id: String) throws {
         try registry.remove(id)
+        metaComposer.invalidateAll()
         reload()
     }
 
     func docType(withId id: String) -> DocType? {
         docTypes.first(where: { $0.id == id }) ?? registry.get(id)
+    }
+
+    func resolvedMeta(for docTypeId: String) -> ResolvedMeta? {
+        metaComposer.resolve(docType: docTypeId)
+    }
+
+    func resolvedMeta(forDefinition docType: DocType) -> ResolvedMeta {
+        metaComposer.resolve(docTypeDefinition: docType)
     }
 
     func report(withId id: String) -> ReportDefinition? {
@@ -266,6 +277,7 @@ struct EditableField: Identifiable, Hashable {
     var linkedDocType: String
     var childDocType: String
     var visibilityExpression: String
+    var readOnlyExpression: String
     var section: String
     var column: Int
 
@@ -278,6 +290,7 @@ struct EditableField: Identifiable, Hashable {
         linkedDocType: String = "",
         childDocType: String = "",
         visibilityExpression: String = "",
+        readOnlyExpression: String = "",
         section: String = "",
         column: Int = 0
     ) {
@@ -289,6 +302,7 @@ struct EditableField: Identifiable, Hashable {
         self.linkedDocType = linkedDocType
         self.childDocType = childDocType
         self.visibilityExpression = visibilityExpression
+        self.readOnlyExpression = readOnlyExpression
         self.section = section
         self.column = column
     }
@@ -303,6 +317,23 @@ struct EditableField: Identifiable, Hashable {
             linkedDocType: field.linkedDocType ?? "",
             childDocType: field.childDocType ?? "",
             visibilityExpression: field.visibilityExpression ?? "",
+            readOnlyExpression: field.readOnlyExpression ?? "",
+            section: field.section ?? "",
+            column: field.column ?? 0
+        )
+    }
+
+    nonisolated init(_ field: ResolvedFieldDefinition) {
+        self.init(
+            key: field.key,
+            label: field.label,
+            type: field.type,
+            required: field.isRequired,
+            optionsText: (field.options ?? []).joined(separator: ","),
+            linkedDocType: field.linkedDocType ?? "",
+            childDocType: field.childDocType ?? "",
+            visibilityExpression: field.visibilityExpression ?? "",
+            readOnlyExpression: field.readOnlyExpression ?? "",
             section: field.section ?? "",
             column: field.column ?? 0
         )
@@ -323,6 +354,7 @@ struct EditableField: Identifiable, Hashable {
             linkedDocType: linkedDocType.isEmpty ? nil : linkedDocType,
             childDocType: childDocType.isEmpty ? nil : childDocType,
             visibilityExpression: visibilityExpression.isEmpty ? nil : visibilityExpression,
+            readOnlyExpression: readOnlyExpression.isEmpty ? nil : readOnlyExpression,
             section: section.isEmpty ? nil : section,
             column: column <= 0 ? nil : column
         )
