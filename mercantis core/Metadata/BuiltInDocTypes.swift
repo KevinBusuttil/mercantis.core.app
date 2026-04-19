@@ -4,6 +4,29 @@ import Foundation
 public enum BuiltInDocTypes {
     private static let coreAppId = "core.system"
 
+    /// IDs of system meta-DocTypes that should not generate list reports or dashboards.
+    public static let systemMetaDocTypeIds: Set<String> = [
+        "DocType", "DocTypeField", "DocTypePermission", "Module"
+    ]
+
+    public static let module = DocType(
+        id: "Module",
+        name: "Module",
+        module: "Core",
+        appId: coreAppId,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "module_name", label: "Module Name", type: .text, required: true),
+            FieldDefinition(key: "app_id", label: "App ID", type: .text, required: false),
+            FieldDefinition(key: "is_custom", label: "Is Custom", type: .boolean, required: false)
+        ],
+        permissions: [],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [IndexDefinition(fieldKey: "module_name", unique: true)],
+        searchFields: ["module_name"],
+        titleField: "module_name"
+    )
+
     public static let docTypeField = DocType(
         id: "DocTypeField",
         name: "DocType Field",
@@ -54,7 +77,7 @@ public enum BuiltInDocTypes {
         isChildTable: false,
         fields: [
             FieldDefinition(key: "name", label: "Name", type: .text, required: true),
-            FieldDefinition(key: "module", label: "Module", type: .text, required: true),
+            FieldDefinition(key: "module", label: "Module", type: .link, required: true, linkedDocType: "Module"),
             FieldDefinition(key: "isSubmittable", label: "Is Submittable", type: .boolean, required: false),
             FieldDefinition(key: "isChildTable", label: "Is Child Table", type: .boolean, required: false),
             FieldDefinition(key: "titleField", label: "Title Field", type: .text, required: false),
@@ -70,13 +93,20 @@ public enum BuiltInDocTypes {
     )
 
     public static var all: [DocType] {
-        [docTypeField, docTypePermission, docType]
+        [module, docTypeField, docTypePermission, docType]
     }
+
+    /// Default module names that are seeded when the system bootstraps.
+    public static let seedModules: [String] = ["Core", "Setup"]
 
     public static func registerAll(in registry: MetadataRegistry, validator: SchemaValidator = SchemaValidator()) throws {
         for docType in all {
             try validator.validate(docType)
             try registry.register(docType)
+        }
+        // Seed baseline modules so the module picker is never empty.
+        for moduleName in seedModules {
+            registry.registerModuleIfNeeded(moduleName)
         }
     }
 }

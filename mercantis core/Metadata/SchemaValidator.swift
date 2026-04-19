@@ -19,7 +19,11 @@ public struct SchemaValidator {
         case missingChildDocType(docType: String, fieldKey: String)
         case financialDocTypeMustUseVersionChecked(docType: String)
         case titleFieldNotFound(docType: String, titleField: String)
+        case moduleNotFound(docType: String, module: String)
     }
+
+    /// When set, module names are validated against this list.
+    public var knownModules: Set<String>?
 
     public init() {}
 
@@ -27,6 +31,14 @@ public struct SchemaValidator {
     public func validate(_ docType: DocType) throws {
         guard !docType.id.isEmpty else {
             throw ValidationError.emptyDocTypeId
+        }
+
+        // Validate module exists if known modules are provided.
+        if let knownModules, !knownModules.isEmpty {
+            let trimmedModule = docType.module.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedModule.isEmpty && !knownModules.contains(trimmedModule) {
+                throw ValidationError.moduleNotFound(docType: docType.id, module: trimmedModule)
+            }
         }
 
         var seenKeys = Set<String>()

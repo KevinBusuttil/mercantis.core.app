@@ -138,8 +138,17 @@ public struct FormBuilderView: View {
                 .mercantisInput()
             TextField("Name", text: $name)
                 .mercantisInput()
-            TextField("Module", text: $module)
-                .mercantisInput()
+            Picker("Module", selection: $module) {
+                if module.isEmpty || !tooling.moduleNames.contains(module) {
+                    Text("Select Module").tag("")
+                }
+                ForEach(tooling.moduleNames, id: \.self) { moduleName in
+                    Text(moduleName).tag(moduleName)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .mercantisPicker()
             TextField("Title Field", text: $titleField)
                 .mercantisInput()
             TextField("Search Fields (comma-separated)", text: $searchFields)

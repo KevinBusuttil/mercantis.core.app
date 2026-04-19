@@ -7,8 +7,11 @@ final class DocTypeToolingContext: ObservableObject {
     @Published var docTypes: [DocType] = []
     @Published var reports: [ReportDefinition] = []
     @Published var dashboards: [DashboardDefinition] = []
+    @Published var moduleNames: [String] = []
 
-    let validator = SchemaValidator()
+    /// Validator is mutable because `knownModules` is updated on each `reload()`
+    /// to reflect the current set of registered modules.
+    var validator = SchemaValidator()
     let registry: MetadataRegistry
     private let database: MercantisDatabase
     private let eventBus = EventBus()
@@ -42,6 +45,14 @@ final class DocTypeToolingContext: ObservableObject {
         docTypes = registry
             .all()
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        // Derive module names from non-child-table DocTypes for sidebar display.
+        moduleNames = Array(Set(
+            docTypes.filter { !$0.isChildTable }.map(\.module)
+        )).sorted()
+
+        // Update validator with known modules so new DocTypes must reference an existing module.
+        validator.knownModules = Set(moduleNames)
 
         let manifests = loadInstalledManifests()
         let manifestReports = manifests.flatMap(\.reports)
@@ -126,6 +137,8 @@ final class DocTypeToolingContext: ObservableObject {
             return "\(docType) must use versionChecked sync policy."
         case .titleFieldNotFound(let docType, let titleField):
             return "Title field '\(titleField)' does not exist in \(docType)."
+        case .moduleNotFound(let docType, let module):
+            return "Module '\(module)' does not exist. Create the module first or select an existing one when defining \(docType)."
         }
     }
 
@@ -159,20 +172,23 @@ final class DocTypeToolingContext: ObservableObject {
     }
 
     private func generatedListReports(from docTypes: [DocType]) -> [ReportDefinition] {
-        docTypes.map { docType in
-            let candidateColumns = ([docType.titleField] + docType.searchFields).uniqued().prefix(4)
-            return ReportDefinition(
-                id: "generated.report.\(docType.id)",
-                name: "\(docType.name) List",
-                docType: docType.id,
-                columns: Array(candidateColumns),
-                filters: []
-            )
-        }
+        docTypes
+            .filter { !BuiltInDocTypes.systemMetaDocTypeIds.contains($0.id) }
+            .map { docType in
+                let candidateColumns = ([docType.titleField] + docType.searchFields).uniqued().prefix(4)
+                return ReportDefinition(
+                    id: "generated.report.\(docType.id)",
+                    name: "\(docType.name) List",
+                    docType: docType.id,
+                    columns: Array(candidateColumns),
+                    filters: []
+                )
+            }
     }
 
     private func generatedDashboards(from docTypes: [DocType]) -> [DashboardDefinition] {
-        let grouped = Dictionary(grouping: docTypes, by: \.module)
+        let eligible = docTypes.filter { !BuiltInDocTypes.systemMetaDocTypeIds.contains($0.id) }
+        let grouped = Dictionary(grouping: eligible, by: \.module)
         return grouped.keys.sorted().map { module in
             let widgets = grouped[module, default: []].prefix(4).map { docType in
                 DashboardWidget(
@@ -430,8 +446,17 @@ public struct DocTypeBuilderView: View {
                             .mercantisInput()
                     }
                     labeledFormRow("Module") {
-                        TextField("Module", text: $module)
-                            .mercantisInput()
+                        Picker("Module", selection: $module) {
+                            if module.isEmpty || !tooling.moduleNames.contains(module) {
+                                Text("Select Module").tag("")
+                            }
+                            ForEach(tooling.moduleNames, id: \.self) { moduleName in
+                                Text(moduleName).tag(moduleName)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .mercantisPicker()
                     }
                     labeledFormRow("Title Field") {
                         TextField("Title Field", text: $titleField)
