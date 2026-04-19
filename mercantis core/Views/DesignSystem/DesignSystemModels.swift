@@ -8,7 +8,7 @@ final class LiquidGlassUIModel {
     var searchText: String = ""
     var selectedFilters: Set<RecordFilterChip> = [.recordID]
     var scriptText: String = """
-func validateWorkspaceRecord(_ record: WorkspaceRecord) throws {
+func validate(_ record: WorkspaceRecord) throws {
     guard record.items.isEmpty == false else {
         throw ValidationError(\"Record must include at least one item\")
     }
@@ -68,7 +68,7 @@ enum DesignSystemScreen: String, CaseIterable, Identifiable {
         switch self {
         case .workspaceRecords: return "Workspace Records"
         case .buildModule: return "Build Module"
-        case .doctypeBuilder: return "DocType Visual Builder"
+        case .doctypeBuilder: return "DocType Builder"
         }
     }
 
@@ -92,7 +92,7 @@ enum DesignSystemScreen: String, CaseIterable, Identifiable {
         switch self {
         case .workspaceRecords: return "Record Details & Activity"
         case .buildModule: return "Component Details & Deployment"
-        case .doctypeBuilder: return "DocType 'Workspace' Configuration"
+        case .doctypeBuilder: return "DocType Configuration"
         }
     }
 
