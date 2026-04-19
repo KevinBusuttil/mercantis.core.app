@@ -137,7 +137,7 @@ public final class MetaComposer {
             isCustom: base.isCustom,
             titleField: base.titleField,
             searchFields: base.searchFields,
-            autoname: base.autoname ?? ""
+            autoname: base.autoname
         )
     }
 
