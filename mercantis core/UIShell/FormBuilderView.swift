@@ -477,10 +477,6 @@ public struct FormBuilderView: View {
                 .pickerStyle(.menu)
                 .mercantisPicker()
                 Toggle("Required", isOn: binding.required)
-                if binding.required.wrappedValue {
-                    Text("Required")
-                        .mercantisSemanticBadge(tone: .warning)
-                }
                 Toggle(
                     "Read Only",
                     isOn: Binding(
@@ -542,7 +538,7 @@ public struct FormBuilderView: View {
                         .foregroundStyle(MercantisTheme.tint(for: item.tone))
                     Text(item.title)
                         .font(.callout)
-                    Text(item.id.uppercased())
+                    Text(item.tone.timelineBadgeText)
                         .mercantisSemanticBadge(tone: item.tone)
                     Spacer()
                 }
@@ -610,19 +606,19 @@ public struct FormBuilderView: View {
     private var statusItems: [BuilderStatusItem] {
         [
             BuilderStatusItem(
-                id: "info",
+                id: "draft",
                 title: "Draft defined",
                 tone: normalizedDocTypeId.isEmpty ? .info : .success,
                 icon: normalizedDocTypeId.isEmpty ? "info.circle.fill" : "checkmark.circle.fill"
             ),
             BuilderStatusItem(
-                id: canvasSections.isEmpty ? "warning" : "success",
+                id: "layout",
                 title: "Layout validated",
                 tone: canvasSections.isEmpty ? .warning : .success,
                 icon: canvasSections.isEmpty ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
             ),
             BuilderStatusItem(
-                id: isDeployed ? "success" : "danger",
+                id: "deployment",
                 title: "Fields deployed",
                 tone: isDeployed ? .success : .danger,
                 icon: isDeployed ? "checkmark.circle.fill" : "xmark.octagon.fill"
