@@ -51,6 +51,8 @@ enum WorkspaceSelection: Hashable {
 /// The top-level navigation shell for Mercantis Core.
 public struct NavigationShell: View {
 
+    private static let moduleNameFieldKey = "module_name"
+
     @EnvironmentObject private var router: UIShellRouter
     @EnvironmentObject private var tooling: DocTypeToolingContext
 
@@ -733,7 +735,7 @@ public struct NavigationShell: View {
 
     private func activeModuleName(in document: Document?) -> String? {
         guard let document else { return nil }
-        if case .string(let moduleName)? = document.fields["module_name"] {
+        if case .string(let moduleName)? = document.fields[Self.moduleNameFieldKey] {
             return moduleName
         }
         return nil
