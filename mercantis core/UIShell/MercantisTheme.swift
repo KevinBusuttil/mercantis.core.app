@@ -26,6 +26,7 @@ enum MercantisTheme {
     static let selectionForeground = accent
     static let mutedBadge = Color.secondary.opacity(0.16)
     static let inspectorHighlight = Color.accentColor.opacity(0.08)
+    static let subtleSeparatorOpacity = 0.15
     static let primary = accent
     static let primaryPressed = Color.accentColor.opacity(0.88)
 
@@ -174,7 +175,12 @@ private struct MercantisBuilderSelectionModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? AnyShapeStyle(MercantisTheme.accentBorder) : AnyShapeStyle(.separator.opacity(0.15)), lineWidth: 1)
+                    .stroke(
+                        isSelected
+                            ? AnyShapeStyle(MercantisTheme.accentBorder)
+                            : AnyShapeStyle(.separator.opacity(MercantisTheme.subtleSeparatorOpacity)),
+                        lineWidth: 1
+                    )
             )
     }
 }

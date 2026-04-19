@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum SemanticBadgeStatus: String {
+private enum StatusBadgeType: String {
     case submitted
     case done
     case completed
@@ -17,7 +17,7 @@ struct StatusBadge: View {
     let text: String
 
     private var tone: MercantisSemanticTone {
-        switch SemanticBadgeStatus(rawValue: text.lowercased()) {
+        switch StatusBadgeType(rawValue: text.lowercased()) {
         case .submitted, .done, .completed, .validated:
             return .success
         case .warning, .attention:

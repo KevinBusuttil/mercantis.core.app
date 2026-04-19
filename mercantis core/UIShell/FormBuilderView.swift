@@ -295,13 +295,16 @@ public struct FormBuilderView: View {
                         .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 12))
                 } else {
                     ForEach(canvasSections) { section in
+                        let sectionHasSelection = section.groups.contains {
+                            $0.fields.contains { $0.key == selectedFieldKey }
+                        }
                         VStack(alignment: .leading, spacing: 10) {
                             Text(section.title)
                                 .font(.headline)
 
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(section.groups) { group in
-                                    let groupHasSelection = group.fields.contains { $0.key == selectedFieldKey }
+                                    let groupHasSelection = sectionHasSelection && group.fields.contains { $0.key == selectedFieldKey }
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(group.title)
                                             .font(.caption.weight(.semibold))
@@ -338,7 +341,7 @@ public struct FormBuilderView: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(section.groups.contains(where: { $0.fields.contains(where: { $0.key == selectedFieldKey }) }) ? MercantisTheme.accentBorder : MercantisTheme.border, lineWidth: 1)
+                                .stroke(sectionHasSelection ? MercantisTheme.accentBorder : MercantisTheme.border, lineWidth: 1)
                         )
                     }
                 }
