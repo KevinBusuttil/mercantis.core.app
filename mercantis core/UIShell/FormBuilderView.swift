@@ -75,7 +75,7 @@ public struct FormBuilderView: View {
     @State private var validationError: String?
     @State private var isDeployed = false
     @State private var timelineEvents: [BuilderTimelineEvent] = []
-    @State private var hasLoadedInitialDocType = false
+    @State private var didAttemptInitialDocTypeLoad = false
 
     private let paletteGroups: [BuilderPaletteGroup] = [
         BuilderPaletteGroup(
@@ -145,6 +145,7 @@ public struct FormBuilderView: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
+                // Keep the palette visible while the canvas absorbs most resize pressure.
                 .layoutPriority(2)
 
             metadataCanvas
@@ -189,9 +190,9 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
+            if !didAttemptInitialDocTypeLoad, docTypeId.isEmpty, fields.isEmpty {
                 loadInitialDocType()
-                hasLoadedInitialDocType = true
+                didAttemptInitialDocTypeLoad = true
             }
         }
     }
