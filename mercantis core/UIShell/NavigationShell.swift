@@ -960,7 +960,7 @@ public struct NavigationShell: View {
     }
 
     private var moduleNames: [String] {
-        Array(Set(tooling.docTypes.map(\.module))).sorted()
+        tooling.moduleNames
     }
 
     private func docTypes(in module: String) -> [DocType] {

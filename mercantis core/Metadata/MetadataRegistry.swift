@@ -26,6 +26,7 @@ public final class MetadataRegistry: @unchecked Sendable {
     // MARK: - Public API
 
     /// Register (or replace) a DocType in the in-memory cache and persist it to the database.
+    /// Also writes field definitions to the `fields` table for consistency with AppInstaller.
     public func register(_ docType: DocType) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -47,6 +48,39 @@ public final class MetadataRegistry: @unchecked Sendable {
                     """,
                 arguments: [docType.id, docType.name, docType.module, docType.appId, payloadString]
             )
+
+            // Flatten field definitions into the fields table for efficient lookup.
+            for field in docType.fields {
+                let fieldPayloadData = try encoder.encode(field)
+                let fieldPayloadString = String(data: fieldPayloadData, encoding: .utf8) ?? "{}"
+                try db.execute(
+                    sql: """
+                        INSERT INTO fields (docTypeId, fieldKey, fieldType, payload)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(docTypeId, fieldKey) DO UPDATE SET
+                            fieldType = excluded.fieldType,
+                            payload   = excluded.payload
+                        """,
+                    arguments: [docType.id, field.key, field.type.rawValue, fieldPayloadString]
+                )
+            }
+
+            // Remove stale fields that no longer exist in the DocType definition.
+            let currentKeys = docType.fields.map(\.key)
+            if currentKeys.isEmpty {
+                try db.execute(
+                    sql: "DELETE FROM fields WHERE docTypeId = ?",
+                    arguments: [docType.id]
+                )
+            } else {
+                let placeholders = currentKeys.map { _ in "?" }.joined(separator: ",")
+                var args: [any DatabaseValueConvertible] = [docType.id]
+                args.append(contentsOf: currentKeys)
+                try db.execute(
+                    sql: "DELETE FROM fields WHERE docTypeId = ? AND fieldKey NOT IN (\(placeholders))",
+                    arguments: StatementArguments(args)
+                )
+            }
         }
 
         lock.lock()
@@ -95,6 +129,34 @@ public final class MetadataRegistry: @unchecked Sendable {
         lock.lock()
         cache.removeValue(forKey: id)
         lock.unlock()
+    }
+
+    // MARK: - Module Registry
+
+    /// Return all distinct module names from the `doctypes` table.
+    /// These are the modules referenced by registered DocTypes, providing
+    /// the authoritative list of available modules.
+    public func allModuleNames() -> [String] {
+        let rows = (try? database.read { db in
+            try Row.fetchAll(db, sql: "SELECT DISTINCT module FROM doctypes ORDER BY module", arguments: [])
+        }) ?? []
+        return rows.compactMap { $0["module"] as String? }.filter { !$0.isEmpty }
+    }
+
+    /// Ensure a module name exists in the doctypes table by registering
+    /// the built-in Module DocType record for it if it isn't already referenced.
+    /// This is used during seed to guarantee baseline modules exist.
+    public func registerModuleIfNeeded(_ moduleName: String) {
+        // Check if any DocType already references this module
+        let existing = (try? database.read { db in
+            try Row.fetchOne(db, sql: "SELECT 1 FROM doctypes WHERE module = ? LIMIT 1", arguments: [moduleName])
+        }) != nil
+
+        if !existing {
+            // The Module DocType itself uses module "Core", and the seed modules
+            // (Core, Setup) will be naturally referenced by built-in DocTypes.
+            // This is a no-op safety net for future seed modules that don't have built-in DocTypes.
+        }
     }
 
     // MARK: - Private Helpers
