@@ -189,13 +189,10 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-        }
-        .task {
-            guard !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty else { return }
-            // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
-            await Task.yield()
-            loadInitialDocType()
-            hasLoadedInitialDocType = true
+            if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
+                loadInitialDocType()
+                hasLoadedInitialDocType = true
+            }
         }
     }
 
