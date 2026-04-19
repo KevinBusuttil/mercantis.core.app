@@ -4,6 +4,7 @@ import Observation
 import AppKit
 #endif
 
+#if DEBUG
 struct LiquidGlassShellView: View {
     @State private var model = LiquidGlassUIModel()
     @State private var isInspectorPresented = true
@@ -350,3 +351,4 @@ private struct DottedGrid: Shape {
     LiquidGlassShellView()
         .preferredColorScheme(.dark)
 }
+#endif

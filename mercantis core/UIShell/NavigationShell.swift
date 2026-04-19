@@ -83,6 +83,8 @@ public struct NavigationShell: View {
     @State private var expandedModules: Set<String> = []
     @State private var activeDocument: Document?
     @State private var recents: [RecentDestination] = []
+    @State private var sidebarSearchText = ""
+    @State private var isInspectorPresented = true
 
     public init() {}
 
@@ -126,6 +128,13 @@ public struct NavigationShell: View {
         } detail: {
             detailColumn
         }
+        .navigationSplitViewStyle(.balanced)
+        #if os(macOS)
+        .inspector(isPresented: $isInspectorPresented) {
+            shellInspector
+                .frame(minWidth: 250)
+        }
+        #endif
         .overlay(alignment: .top) {
             if showCommandBar {
                 CommandBarView(
@@ -142,19 +151,30 @@ public struct NavigationShell: View {
 
     private var sidebar: some View {
         List {
-            ForEach(topSplitSections, id: \.self) { section in
+            ForEach(topSplitSections) { workspace in
                 Button {
-                    selectSection(section)
+                    selectSection(workspace.section)
                 } label: {
-                    Label(section.title, systemImage: section.icon)
+                    HStack(spacing: 8) {
+                        Label(workspace.title, systemImage: workspace.icon)
+                        if let badge = workspaceBadge(for: workspace.section) {
+                            Spacer()
+                            Text(badge)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.quaternary, in: Capsule())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == section))
+                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
             }
 
-            if !moduleNames.isEmpty {
+            if !filteredModuleNames.isEmpty {
                 Section {
-                    ForEach(moduleNames, id: \.self) { module in
+                    ForEach(filteredModuleNames, id: \.self) { module in
                         DisclosureGroup(
                             isExpanded: Binding(
                                 get: { expandedModules.contains(module) },
@@ -219,26 +239,30 @@ public struct NavigationShell: View {
                         .listRowBackground(sidebarRowBackground(isActive: isModuleActive(module)))
                     }
                 } header: {
-                    Text("Modules")
+                    Text(NavigationSection.modules.title)
                         .font(MercantisType.meta)
                         .tracking(0.6)
                 }
             }
 
-            ForEach(bottomSplitSections, id: \.self) { section in
-                if section == .setup {
+            ForEach(bottomSplitSections) { workspace in
+                if workspace.section == .setup {
                     setupSidebarSection
                 } else {
                     Button {
-                        selectSection(section)
+                        selectSection(workspace.section)
                     } label: {
-                        Label(section.title, systemImage: section.icon)
+                        Label(workspace.title, systemImage: workspace.icon)
                     }
                     .buttonStyle(.plain)
-                    .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == section))
+                    .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
                 }
             }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(DesignSystemPalette.windowBackground)
+        .searchable(text: $sidebarSearchText, placement: .sidebar, prompt: "Search workspace content")
         .navigationTitle("Mercantis")
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -254,6 +278,15 @@ public struct NavigationShell: View {
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
             }
+            #if os(macOS)
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    isInspectorPresented.toggle()
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+            }
+            #endif
         }
     }
 
@@ -865,16 +898,39 @@ public struct NavigationShell: View {
 
     // MARK: - Helpers
 
-    private var splitSections: [NavigationSection] {
-        [.home, .modules, .reports, .dashboards, .recents, .setup, .settings]
+    private var workspaceDefinitions: [WorkspaceDefinition] {
+        WorkspaceDefinition.coreDefaults
     }
 
-    private var topSplitSections: [NavigationSection] {
-        splitSections.filter { [.home, .modules, .reports, .dashboards, .recents].contains($0) }
+    private var topSplitSections: [WorkspaceDefinition] {
+        workspaceDefinitions.filter { $0.placement == .primary }
     }
 
-    private var bottomSplitSections: [NavigationSection] {
-        splitSections.filter { [.setup, .settings].contains($0) }
+    private var bottomSplitSections: [WorkspaceDefinition] {
+        workspaceDefinitions.filter { $0.placement == .secondary }
+    }
+
+    private var filteredModuleNames: [String] {
+        guard !sidebarSearchText.isEmpty else { return moduleNames }
+        return moduleNames.filter { module in
+            module.localizedCaseInsensitiveContains(sidebarSearchText)
+            || docTypes(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
+            || reports(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
+            || dashboards(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
+        }
+    }
+
+    private func workspaceBadge(for section: NavigationSection) -> String? {
+        switch section {
+        case .recents:
+            return recents.isEmpty ? nil : "\(recents.count)"
+        case .reports:
+            return tooling.reports.isEmpty ? nil : "\(tooling.reports.count)"
+        case .dashboards:
+            return tooling.dashboards.isEmpty ? nil : "\(tooling.dashboards.count)"
+        default:
+            return nil
+        }
     }
 
     private func selectSection(_ section: NavigationSection) {
@@ -1041,6 +1097,29 @@ public struct NavigationShell: View {
         router.showSetupOverview()
     }
 
+    @ViewBuilder
+    private var shellInspector: some View {
+        List {
+            Section("Context") {
+                LabeledContent("Section", value: router.selectedSection?.title ?? NavigationSection.home.title)
+                if let item = router.selectedItem {
+                    LabeledContent("Selection", value: String(describing: item))
+                } else {
+                    LabeledContent("Selection", value: "None")
+                }
+            }
+
+            Section("Workspace Summary") {
+                LabeledContent("Modules", value: "\(moduleNames.count)")
+                LabeledContent("DocTypes", value: "\(tooling.docTypes.count)")
+                LabeledContent("Reports", value: "\(tooling.reports.count)")
+                LabeledContent("Dashboards", value: "\(tooling.dashboards.count)")
+                LabeledContent("Recent", value: "\(recents.count)")
+            }
+        }
+        .navigationTitle("Inspector")
+    }
+
     @ToolbarContentBuilder
     private var setupBackToOverviewToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
@@ -1141,4 +1220,28 @@ extension Notification.Name {
 private enum SidebarLayout {
     static let setupSubItemIndentationWidth: CGFloat = 18
     static let setupSubItemIconWidth: CGFloat = 16
+}
+
+struct WorkspaceDefinition: Identifiable, Hashable {
+    enum Placement: Hashable {
+        case primary
+        case secondary
+    }
+
+    let section: NavigationSection
+    let title: String
+    let icon: String
+    let placement: Placement
+
+    var id: NavigationSection { section }
+
+    static let coreDefaults: [WorkspaceDefinition] = [
+        WorkspaceDefinition(section: .home, title: "Home", icon: "house", placement: .primary),
+        WorkspaceDefinition(section: .modules, title: "Workspaces", icon: "square.grid.2x2", placement: .primary),
+        WorkspaceDefinition(section: .reports, title: "Reports", icon: "chart.bar", placement: .primary),
+        WorkspaceDefinition(section: .dashboards, title: "Dashboards", icon: "rectangle.3.group", placement: .primary),
+        WorkspaceDefinition(section: .recents, title: "Recents", icon: "clock", placement: .primary),
+        WorkspaceDefinition(section: .setup, title: "Setup", icon: "wrench.and.screwdriver", placement: .secondary),
+        WorkspaceDefinition(section: .settings, title: "Settings", icon: "gear", placement: .secondary)
+    ]
 }
