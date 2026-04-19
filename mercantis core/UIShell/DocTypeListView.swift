@@ -5,6 +5,9 @@ public struct DocTypeListView: View {
     @EnvironmentObject private var router: UIShellRouter
 
     @State private var selectedDocType: DocType?
+    @State private var docTypeToDelete: DocType?
+    @State private var showDeleteConfirmation = false
+    @State private var deleteErrorMessage: String?
 
     public init() {}
 
@@ -45,10 +48,18 @@ public struct DocTypeListView: View {
                         Spacer()
 
                         if docType.isCustom {
-                            Button("Edit") {
-                                selectedDocType = docType
+                            HStack(spacing: 8) {
+                                Button("Edit") {
+                                    selectedDocType = docType
+                                }
+                                .buttonStyle(MercantisSecondaryButtonStyle())
+
+                                Button("Delete", role: .destructive) {
+                                    docTypeToDelete = docType
+                                    showDeleteConfirmation = true
+                                }
+                                .buttonStyle(MercantisDestructiveButtonStyle())
                             }
-                            .buttonStyle(MercantisSecondaryButtonStyle())
                         } else {
                             Text("Built-in")
                                 .font(.caption)
@@ -89,6 +100,38 @@ public struct DocTypeListView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif
             .environmentObject(tooling)
+        }
+        .alert(
+            "Delete DocType?",
+            isPresented: $showDeleteConfirmation,
+            presenting: docTypeToDelete
+        ) { docType in
+            Button("Delete", role: .destructive) {
+                do {
+                    try tooling.delete(docTypeId: docType.id)
+                } catch {
+                    deleteErrorMessage = tooling.errorMessage(for: error)
+                }
+                docTypeToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                docTypeToDelete = nil
+            }
+        } message: { docType in
+            Text("Are you sure you want to delete '\(docType.name)'? This cannot be undone.")
+        }
+        .alert(
+            "Delete Failed",
+            isPresented: Binding(
+                get: { deleteErrorMessage != nil },
+                set: { if !$0 { deleteErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                deleteErrorMessage = nil
+            }
+        } message: {
+            Text(deleteErrorMessage ?? "An unknown error occurred.")
         }
     }
 }

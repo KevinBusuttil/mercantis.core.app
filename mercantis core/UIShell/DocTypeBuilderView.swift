@@ -73,6 +73,11 @@ final class DocTypeToolingContext: ObservableObject {
         reload()
     }
 
+    func delete(docTypeId id: String) throws {
+        try registry.remove(id)
+        reload()
+    }
+
     func docType(withId id: String) -> DocType? {
         docTypes.first(where: { $0.id == id }) ?? registry.get(id)
     }
