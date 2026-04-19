@@ -49,8 +49,7 @@ final class DocTypeToolingContext: ObservableObject {
             .all()
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
-        // Derive canonical module names from non-child-table DocTypes.
-        // These remain part of the metadata model and module management workflows.
+        // Derive canonical module names from non-child-table DocTypes for metadata and module-management workflows.
         moduleNames = Array(Set(
             docTypes.filter { !$0.isChildTable }.map(\.module)
         )).sorted()
