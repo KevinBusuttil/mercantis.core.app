@@ -2,9 +2,11 @@ import SwiftUI
 
 public struct DocTypeListView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
-    @EnvironmentObject private var router: UIShellRouter
 
     @State private var selectedDocType: DocType?
+    @State private var selectedDocTypeForBuilder: DocType?
+    @State private var selectedDocTypeID: String?
+    @State private var showNewDocTypeSheet = false
     @State private var docTypeToDelete: DocType?
     @State private var showDeleteConfirmation = false
     @State private var deleteErrorMessage: String?
@@ -47,8 +49,13 @@ public struct DocTypeListView: View {
 
                         Spacer()
 
-                        if docType.isCustom {
-                            HStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Button("Open Visual Builder") {
+                                selectedDocTypeForBuilder = docType
+                            }
+                            .buttonStyle(MercantisSecondaryButtonStyle())
+
+                            if docType.isCustom {
                                 Button("Edit") {
                                     selectedDocType = docType
                                 }
@@ -59,14 +66,23 @@ public struct DocTypeListView: View {
                                     showDeleteConfirmation = true
                                 }
                                 .buttonStyle(MercantisDestructiveButtonStyle())
+                            } else {
+                                Text("Built-in")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                        } else {
-                            Text("Built-in")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedDocTypeID = docType.id
+                    }
+                    .listRowBackground(
+                        selectedDocTypeID == docType.id
+                            ? Color.accentColor.opacity(0.1)
+                            : Color.clear
+                    )
                 }
             }
         }
@@ -77,17 +93,28 @@ public struct DocTypeListView: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
                 Button("New DocType") {
-                    router.openNewDocType()
+                    showNewDocTypeSheet = true
                 }
                 .buttonStyle(MercantisPrimaryButtonStyle())
-                Button("Visual Builder") {
-                    router.openVisualBuilder()
+                Button("Open Visual Builder") {
+                    selectedDocTypeForBuilder = selectedDocTypeForSelection
                 }
                 .buttonStyle(MercantisSecondaryButtonStyle())
+                .disabled(selectedDocTypeForSelection == nil)
             }
         }
         .onAppear {
             tooling.reload()
+            if selectedDocTypeID == nil {
+                selectedDocTypeID = tooling.docTypes.first?.id
+            }
+        }
+        .onChange(of: tooling.docTypes.map(\.id)) { _, ids in
+            if let selectedDocTypeID, !ids.contains(selectedDocTypeID) {
+                self.selectedDocTypeID = ids.first
+            } else if self.selectedDocTypeID == nil {
+                self.selectedDocTypeID = ids.first
+            }
         }
         .sheet(item: $selectedDocType) { docType in
             NavigationStack {
@@ -96,6 +123,32 @@ public struct DocTypeListView: View {
                 }
             }
             .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
+            #if os(macOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
+            .environmentObject(tooling)
+        }
+        .sheet(isPresented: $showNewDocTypeSheet) {
+            NavigationStack {
+                DocTypeBuilderView {
+                    tooling.reload()
+                }
+            }
+            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
+            #if os(macOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
+            .environmentObject(tooling)
+        }
+        .sheet(item: $selectedDocTypeForBuilder) { docType in
+            NavigationStack {
+                FormBuilderView(initialDocTypeID: docType.id) {
+                    tooling.reload()
+                    selectedDocTypeID = docType.id
+                }
+                .navigationTitle("Visual Builder")
+            }
+            .frame(minWidth: 1000, idealWidth: 1280, minHeight: 620, idealHeight: 760)
             #if os(macOS)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif
@@ -133,5 +186,10 @@ public struct DocTypeListView: View {
         } message: {
             Text(deleteErrorMessage ?? "An unknown error occurred.")
         }
+    }
+
+    private var selectedDocTypeForSelection: DocType? {
+        guard let selectedDocTypeID else { return nil }
+        return tooling.docTypes.first(where: { $0.id == selectedDocTypeID })
     }
 }

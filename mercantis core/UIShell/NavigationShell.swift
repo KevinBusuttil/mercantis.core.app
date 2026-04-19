@@ -15,26 +15,12 @@ import UIKit
 
 final class UIShellRouter: ObservableObject {
     @Published var selectedSection: NavigationSection? = .home
-    @Published var setupDestination: SetupDestination = .overview
     @Published var selectedModule: String?
     @Published var selectedItem: WorkspaceSelection?
 
-    func showSetupOverview() {
-        selectedSection = .setup
-        setupDestination = .overview
-        selectedItem = .setup
-    }
-
-    func openNewDocType() {
-        selectedSection = .setup
-        setupDestination = .newDocType
-        selectedItem = .setup
-    }
-
-    func openVisualBuilder() {
-        selectedSection = .setup
-        setupDestination = .visualBuilder
-        selectedItem = .setup
+    func openDocTypes() {
+        selectedSection = .docTypes
+        selectedItem = nil
     }
 
     func openModule(_ module: String) {
@@ -61,17 +47,10 @@ final class UIShellRouter: ObservableObject {
     }
 }
 
-enum SetupDestination: Hashable {
-    case overview
-    case newDocType
-    case visualBuilder
-}
-
 enum WorkspaceSelection: Hashable {
     case docType(String)
     case report(String)
     case dashboard(String)
-    case setup
 }
 
 /// The top-level navigation shell for Mercantis Core.
@@ -81,7 +60,6 @@ public struct NavigationShell: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
 
     @State private var showCommandBar = false
-    @State private var isSetupExpanded = false
     @State private var expandedModules: Set<String> = []
     @State private var activeDocument: Document?
     @State private var recents: [RecentDestination] = []
@@ -152,15 +130,8 @@ public struct NavigationShell: View {
     }
 
     #if os(macOS)
-    private var isVisualBuilderActive: Bool {
-        router.selectedSection == .setup && router.setupDestination == .visualBuilder
-    }
-
     private var shellInspectorPresentation: Binding<Bool> {
-        Binding(
-            get: { isInspectorPresented && !isVisualBuilderActive },
-            set: { isInspectorPresented = $0 }
-        )
+        $isInspectorPresented
     }
     #endif
 
@@ -200,17 +171,13 @@ public struct NavigationShell: View {
             }
 
             ForEach(bottomSplitSections) { workspace in
-                if workspace.section == .setup {
-                    setupSidebarSection
-                } else {
-                    Button {
-                        selectSection(workspace.section)
-                    } label: {
-                        Label(workspace.title, systemImage: workspace.icon)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
+                Button {
+                    selectSection(workspace.section)
+                } label: {
+                    Label(workspace.title, systemImage: workspace.icon)
                 }
+                .buttonStyle(.plain)
+                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
             }
         }
         .listStyle(.sidebar)
@@ -263,12 +230,12 @@ public struct NavigationShell: View {
                 dashboardBrowser
             case .recents:
                 recentsBrowser
+            case .docTypes:
+                DocTypeListView()
             case .settings:
                 settingsContext
             case .inbox:
                 inboxContext
-            case .setup:
-                setupDetailView
             default:
                 homeDetail
             }
@@ -362,45 +329,6 @@ public struct NavigationShell: View {
             .buttonStyle(.plain)
         }
         .navigationTitle("Recents")
-    }
-
-    private var setupSidebarSection: some View {
-        Group {
-            Button {
-                toggleSetupSection()
-            } label: {
-                HStack {
-                    Label(NavigationSection.setup.title, systemImage: NavigationSection.setup.icon)
-                    Spacer()
-                    Image(systemName: isSetupExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == .setup))
-
-            if isSetupExpanded {
-                setupSidebarSubItem(
-                    title: "Setup Home",
-                    icon: "house",
-                    isActive: router.setupDestination == .overview,
-                    action: router.showSetupOverview
-                )
-                setupSidebarSubItem(
-                    title: "New DocType",
-                    icon: "hammer",
-                    isActive: router.setupDestination == .newDocType,
-                    action: router.openNewDocType
-                )
-                setupSidebarSubItem(
-                    title: "Visual Builder",
-                    icon: "wand.and.stars",
-                    isActive: router.setupDestination == .visualBuilder,
-                    action: router.openVisualBuilder
-                )
-            }
-        }
     }
 
     private var settingsContext: some View {
@@ -607,23 +535,6 @@ public struct NavigationShell: View {
         }
     }
 
-    @ViewBuilder
-    private var setupDetailView: some View {
-        switch router.setupDestination {
-        case .overview:
-            DocTypeListView()
-                .navigationTitle("Setup")
-        case .newDocType:
-            DocTypeBuilderView(onSave: handleSetupWorkspaceSaved)
-                .navigationTitle("New DocType")
-                .toolbar { setupBackToOverviewToolbar }
-        case .visualBuilder:
-            FormBuilderView(onSave: handleSetupWorkspaceSaved)
-                .navigationTitle("Visual Builder")
-                .toolbar { setupBackToOverviewToolbar }
-        }
-    }
-
     // MARK: - iPhone Shell
 
     private var iPhoneShell: some View {
@@ -723,17 +634,17 @@ public struct NavigationShell: View {
     private var phoneMore: some View {
         List {
             NavigationLink("Modules", value: MoreDestination.modules)
+            NavigationLink("DocTypes", value: MoreDestination.docTypes)
             NavigationLink("Reports", value: MoreDestination.reports)
             NavigationLink("Dashboards", value: MoreDestination.dashboards)
-            NavigationLink("Setup", value: MoreDestination.setup)
             NavigationLink("Settings", value: MoreDestination.settings)
         }
         .navigationDestination(for: MoreDestination.self) { destination in
             switch destination {
             case .modules: moduleBrowser
+            case .docTypes: DocTypeListView()
             case .reports: reportBrowser
             case .dashboards: dashboardBrowser
-            case .setup: setupDetailView
             case .settings: settingsContext
             }
         }
@@ -817,23 +728,15 @@ public struct NavigationShell: View {
             }
         }
 
-        let setupActions = [
+        let docTypeShellActions = [
             CommandBarAction(
-                id: "setup-overview",
-                title: "Open Setup",
+                id: "open-doctypes",
+                title: "Open DocTypes",
                 subtitle: nil,
-                icon: "wrench.and.screwdriver",
-                badge: "Setup",
+                icon: "doc.text",
+                badge: "DocTypes",
                 isQuickAction: true
-            ) { router.showSetupOverview() },
-            CommandBarAction(
-                id: "setup-doctype",
-                title: "New DocType",
-                subtitle: nil,
-                icon: "hammer",
-                badge: "Setup",
-                isQuickAction: true
-            ) { router.openNewDocType() }
+            ) { router.openDocTypes() }
         ]
 
         let recentActions = recents.map { recent in
@@ -847,7 +750,7 @@ public struct NavigationShell: View {
             ) { openRecent(recent) }
         }
 
-        return moduleActions + createActions + docTypeActions + reportActions + dashboardActions + setupActions + recentActions
+        return moduleActions + createActions + docTypeActions + reportActions + dashboardActions + docTypeShellActions + recentActions
     }
 
     // MARK: - Helpers
@@ -878,6 +781,8 @@ public struct NavigationShell: View {
         switch section {
         case .recents:
             return recents.isEmpty ? nil : "\(recents.count)"
+        case .docTypes:
+            return tooling.docTypes.isEmpty ? nil : "\(tooling.docTypes.count)"
         case .reports:
             return tooling.reports.isEmpty ? nil : "\(tooling.reports.count)"
         case .dashboards:
@@ -969,33 +874,7 @@ public struct NavigationShell: View {
 
     private func selectSection(_ section: NavigationSection) {
         router.selectedSection = section
-        if section == .setup {
-            isSetupExpanded = true
-            router.showSetupOverview()
-        } else {
-            isSetupExpanded = false
-            router.selectedItem = nil
-        }
-    }
-
-    private func setupSidebarSubItem(
-        title: String,
-        icon: String,
-        isActive: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .frame(width: SidebarLayout.setupSubItemIconWidth)
-                Text(title)
-            }
-            .padding(.leading, SidebarLayout.setupSubItemIndentationWidth)
-        }
-        .buttonStyle(.plain)
-        .listRowBackground(sidebarRowBackground(isActive: isActive))
+        router.selectedItem = nil
     }
 
     private func sidebarRowBackground(isActive: Bool) -> some View {
@@ -1019,16 +898,6 @@ public struct NavigationShell: View {
         #endif
     }
 
-    private func toggleSetupSection() {
-        if router.selectedSection == .setup {
-            isSetupExpanded.toggle()
-            router.selectedItem = .setup
-        } else {
-            isSetupExpanded = true
-            router.showSetupOverview()
-        }
-    }
-
     private func ensureInitialModuleExpanded() {
         guard expandedModules.isEmpty else { return }
         guard let selectedModule = selectedModuleForCurrentContext() else { return }
@@ -1048,8 +917,6 @@ public struct NavigationShell: View {
             return tooling.report(withId: id).flatMap(moduleForReport)
         case .dashboard(let id):
             return tooling.dashboard(withId: id).flatMap(moduleForDashboard)
-        case .setup:
-            return nil
         case nil:
             return router.selectedModule
         }
@@ -1136,11 +1003,6 @@ public struct NavigationShell: View {
         }
     }
 
-    private func handleSetupWorkspaceSaved() {
-        tooling.reload()
-        router.showSetupOverview()
-    }
-
     @ViewBuilder
     private var shellInspector: some View {
         List {
@@ -1164,32 +1026,24 @@ public struct NavigationShell: View {
         .navigationTitle("Inspector")
     }
 
-    @ToolbarContentBuilder
-    private var setupBackToOverviewToolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Back to Setup") {
-                router.showSetupOverview()
-            }
-        }
-    }
 }
 
 public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
-    case home, modules, inbox, search, reports, dashboards, recents, settings, setup, more
+    case home, modules, docTypes, inbox, search, reports, dashboards, recents, settings, more
 
     public var id: String { rawValue }
 
     var title: String {
         switch self {
         case .home: return "Home"
-        case .modules: return "Workspaces"
+        case .modules: return "Modules"
+        case .docTypes: return "DocTypes"
         case .inbox: return "Inbox"
         case .search: return "Search"
         case .reports: return "Reports"
         case .dashboards: return "Dashboards"
         case .recents: return "Recents"
         case .settings: return "Settings"
-        case .setup: return "Setup"
         case .more: return "More"
         }
     }
@@ -1198,13 +1052,13 @@ public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .home: return "house"
         case .modules: return "square.grid.2x2"
+        case .docTypes: return "doc.text"
         case .inbox: return "tray"
         case .search: return "magnifyingglass"
         case .reports: return "chart.bar"
         case .dashboards: return "rectangle.3.group"
         case .recents: return "clock"
         case .settings: return "gear"
-        case .setup: return "wrench.and.screwdriver"
         case .more: return "ellipsis.circle"
         }
     }
@@ -1212,9 +1066,9 @@ public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
 
 private enum MoreDestination: Hashable {
     case modules
+    case docTypes
     case reports
     case dashboards
-    case setup
     case settings
 }
 
@@ -1261,11 +1115,6 @@ extension Notification.Name {
     static let mercantisOpenCommandBar = Notification.Name("mercantis.openCommandBar")
 }
 
-private enum SidebarLayout {
-    static let setupSubItemIndentationWidth: CGFloat = 18
-    static let setupSubItemIconWidth: CGFloat = 16
-}
-
 struct WorkspaceDefinition: Identifiable, Hashable {
     enum Placement: Hashable {
         case primary
@@ -1281,11 +1130,10 @@ struct WorkspaceDefinition: Identifiable, Hashable {
 
     static let coreDefaults: [WorkspaceDefinition] = [
         WorkspaceDefinition(section: .home, title: "Home", icon: "house", placement: .primary),
-        WorkspaceDefinition(section: .modules, title: "Workspaces", icon: "square.grid.2x2", placement: .primary),
         WorkspaceDefinition(section: .reports, title: "Reports", icon: "chart.bar", placement: .primary),
         WorkspaceDefinition(section: .dashboards, title: "Dashboards", icon: "rectangle.3.group", placement: .primary),
         WorkspaceDefinition(section: .recents, title: "Recents", icon: "clock", placement: .primary),
-        WorkspaceDefinition(section: .setup, title: "Setup", icon: "wrench.and.screwdriver", placement: .secondary),
+        WorkspaceDefinition(section: .docTypes, title: "DocTypes", icon: "doc.text", placement: .primary),
         WorkspaceDefinition(section: .settings, title: "Settings", icon: "gear", placement: .secondary)
     ]
 }

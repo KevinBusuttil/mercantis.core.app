@@ -30,7 +30,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture document, inc
 ## Runtime UX Boundary
 
 - The default app runtime launches into the domain-neutral `NavigationShell` (`mercantis core/UIShell/NavigationShell.swift`).
-- Core navigation is platform/studio oriented (Home, Workspaces, Reports, Dashboards, Setup, Settings, Recents) and metadata-driven.
+- Core navigation is platform/studio oriented (Home, Reports, Dashboards, Recents, DocTypes, Modules, Settings) and metadata-driven.
+- `DocTypes` is the canonical schema/design entry point; creating DocTypes and opening Visual Builder both happen from this workflow.
 - `mercantis core/Views/DesignSystem/` contains design-lab/demo surfaces and preview fixtures. They are preserved for UI exploration, but are not the default Core product path.
 
 ## Architecture Decision Records

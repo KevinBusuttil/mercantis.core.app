@@ -55,6 +55,7 @@ public struct FormBuilderView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
     @Environment(\.dismiss) private var dismiss
 
+    private let initialDocTypeID: String?
     private let onSave: (() -> Void)?
 
     @State private var docTypeId = ""
@@ -131,7 +132,8 @@ public struct FormBuilderView: View {
         )
     ]
 
-    public init(onSave: (() -> Void)? = nil) {
+    public init(initialDocTypeID: String? = nil, onSave: (() -> Void)? = nil) {
+        self.initialDocTypeID = initialDocTypeID
         self.onSave = onSave
     }
 
@@ -369,6 +371,11 @@ public struct FormBuilderView: View {
             Text("Sections and groups are projected from ResolvedMeta field section and column hints.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !docTypeId.isEmpty {
+                Text("Editing DocType: \(docTypeId)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 TextField("DocType ID", text: $docTypeId)
@@ -658,6 +665,14 @@ public struct FormBuilderView: View {
     }
 
     private func loadInitialDocType() {
+        if let initialDocTypeID,
+           let initialDocType = tooling.docType(withId: initialDocTypeID),
+           !initialDocType.isChildTable {
+            selectedSourceDocTypeID = initialDocTypeID
+            loadDocType(id: initialDocTypeID)
+            return
+        }
+
         guard let firstDocType = tooling.docTypes.first(where: { !$0.isChildTable }) else { return }
         selectedSourceDocTypeID = firstDocType.id
         loadDocType(id: firstDocType.id)
