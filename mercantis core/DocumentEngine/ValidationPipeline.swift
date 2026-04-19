@@ -202,7 +202,7 @@ public struct RequiredFieldStage: ValidationStage {
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
         var errors: [DocumentValidationError] = []
 
-        for field in context.docType.fields where field.isRequired {
+        for field in context.docType.fields where field.required {
             let value = document.fields[field.key]
 
             if isValueEmpty(value) {

@@ -16,9 +16,11 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var appId: String                       // owning app manifest id
     public var isChildTable: Bool                  // true if used only as a child table
     public var isSubmittable: Bool                 // true if this DocType uses the Submit/Cancel/Amend lifecycle (ADR-013)
+    public var isSingle: Bool                      // true if this DocType represents a singleton record
     public var fields: [FieldDefinition]
     public var permissions: [PermissionRule]
     public var workflowId: String?
+    public var autoname: String?                   // naming strategy expression, when configured
     public var syncPolicy: SyncPolicy
     public var indexes: [IndexDefinition]
     public var searchFields: [String]
@@ -32,9 +34,11 @@ public struct DocType: Codable, Identifiable, Sendable {
         appId: String,
         isChildTable: Bool,
         isSubmittable: Bool = false,
+        isSingle: Bool = false,
         fields: [FieldDefinition],
         permissions: [PermissionRule],
         workflowId: String? = nil,
+        autoname: String? = nil,
         syncPolicy: SyncPolicy,
         indexes: [IndexDefinition],
         searchFields: [String],
@@ -47,9 +51,11 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.appId = appId
         self.isChildTable = isChildTable
         self.isSubmittable = isSubmittable
+        self.isSingle = isSingle
         self.fields = fields
         self.permissions = permissions
         self.workflowId = workflowId
+        self.autoname = autoname
         self.syncPolicy = syncPolicy
         self.indexes = indexes
         self.searchFields = searchFields
@@ -64,9 +70,11 @@ public struct DocType: Codable, Identifiable, Sendable {
         case appId
         case isChildTable
         case isSubmittable
+        case isSingle
         case fields
         case permissions
         case workflowId
+        case autoname
         case syncPolicy
         case indexes
         case searchFields
@@ -82,9 +90,11 @@ public struct DocType: Codable, Identifiable, Sendable {
         appId = try container.decode(String.self, forKey: .appId)
         isChildTable = try container.decode(Bool.self, forKey: .isChildTable)
         isSubmittable = try container.decode(Bool.self, forKey: .isSubmittable)
+        isSingle = try container.decodeIfPresent(Bool.self, forKey: .isSingle) ?? false
         fields = try container.decode([FieldDefinition].self, forKey: .fields)
         permissions = try container.decode([PermissionRule].self, forKey: .permissions)
         workflowId = try container.decodeIfPresent(String.self, forKey: .workflowId)
+        autoname = try container.decodeIfPresent(String.self, forKey: .autoname)
         syncPolicy = try container.decode(SyncPolicy.self, forKey: .syncPolicy)
         indexes = try container.decode([IndexDefinition].self, forKey: .indexes)
         searchFields = try container.decode([String].self, forKey: .searchFields)

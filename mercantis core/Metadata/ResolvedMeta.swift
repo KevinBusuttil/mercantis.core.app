@@ -64,7 +64,7 @@ public struct ResolvedMeta: Sendable {
     public let searchFields: [String]
 
     /// The autoname strategy string.
-    public let autoname: String
+    public let autoname: String?
 
     public init(
         docTypeName: String,
@@ -82,7 +82,7 @@ public struct ResolvedMeta: Sendable {
         isCustom: Bool,
         titleField: String,
         searchFields: [String],
-        autoname: String
+        autoname: String?
     ) {
         self.docTypeName = docTypeName
         self.displayName = displayName
