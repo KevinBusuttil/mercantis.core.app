@@ -189,14 +189,14 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
-                hasLoadedInitialDocType = true
-                Task { @MainActor in
-                    guard docTypeId.isEmpty, fields.isEmpty else { return }
-                    // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
-                    loadInitialDocType()
-                }
-            }
+        }
+        .task {
+            guard !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty else { return }
+            // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
+            await Task.yield()
+            guard !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty else { return }
+            loadInitialDocType()
+            hasLoadedInitialDocType = true
         }
     }
 
