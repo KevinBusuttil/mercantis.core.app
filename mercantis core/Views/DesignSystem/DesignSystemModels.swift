@@ -161,15 +161,23 @@ struct SalesOrderRecord: Identifiable, Hashable {
     let amount: Double
     let status: String
 
-    static let mockRows: [SalesOrderRecord] = (1...18).map { index in
-        SalesOrderRecord(
-            id: String(format: "SAL-ORD-2026-%04d", index),
-            customer: ["Acme Trading", "Northwind Co.", "Blue Harbor", "Evergreen Retail", "Rivera Supplies"][index % 5],
-            postingDate: Calendar.current.date(byAdding: .day, value: -index, to: .now) ?? .now,
-            amount: Double(900 + (index * 135)),
-            status: index % 4 == 0 ? "Draft" : "Submitted"
-        )
-    }
+    static let mockRows: [SalesOrderRecord] = {
+        let customers = ["Acme Trading", "Northwind Co.", "Blue Harbor", "Evergreen Retail", "Rivera Supplies"]
+        return (1...18).map { index -> SalesOrderRecord in
+            let id = String(format: "SAL-ORD-2026-%04d", index)
+            let customer = customers[index % customers.count]
+            let postingDate = Calendar.current.date(byAdding: .day, value: -index, to: .now) ?? .now
+            let amount = Double(900 + (index * 135))
+            let status = index % 4 == 0 ? "Draft" : "Submitted"
+            return SalesOrderRecord(
+                id: id,
+                customer: customer,
+                postingDate: postingDate,
+                amount: amount,
+                status: status
+            )
+        }
+    }()
 }
 
 struct SalesOrderItem: Identifiable, Hashable {
