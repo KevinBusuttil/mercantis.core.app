@@ -197,6 +197,7 @@ public struct FormBuilderView: View {
         }
     }
 
+    // Kept as a dedicated predicate so the onAppear startup path remains easy to scan.
     private var shouldLoadInitialDocType: Bool {
         !hasAttemptedInitialDocTypeLoad && docTypeId.isEmpty && fields.isEmpty
     }
