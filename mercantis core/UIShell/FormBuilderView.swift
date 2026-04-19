@@ -145,7 +145,7 @@ public struct FormBuilderView: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .layoutPriority(1)
+                .layoutPriority(2)
 
             metadataCanvas
                 .frame(
@@ -155,7 +155,7 @@ public struct FormBuilderView: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .layoutPriority(2)
+                .layoutPriority(1)
 
             inspectorPane
                 .frame(
