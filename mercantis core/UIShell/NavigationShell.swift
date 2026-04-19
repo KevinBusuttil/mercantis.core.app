@@ -222,8 +222,10 @@ public struct NavigationShell: View {
             dashboardDetail(dashboardId: id)
         default:
             switch router.selectedSection {
-            case .home, .modules:
+            case .home:
                 homeDetail
+            case .modules:
+                moduleBrowser
             case .reports:
                 reportBrowser
             case .dashboards:
@@ -1134,6 +1136,7 @@ struct WorkspaceDefinition: Identifiable, Hashable {
         WorkspaceDefinition(section: .dashboards, title: "Dashboards", icon: "rectangle.3.group", placement: .primary),
         WorkspaceDefinition(section: .recents, title: "Recents", icon: "clock", placement: .primary),
         WorkspaceDefinition(section: .docTypes, title: "DocTypes", icon: "doc.text", placement: .primary),
+        WorkspaceDefinition(section: .modules, title: "Modules", icon: "square.grid.2x2", placement: .primary),
         WorkspaceDefinition(section: .settings, title: "Settings", icon: "gear", placement: .secondary)
     ]
 }
