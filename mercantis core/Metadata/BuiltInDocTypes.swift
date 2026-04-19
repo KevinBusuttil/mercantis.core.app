@@ -3,6 +3,7 @@ import Foundation
 /// Built-in system DocTypes that bootstrap customization tooling.
 public enum BuiltInDocTypes {
     private static let coreAppId = "core.system"
+    /// Field key used by the `Module` DocType for the module record display name.
     public static let moduleNameFieldKey = "module_name"
 
     /// IDs of system meta-DocTypes that should not generate list reports or dashboards.
