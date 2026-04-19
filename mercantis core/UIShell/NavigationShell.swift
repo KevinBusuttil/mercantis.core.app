@@ -143,19 +143,16 @@ public struct NavigationShell: View {
                 } label: {
                     HStack(spacing: 8) {
                         Label(workspace.title, systemImage: workspace.icon)
+                            .fontWeight(router.selectedSection == workspace.section ? .semibold : .regular)
                         if let badge = workspaceBadge(for: workspace.section) {
                             Spacer()
                             Text(badge)
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.quaternary, in: Capsule())
-                                .foregroundStyle(.secondary)
+                                .mercantisSemanticBadge(tone: router.selectedSection == workspace.section ? .accent : .muted)
                         }
                     }
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
+                .mercantisSidebarSelection(isActive: router.selectedSection == workspace.section)
             }
 
             if !filteredModuleNames.isEmpty {
@@ -175,9 +172,10 @@ public struct NavigationShell: View {
                     selectSection(workspace.section)
                 } label: {
                     Label(workspace.title, systemImage: workspace.icon)
+                        .fontWeight(router.selectedSection == workspace.section ? .semibold : .regular)
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(sidebarRowBackground(isActive: router.selectedSection == workspace.section))
+                .mercantisSidebarSelection(isActive: router.selectedSection == workspace.section)
             }
         }
         .listStyle(.sidebar)
@@ -817,7 +815,7 @@ public struct NavigationShell: View {
                 .font(MercantisType.meta)
                 .tracking(0.6)
         }
-        .listRowBackground(sidebarRowBackground(isActive: isModuleActive(module)))
+        .mercantisSidebarSelection(isActive: isModuleActive(module))
     }
 
     @ViewBuilder
@@ -833,9 +831,10 @@ public struct NavigationShell: View {
             addRecent(.docType(docType.id))
         } label: {
             Label(docType.name, systemImage: "doc.text")
+                .fontWeight(router.selectedItem == .docType(docType.id) ? .semibold : .regular)
         }
         .buttonStyle(.plain)
-        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .docType(docType.id)))
+        .mercantisSidebarSelection(isActive: router.selectedItem == .docType(docType.id))
     }
 
     @ViewBuilder
@@ -851,9 +850,10 @@ public struct NavigationShell: View {
             addRecent(.report(report.id))
         } label: {
             Label(report.name, systemImage: "chart.bar.doc.horizontal")
+                .fontWeight(router.selectedItem == .report(report.id) ? .semibold : .regular)
         }
         .buttonStyle(.plain)
-        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .report(report.id)))
+        .mercantisSidebarSelection(isActive: router.selectedItem == .report(report.id))
     }
 
     @ViewBuilder
@@ -869,25 +869,15 @@ public struct NavigationShell: View {
             addRecent(.dashboard(dashboard.id))
         } label: {
             Label(dashboard.name, systemImage: "rectangle.3.group")
+                .fontWeight(router.selectedItem == .dashboard(dashboard.id) ? .semibold : .regular)
         }
         .buttonStyle(.plain)
-        .listRowBackground(sidebarRowBackground(isActive: router.selectedItem == .dashboard(dashboard.id)))
+        .mercantisSidebarSelection(isActive: router.selectedItem == .dashboard(dashboard.id))
     }
 
     private func selectSection(_ section: NavigationSection) {
         router.selectedSection = section
         router.selectedItem = nil
-    }
-
-    private func sidebarRowBackground(isActive: Bool) -> some View {
-        Group {
-            if isActive {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.accentColor.opacity(0.14))
-            } else {
-                Color.clear
-            }
-        }
     }
 
     private var sidebarBackgroundColor: Color {
