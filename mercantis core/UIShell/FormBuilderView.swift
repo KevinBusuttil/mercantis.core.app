@@ -316,7 +316,7 @@ public struct FormBuilderView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(selected ? MercantisTheme.primary.opacity(0.45) : Color.separator.opacity(0.15), lineWidth: 1)
+                    .stroke(selected ? AnyShapeStyle(MercantisTheme.primary.opacity(0.45)) : AnyShapeStyle(.separator.opacity(0.15)), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
