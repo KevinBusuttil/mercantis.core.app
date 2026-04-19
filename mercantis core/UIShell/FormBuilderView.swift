@@ -31,13 +31,15 @@ private struct BuilderControlItem: Identifiable {
 private struct BuilderStatusItem: Identifiable {
     let id: String
     let title: String
-    let isComplete: Bool
+    let tone: MercantisSemanticTone
+    let icon: String
 }
 
 private struct BuilderTimelineEvent: Identifiable {
     let id = UUID()
     let title: String
     let timestamp: Date
+    let tone: MercantisSemanticTone
 }
 
 private enum BuilderPaneWidth {
@@ -180,8 +182,8 @@ public struct FormBuilderView: View {
             if let validationError {
                 Text(validationError)
                     .padding(8)
-                    .background(.red.opacity(0.15))
-                    .foregroundStyle(.red)
+                    .background(MercantisTheme.fillSoft(for: .danger))
+                    .foregroundStyle(MercantisTheme.danger)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding()
             }
@@ -293,12 +295,17 @@ public struct FormBuilderView: View {
                         .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 12))
                 } else {
                     ForEach(canvasSections) { section in
+                        let selectedGroupID = section.groups.first {
+                            $0.fields.contains { $0.key == selectedFieldKey }
+                        }?.id
+                        let sectionHasSelection = selectedGroupID != nil
                         VStack(alignment: .leading, spacing: 10) {
                             Text(section.title)
                                 .font(.headline)
 
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(section.groups) { group in
+                                    let groupHasSelection = selectedGroupID == group.id
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(group.title)
                                             .font(.caption.weight(.semibold))
@@ -316,7 +323,14 @@ public struct FormBuilderView: View {
                                     }
                                     .padding(10)
                                     .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-                                    .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
+                                    .background(
+                                        groupHasSelection ? MercantisTheme.inspectorHighlight : MercantisTheme.surfaceMuted,
+                                        in: RoundedRectangle(cornerRadius: 10)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(groupHasSelection ? MercantisTheme.accentBorder : MercantisTheme.border.opacity(0.6), lineWidth: 1)
+                                    )
                                     .dropDestination(for: String.self) { items, _ in
                                         guard let token = items.first else { return false }
                                         return insertFromDragToken(token, intoSection: section.title)
@@ -328,7 +342,7 @@ public struct FormBuilderView: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(.separator, lineWidth: 1)
+                                .stroke(sectionHasSelection ? MercantisTheme.accentBorder : MercantisTheme.border, lineWidth: 1)
                         )
                     }
                 }
@@ -358,7 +372,7 @@ public struct FormBuilderView: View {
                 if field.isRequired {
                     Image(systemName: "asterisk")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MercantisTheme.warning)
                 }
                 if isReadOnlyExpression(field.readOnlyExpression) {
                     Image(systemName: "lock")
@@ -368,14 +382,7 @@ public struct FormBuilderView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(
-                selected ? MercantisTheme.primary.opacity(0.18) : .clear,
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(selected ? AnyShapeStyle(MercantisTheme.primary.opacity(0.45)) : AnyShapeStyle(.separator.opacity(0.15)), lineWidth: 1)
-            )
+            .mercantisBuilderSelection(isSelected: selected)
         }
         .buttonStyle(.plain)
     }
@@ -507,6 +514,12 @@ public struct FormBuilderView: View {
                 }
                 TextField("Visibility Expression", text: binding.visibilityExpression)
                     .mercantisInput()
+                HStack(spacing: 6) {
+                    Text("Field Type")
+                        .foregroundStyle(.secondary)
+                    Text(binding.type.wrappedValue.rawValue)
+                        .mercantisSemanticBadge(tone: .accent)
+                }
                 Text("Placeholder/help text are not yet represented in the core field metadata model.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -525,8 +538,8 @@ public struct FormBuilderView: View {
 
             ForEach(statusItems) { item in
                 HStack(spacing: 8) {
-                    Image(systemName: item.isComplete ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(item.isComplete ? .green : .secondary)
+                    Image(systemName: item.icon)
+                        .foregroundStyle(MercantisTheme.tint(for: item.tone))
                     Text(item.title)
                         .font(.callout)
                     Spacer()
@@ -546,12 +559,20 @@ public struct FormBuilderView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(recentTimelineEvents) { event in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.title)
-                            .font(.callout)
-                        Text(event.timestamp.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(MercantisTheme.tint(for: event.tone))
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 5)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                                .font(.callout)
+                            Text(event.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
@@ -582,9 +603,24 @@ public struct FormBuilderView: View {
 
     private var statusItems: [BuilderStatusItem] {
         [
-            BuilderStatusItem(id: "draft", title: "Draft defined", isComplete: !normalizedDocTypeId.isEmpty),
-            BuilderStatusItem(id: "layout", title: "Layout validated", isComplete: !canvasSections.isEmpty),
-            BuilderStatusItem(id: "deployed", title: "Fields deployed", isComplete: isDeployed)
+            BuilderStatusItem(
+                id: "draft",
+                title: "Draft defined",
+                tone: normalizedDocTypeId.isEmpty ? .info : .success,
+                icon: normalizedDocTypeId.isEmpty ? "info.circle.fill" : "checkmark.circle.fill"
+            ),
+            BuilderStatusItem(
+                id: "layout",
+                title: "Layout validated",
+                tone: canvasSections.isEmpty ? .warning : .success,
+                icon: canvasSections.isEmpty ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+            ),
+            BuilderStatusItem(
+                id: "deployment",
+                title: "Fields deployed",
+                tone: isDeployed ? .success : .warning,
+                icon: isDeployed ? "checkmark.circle.fill" : "clock.badge.exclamationmark.fill"
+            )
         ]
     }
 
@@ -648,11 +684,11 @@ public struct FormBuilderView: View {
                 )
             )
             selectedFieldID = fields.last?.id
-            trackEvent("Field added: \(nextKey)")
+            trackEvent("Field added: \(nextKey)", tone: .info)
         case .section:
             let sectionName = "Section \(nextGeneratedSection)"
             nextGeneratedSection += 1
-            trackEvent("Section created: \(sectionName)")
+            trackEvent("Section created: \(sectionName)", tone: .info)
             if let binding = selectedFieldBinding {
                 binding.section.wrappedValue = sectionName
             }
@@ -713,7 +749,7 @@ public struct FormBuilderView: View {
             fields = docType.fields.map(EditableField.init)
         }
         selectedFieldID = fields.first?.id
-        trackEvent("Loaded DocType: \(docType.id)")
+        trackEvent("Loaded DocType: \(docType.id)", tone: .info)
     }
 
     private func syncUniqueKeyChange(oldKey: String, newKey: String) {
@@ -728,8 +764,8 @@ public struct FormBuilderView: View {
         return normalized == "true" || normalized == "1" || normalized == "yes"
     }
 
-    private func trackEvent(_ title: String) {
-        timelineEvents.append(BuilderTimelineEvent(title: title, timestamp: Date()))
+    private func trackEvent(_ title: String, tone: MercantisSemanticTone) {
+        timelineEvents.append(BuilderTimelineEvent(title: title, timestamp: Date(), tone: tone))
     }
 
     private func save() {
@@ -739,11 +775,12 @@ public struct FormBuilderView: View {
         do {
             try tooling.save(docType: docType)
             isDeployed = true
-            trackEvent("Fields deployed")
+            trackEvent("Fields deployed", tone: .success)
             onSave?()
             // Keep the builder open so window-based editing sessions can continue after save.
         } catch {
             validationError = tooling.errorMessage(for: error)
+            trackEvent("Save failed", tone: .danger)
         }
     }
 }

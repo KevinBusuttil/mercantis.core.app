@@ -5,12 +5,32 @@ import AppKit
 import UIKit
 #endif
 
+enum MercantisSemanticTone {
+    case accent
+    case success
+    case warning
+    case danger
+    case info
+    case muted
+}
+
 enum MercantisTheme {
-    static let primary = Color(red: 37 / 255, green: 99 / 255, blue: 235 / 255)
-    static let primaryPressed = Color(red: 30 / 255, green: 64 / 255, blue: 175 / 255)
-    static let success = Color(red: 5 / 255, green: 150 / 255, blue: 105 / 255)
-    static let warning = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)
+    static let accent = Color.accentColor
+    static let accentFillSoft = Color.accentColor.opacity(0.12)
+    static let accentBorder = Color.accentColor.opacity(0.34)
+    static let softFillOpacity = 0.14
+    static let warningFillOpacity = 0.16
+    static let success = Color(red: 22 / 255, green: 163 / 255, blue: 74 / 255)
+    static let warning = Color(red: 202 / 255, green: 138 / 255, blue: 4 / 255)
     static let danger = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)
+    static let info = Color(red: 67 / 255, green: 56 / 255, blue: 202 / 255)
+    static let selectionBackground = accentFillSoft
+    static let selectionForeground = accent
+    static let mutedBadge = Color.secondary.opacity(0.16)
+    static let inspectorHighlight = Color.accentColor.opacity(0.08)
+    static let subtleSeparatorOpacity = 0.15
+    static let primary = accent
+    static let primaryPressed = Color.accentColor.opacity(0.88)
 
     #if os(macOS)
     static let background = Color(NSColor.windowBackgroundColor)
@@ -27,6 +47,40 @@ enum MercantisTheme {
     static let textPrimary = Color(UIColor.label)
     static let textMuted = Color(UIColor.secondaryLabel)
     #endif
+
+    static func tint(for tone: MercantisSemanticTone) -> Color {
+        switch tone {
+        case .accent:
+            accent
+        case .success:
+            success
+        case .warning:
+            warning
+        case .danger:
+            danger
+        case .info:
+            info
+        case .muted:
+            textMuted
+        }
+    }
+
+    static func fillSoft(for tone: MercantisSemanticTone) -> Color {
+        switch tone {
+        case .accent:
+            accentFillSoft
+        case .success:
+            success.opacity(softFillOpacity)
+        case .warning:
+            warning.opacity(warningFillOpacity)
+        case .danger:
+            danger.opacity(softFillOpacity)
+        case .info:
+            info.opacity(softFillOpacity)
+        case .muted:
+            mutedBadge
+        }
+    }
 }
 
 enum MercantisType {
@@ -44,7 +98,11 @@ struct MercantisPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Color.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(configuration.isPressed ? MercantisTheme.primaryPressed : MercantisTheme.primary)
+            .background(configuration.isPressed ? MercantisTheme.primaryPressed : MercantisTheme.accent)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(MercantisTheme.accentBorder.opacity(configuration.isPressed ? 0.7 : 1), lineWidth: 1)
+            )
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
@@ -78,6 +136,54 @@ struct MercantisDestructiveButtonStyle: ButtonStyle {
             .background(MercantisTheme.danger.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+private struct MercantisSemanticBadgeModifier: ViewModifier {
+    let tone: MercantisSemanticTone
+
+    func body(content: Content) -> some View {
+        content
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(MercantisTheme.fillSoft(for: tone), in: Capsule())
+            .foregroundStyle(MercantisTheme.tint(for: tone))
+    }
+}
+
+private struct MercantisSidebarSelectionModifier: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.vertical, 2)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isActive ? MercantisTheme.selectionBackground : Color.clear)
+            )
+            .foregroundStyle(isActive ? MercantisTheme.selectionForeground : MercantisTheme.textPrimary)
+    }
+}
+
+private struct MercantisBuilderSelectionModifier: ViewModifier {
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isSelected ? MercantisTheme.selectionBackground : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        isSelected
+                            ? AnyShapeStyle(MercantisTheme.accentBorder)
+                            : AnyShapeStyle(.separator.opacity(MercantisTheme.subtleSeparatorOpacity)),
+                        lineWidth: 1
+                    )
+            )
     }
 }
 
@@ -146,6 +252,18 @@ struct MercantisSectionHeading: View {
 }
 
 extension View {
+    func mercantisSemanticBadge(tone: MercantisSemanticTone = .muted) -> some View {
+        modifier(MercantisSemanticBadgeModifier(tone: tone))
+    }
+
+    func mercantisSidebarSelection(isActive: Bool) -> some View {
+        modifier(MercantisSidebarSelectionModifier(isActive: isActive))
+    }
+
+    func mercantisBuilderSelection(isSelected: Bool) -> some View {
+        modifier(MercantisBuilderSelectionModifier(isSelected: isSelected))
+    }
+
     func mercantisInput() -> some View {
         modifier(MercantisInputModifier())
     }

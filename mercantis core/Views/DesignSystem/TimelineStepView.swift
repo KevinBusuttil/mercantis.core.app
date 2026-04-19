@@ -7,7 +7,7 @@ struct TimelineStepView: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
                 Circle()
-                    .fill(step.isComplete ? Color.green : Color.gray)
+                    .fill(step.isComplete ? MercantisTheme.success : MercantisTheme.info)
                     .frame(width: 10, height: 10)
                 Rectangle()
                     .fill(.separator)

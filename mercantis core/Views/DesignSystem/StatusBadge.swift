@@ -1,16 +1,50 @@
 import SwiftUI
 
+private enum StatusBadgeType: String {
+    case submitted
+    case done
+    case completed
+    case validated
+    case warning
+    case attention
+    case error
+    case failed
+    case draft
+    case pending
+
+    var accessibilityLabel: String {
+        switch self {
+        case .submitted, .done, .completed, .validated:
+            "success status"
+        case .warning, .attention:
+            "warning status"
+        case .error, .failed:
+            "error status"
+        case .draft, .pending:
+            "pending status"
+        }
+    }
+}
+
 struct StatusBadge: View {
     let text: String
 
-    private var tintColor: Color {
-        switch text.lowercased() {
-        case "submitted", "done", "completed":
-            return .green
-        case "draft", "pending":
-            return .gray
-        default:
-            return .blue
+    private var badgeType: StatusBadgeType? {
+        StatusBadgeType(rawValue: text.lowercased())
+    }
+
+    private var tone: MercantisSemanticTone {
+        switch badgeType {
+        case .submitted, .done, .completed, .validated:
+            return .success
+        case .warning, .attention:
+            return .warning
+        case .error, .failed:
+            return .danger
+        case .draft, .pending:
+            return .muted
+        case .none:
+            return .info
         }
     }
 
@@ -19,8 +53,9 @@ struct StatusBadge: View {
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(tintColor.opacity(0.16), in: Capsule())
-            .foregroundStyle(tintColor)
+            .background(MercantisTheme.fillSoft(for: tone), in: Capsule())
+            .foregroundStyle(MercantisTheme.tint(for: tone))
+            .accessibilityLabel("\(text), \(badgeType?.accessibilityLabel ?? "informational status")")
     }
 }
 

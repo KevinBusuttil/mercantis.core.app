@@ -42,11 +42,11 @@ public struct DocTypeListView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Text(docType.module)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(MercantisTheme.primary.opacity(0.12))
-                                    .clipShape(Capsule())
+                                    .mercantisSemanticBadge(tone: .info)
+                                if !docType.isCustom {
+                                    Text("Built-in")
+                                        .mercantisSemanticBadge(tone: .muted)
+                                }
                             }
                         }
 
@@ -69,20 +69,11 @@ public struct DocTypeListView: View {
                                     showDeleteConfirmation = true
                                 }
                                 .buttonStyle(MercantisDestructiveButtonStyle())
-                            } else {
-                                Text("Built-in")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .padding(.vertical, 2)
                     .tag(docType.id)
-                    .listRowBackground(
-                        selectedDocTypeID == docType.id
-                            ? Color.accentColor.opacity(0.1)
-                            : Color.clear
-                    )
+                    .mercantisSidebarSelection(isActive: selectedDocTypeID == docType.id)
                 }
             }
         }
@@ -100,7 +91,7 @@ public struct DocTypeListView: View {
                     guard let selectedDocTypeForSelection else { return }
                     openVisualBuilder(for: selectedDocTypeForSelection)
                 }
-                .buttonStyle(MercantisSecondaryButtonStyle())
+                .buttonStyle(MercantisPrimaryButtonStyle())
                 .disabled(selectedDocTypeForSelection == nil)
             }
         }
