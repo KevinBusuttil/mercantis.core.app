@@ -40,6 +40,17 @@ private struct BuilderTimelineEvent: Identifiable {
     let timestamp: Date
 }
 
+private enum BuilderPaneWidth {
+    static let controlsMin: CGFloat = 220
+    static let controlsIdeal: CGFloat = 260
+    static let controlsMax: CGFloat = 320
+    static let canvasMin: CGFloat = 360
+    static let canvasIdeal: CGFloat = 640
+    static let inspectorMin: CGFloat = 260
+    static let inspectorIdeal: CGFloat = 320
+    static let inspectorMax: CGFloat = 380
+}
+
 public struct FormBuilderView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
     @Environment(\.dismiss) private var dismiss
@@ -64,6 +75,7 @@ public struct FormBuilderView: View {
     @State private var validationError: String?
     @State private var isDeployed = false
     @State private var timelineEvents: [BuilderTimelineEvent] = []
+    @State private var hasAttemptedInitialDocTypeLoad = false
 
     private let paletteGroups: [BuilderPaletteGroup] = [
         BuilderPaletteGroup(
@@ -126,14 +138,36 @@ public struct FormBuilderView: View {
     public var body: some View {
         HSplitView {
             controlsPalette
-                .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
+                .frame(
+                    minWidth: BuilderPaneWidth.controlsMin,
+                    idealWidth: BuilderPaneWidth.controlsIdeal,
+                    maxWidth: BuilderPaneWidth.controlsMax,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                // Keep the palette visible while the canvas absorbs most resize pressure.
+                .layoutPriority(2)
 
             metadataCanvas
-                .frame(minWidth: 480, idealWidth: 720, maxWidth: .infinity)
+                .frame(
+                    minWidth: BuilderPaneWidth.canvasMin,
+                    idealWidth: BuilderPaneWidth.canvasIdeal,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .layoutPriority(1)
 
             inspectorPane
-                .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
+                .frame(
+                    minWidth: BuilderPaneWidth.inspectorMin,
+                    idealWidth: BuilderPaneWidth.inspectorIdeal,
+                    maxWidth: BuilderPaneWidth.inspectorMax,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("Visual Builder")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -156,10 +190,16 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if docTypeId.isEmpty, fields.isEmpty {
+            if shouldLoadInitialDocType {
                 loadInitialDocType()
+                hasAttemptedInitialDocTypeLoad = true
             }
         }
+    }
+
+    // Kept as a dedicated predicate so the onAppear startup path remains easy to scan.
+    private var shouldLoadInitialDocType: Bool {
+        !hasAttemptedInitialDocTypeLoad && docTypeId.isEmpty && fields.isEmpty
     }
 
     private var controlsPalette: some View {

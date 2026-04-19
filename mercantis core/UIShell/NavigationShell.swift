@@ -132,7 +132,7 @@ public struct NavigationShell: View {
         }
         .navigationSplitViewStyle(.balanced)
         #if os(macOS)
-        .inspector(isPresented: $isInspectorPresented) {
+        .inspector(isPresented: shellInspectorPresentation) {
             shellInspector
                 .frame(minWidth: 250)
         }
@@ -150,6 +150,19 @@ public struct NavigationShell: View {
             showCommandBar = true
         }
     }
+
+    #if os(macOS)
+    private var isVisualBuilderActive: Bool {
+        router.selectedSection == .setup && router.setupDestination == .visualBuilder
+    }
+
+    private var shellInspectorPresentation: Binding<Bool> {
+        Binding(
+            get: { isInspectorPresented && !isVisualBuilderActive },
+            set: { isInspectorPresented = $0 }
+        )
+    }
+    #endif
 
     private var sidebar: some View {
         List {
