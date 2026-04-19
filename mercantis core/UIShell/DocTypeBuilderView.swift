@@ -104,6 +104,10 @@ final class DocTypeToolingContext: ObservableObject {
         dashboards.first(where: { $0.id == id })
     }
 
+    var navigableDocTypes: [DocType] {
+        docTypes.filter { !$0.isChildTable }
+    }
+
     func listDocuments(docTypeId: String) -> [Document] {
         (try? documentEngine.list(docType: docTypeId)) ?? []
     }

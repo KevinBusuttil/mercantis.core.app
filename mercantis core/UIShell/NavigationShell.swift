@@ -226,6 +226,15 @@ public struct NavigationShell: View {
     private var moduleBrowser: some View {
         if tooling.docType(withId: BuiltInDocTypes.module.id) != nil {
             docTypeDetail(docTypeId: BuiltInDocTypes.module.id)
+                .onAppear {
+                    guard let selectedModule = router.selectedModule else { return }
+                    if activeModuleName(in: activeDocument) == selectedModule {
+                        return
+                    }
+                    activeDocument = tooling
+                        .listDocuments(docTypeId: BuiltInDocTypes.module.id)
+                        .first(where: { activeModuleName(in: $0) == selectedModule })
+                }
         } else {
             ContentUnavailableView("Module DocType unavailable", systemImage: "square.grid.2x2")
         }
@@ -309,7 +318,7 @@ public struct NavigationShell: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Create").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], spacing: 8) {
-                ForEach(navigableDocTypes.prefix(8), id: \.id) { docType in
+                ForEach(tooling.navigableDocTypes.prefix(8), id: \.id) { docType in
                     Button("New \(docType.name)") {
                         router.openDocType(docType.id, module: docType.module)
                         activeDocument = tooling.createDraftDocument(for: docType)
@@ -576,7 +585,7 @@ public struct NavigationShell: View {
     // MARK: - Command Bar
 
     private var commandBarActions: [CommandBarAction] {
-        let docTypeActions = navigableDocTypes.map { docType in
+        let docTypeActions = tooling.navigableDocTypes.map { docType in
             CommandBarAction(
                 id: "doctype-\(docType.id)",
                 title: docType.name,
@@ -591,7 +600,7 @@ public struct NavigationShell: View {
             }
         }
 
-        let createActions = navigableDocTypes.prefix(10).map { docType in
+        let createActions = tooling.navigableDocTypes.prefix(10).map { docType in
             CommandBarAction(
                 id: "create-\(docType.id)",
                 title: "New \(docType.name)",
@@ -683,16 +692,12 @@ public struct NavigationShell: View {
         workspaceDefinitions.filter { $0.placement == .secondary }
     }
 
-    private var navigableDocTypes: [DocType] {
-        tooling.docTypes.filter { !$0.isChildTable }
-    }
-
     private func workspaceBadge(for section: NavigationSection) -> String? {
         switch section {
         case .recents:
             return recents.isEmpty ? nil : "\(recents.count)"
         case .docTypes:
-            return navigableDocTypes.isEmpty ? nil : "\(navigableDocTypes.count)"
+            return tooling.navigableDocTypes.isEmpty ? nil : "\(tooling.navigableDocTypes.count)"
         case .reports:
             return tooling.reports.isEmpty ? nil : "\(tooling.reports.count)"
         case .dashboards:
@@ -736,6 +741,14 @@ public struct NavigationShell: View {
             }
             return nil
         }.first
+    }
+
+    private func activeModuleName(in document: Document?) -> String? {
+        guard let document else { return nil }
+        if case .string(let moduleName)? = document.fields["module_name"] {
+            return moduleName
+        }
+        return nil
     }
 
     private var bindingForActiveDocument: Binding<Document> {

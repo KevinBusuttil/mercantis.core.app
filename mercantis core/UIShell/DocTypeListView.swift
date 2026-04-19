@@ -18,7 +18,7 @@ public struct DocTypeListView: View {
 
     public var body: some View {
         List(selection: $selectedDocTypeID) {
-            if navigableDocTypes.isEmpty {
+            if tooling.navigableDocTypes.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.badge.plus")
                         .font(.title2)
@@ -32,7 +32,7 @@ public struct DocTypeListView: View {
                 .padding(.vertical, 20)
                 .listRowBackground(Color.clear)
             } else {
-                ForEach(navigableDocTypes) { docType in
+                ForEach(tooling.navigableDocTypes) { docType in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(docType.name)
@@ -80,7 +80,7 @@ public struct DocTypeListView: View {
         .navigationTitle("DocTypes")
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
-                Text("\(navigableDocTypes.count) registered")
+                Text("\(tooling.navigableDocTypes.count) registered")
                     .foregroundStyle(.secondary)
                     .font(.caption)
                 Button("New DocType") {
@@ -98,10 +98,10 @@ public struct DocTypeListView: View {
         .onAppear {
             tooling.reload()
             if selectedDocTypeID == nil {
-                selectedDocTypeID = navigableDocTypes.first?.id
+                selectedDocTypeID = tooling.navigableDocTypes.first?.id
             }
         }
-        .onChange(of: navigableDocTypes.map(\.id)) { _, ids in
+        .onChange(of: tooling.navigableDocTypes.map(\.id)) { _, ids in
             if let selectedDocTypeID, ids.contains(selectedDocTypeID) {
                 return
             }
@@ -183,11 +183,7 @@ public struct DocTypeListView: View {
 
     private var selectedDocTypeForSelection: DocType? {
         guard let selectedDocTypeID else { return nil }
-        return navigableDocTypes.first(where: { $0.id == selectedDocTypeID })
-    }
-
-    private var navigableDocTypes: [DocType] {
-        tooling.docTypes.filter { !$0.isChildTable }
+        return tooling.navigableDocTypes.first(where: { $0.id == selectedDocTypeID })
     }
 
     private func openVisualBuilder(for docType: DocType) {
