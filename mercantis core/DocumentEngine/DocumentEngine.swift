@@ -89,22 +89,35 @@ public final class DocumentEngine {
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
 
         // ADR-023: Optimistic concurrency check via modifiedAt (updatedAt) timestamp.
+        // ADR-024: Load the existing document for diff computation.
         // If the document already exists, compare its stored updatedAt against the
         // in-memory value. If they differ, another save occurred between load and save.
-        let existingUpdatedAt = try database.read { db in
+        let existingRow = try database.read { db in
             try Row.fetchOne(
                 db,
-                sql: "SELECT updatedAt FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
+                sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
                 arguments: [document.id, document.docType]
             )
         }
-        if let row = existingUpdatedAt {
+        if let row = existingRow {
             let storedTimestamp: String? = row["updatedAt"]
             let inMemoryTimestamp = ISO8601DateFormatter().string(from: document.updatedAt)
             if let storedTimestamp, storedTimestamp != inMemoryTimestamp {
                 throw DocumentEngineError.concurrencyConflict(documentId: document.id)
             }
         }
+
+        // ADR-024: Compute field-level diff for version tracking.
+        var oldFields: [String: FieldValue] = [:]
+        if let row = existingRow {
+            let existingPayloadString: String = row["payload"] ?? "{}"
+            if let existingPayloadData = existingPayloadString.data(using: .utf8) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                oldFields = (try? decoder.decode([String: FieldValue].self, from: existingPayloadData)) ?? [:]
+            }
+        }
+        let fieldDiffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
 
         // Build the mutation record.
         let mutation = MutationRecord(
@@ -217,6 +230,38 @@ public final class DocumentEngine {
                     mutation.status.rawValue
                 ]
             )
+
+            // ADR-024: Store the document version (field-level diff) if any fields changed.
+            if !fieldDiffs.isEmpty {
+                let version = DocumentVersion(
+                    documentId: document.id,
+                    docType: document.docType,
+                    savedAt: saveTimestamp,
+                    savedBy: userId,
+                    fieldDiffs: fieldDiffs
+                )
+                let versionEncoder = JSONEncoder()
+                versionEncoder.dateEncodingStrategy = .iso8601
+                let diffsData = try versionEncoder.encode(version.fieldDiffs)
+                let diffsString = String(data: diffsData, encoding: .utf8) ?? "[]"
+                let versionSavedAt = ISO8601DateFormatter().string(from: version.savedAt)
+
+                try db.execute(
+                    sql: """
+                        INSERT INTO document_versions
+                            (id, documentId, docType, savedAt, savedBy, fieldDiffs)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [
+                        version.id,
+                        version.documentId,
+                        version.docType,
+                        versionSavedAt,
+                        version.savedBy,
+                        diffsString
+                    ]
+                )
+            }
         }
 
         eventEmitter.publish(DocumentSavedEvent(
