@@ -14,7 +14,7 @@ public struct DocTypeListView: View {
     public init() {}
 
     public var body: some View {
-        List {
+        List(selection: $selectedDocTypeID) {
             if tooling.docTypes.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.badge.plus")
@@ -74,10 +74,7 @@ public struct DocTypeListView: View {
                         }
                     }
                     .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedDocTypeID = docType.id
-                    }
+                    .tag(docType.id)
                     .listRowBackground(
                         selectedDocTypeID == docType.id
                             ? Color.accentColor.opacity(0.1)
@@ -112,7 +109,7 @@ public struct DocTypeListView: View {
         .onChange(of: tooling.docTypes.map(\.id)) { _, ids in
             if let selectedDocTypeID, !ids.contains(selectedDocTypeID) {
                 self.selectedDocTypeID = ids.first
-            } else if self.selectedDocTypeID == nil {
+            } else if selectedDocTypeID == nil {
                 self.selectedDocTypeID = ids.first
             }
         }
