@@ -28,8 +28,16 @@ struct mercantis_coreApp: App {
         #if os(macOS)
         WindowGroup("Visual Builder", id: Self.visualBuilderWindowID, for: String.self) { $docTypeID in
             NavigationStack {
-                FormBuilderView(initialDocTypeID: docTypeID.wrappedValue) {
-                    docTypeTooling.reload()
+                if let selectedDocTypeID = docTypeID.wrappedValue {
+                    FormBuilderView(initialDocTypeID: selectedDocTypeID) {
+                        docTypeTooling.reload()
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "No DocType Selected",
+                        systemImage: "doc.text.magnifyingglass",
+                        description: Text("Open Visual Builder from DocTypes to choose a DocType.")
+                    )
                 }
             }
             .frame(minWidth: 1000, idealWidth: 1280, minHeight: 620, idealHeight: 760)

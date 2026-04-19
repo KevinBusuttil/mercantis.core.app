@@ -204,17 +204,20 @@ public struct FormBuilderView: View {
     }
 
     private var windowTitle: String {
-        let preferredName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !preferredName.isEmpty {
+        if let preferredName = trimmedIfNotEmpty(name) {
             return "Visual Builder — \(preferredName)"
         }
 
-        let fallbackId = docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !fallbackId.isEmpty {
+        if let fallbackId = trimmedIfNotEmpty(docTypeId) {
             return "Visual Builder — \(fallbackId)"
         }
 
         return "Visual Builder"
+    }
+
+    private func trimmedIfNotEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var controlsPalette: some View {
@@ -738,6 +741,7 @@ public struct FormBuilderView: View {
             isDeployed = true
             trackEvent("Fields deployed")
             onSave?()
+            // Keep the builder open so window-based editing sessions can continue after save.
         } catch {
             validationError = tooling.errorMessage(for: error)
         }
