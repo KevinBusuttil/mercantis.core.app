@@ -10,7 +10,7 @@ struct TimelineStepView: View {
                     .fill(step.isComplete ? Color.green : Color.gray)
                     .frame(width: 10, height: 10)
                 Rectangle()
-                    .fill(Color.separator)
+                    .fill(.separator)
                     .frame(width: 1)
                     .opacity(0.5)
             }
