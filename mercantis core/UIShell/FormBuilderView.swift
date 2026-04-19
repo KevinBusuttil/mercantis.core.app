@@ -64,6 +64,7 @@ public struct FormBuilderView: View {
     @State private var validationError: String?
     @State private var isDeployed = false
     @State private var timelineEvents: [BuilderTimelineEvent] = []
+    @State private var hasLoadedInitialDocType = false
 
     private let paletteGroups: [BuilderPaletteGroup] = [
         BuilderPaletteGroup(
@@ -126,14 +127,17 @@ public struct FormBuilderView: View {
     public var body: some View {
         HSplitView {
             controlsPalette
-                .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
+                .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(1)
 
             metadataCanvas
-                .frame(minWidth: 480, idealWidth: 720, maxWidth: .infinity)
+                .frame(minWidth: 360, idealWidth: 720, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(2)
 
             inspectorPane
-                .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
+                .frame(minWidth: 260, idealWidth: 320, maxWidth: 380, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("Visual Builder")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -156,8 +160,11 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if docTypeId.isEmpty, fields.isEmpty {
-                loadInitialDocType()
+            if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
+                hasLoadedInitialDocType = true
+                DispatchQueue.main.async {
+                    loadInitialDocType()
+                }
             }
         }
     }
