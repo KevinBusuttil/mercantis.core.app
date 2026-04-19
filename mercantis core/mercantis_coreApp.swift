@@ -28,7 +28,7 @@ struct mercantis_coreApp: App {
         #if os(macOS)
         WindowGroup("Visual Builder", id: Self.visualBuilderWindowID, for: String.self) { $docTypeID in
             NavigationStack {
-                if let selectedDocTypeID = docTypeID.wrappedValue {
+                if let selectedDocTypeID = docTypeID {
                     FormBuilderView(initialDocTypeID: selectedDocTypeID) {
                         docTypeTooling.reload()
                     }
