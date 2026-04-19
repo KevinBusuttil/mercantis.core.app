@@ -27,6 +27,8 @@ public enum BuiltInDocTypes {
         titleField: "module_name"
     )
 
+    /// Child-table metadata row managed within a selected `DocType` workflow,
+    /// not as a top-level navigation destination.
     public static let docTypeField = DocType(
         id: "DocTypeField",
         name: "DocType Field",
@@ -47,6 +49,8 @@ public enum BuiltInDocTypes {
         titleField: "label"
     )
 
+    /// Child-table metadata row managed within a selected `DocType` workflow,
+    /// not as a top-level navigation destination.
     public static let docTypePermission = DocType(
         id: "DocTypePermission",
         name: "DocType Permission",

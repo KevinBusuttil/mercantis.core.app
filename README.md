@@ -31,7 +31,10 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture document, inc
 
 - The default app runtime launches into the domain-neutral `NavigationShell` (`mercantis core/UIShell/NavigationShell.swift`).
 - Core navigation is platform/studio oriented (Home, Reports, Dashboards, Recents, DocTypes, Modules, Settings) and metadata-driven.
-- `DocTypes` is the canonical schema/design entry point; creating DocTypes and opening Visual Builder both happen from this workflow.
+- `DocTypes` is the canonical screen for managing `DocType` records; creating DocTypes and opening Visual Builder both happen from this workflow.
+- `Modules` is the canonical screen for managing `Module` records.
+- `Core` remains a `Module` document instance in the data model, but is not rendered as a primary sidebar grouping.
+- Child-table metadata (`DocTypeField`, `DocTypePermission`) stays embedded in the selected `DocType` workflow, not top-level navigation.
 - `mercantis core/Views/DesignSystem/` contains design-lab/demo surfaces and preview fixtures. They are preserved for UI exploration, but are not the default Core product path.
 
 ## Architecture Decision Records
