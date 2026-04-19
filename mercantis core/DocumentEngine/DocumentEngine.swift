@@ -18,6 +18,8 @@ public final class DocumentEngine {
     private let registry: MetadataRegistry
     private let validator: SchemaValidator
     private let eventBus: EventBus
+    private let eventEmitter: EventEmitter
+    private let validationPipeline: ValidationPipeline
     private let deviceId: String
     private let userId: String
 
@@ -26,12 +28,16 @@ public final class DocumentEngine {
         registry: MetadataRegistry,
         eventBus: EventBus,
         deviceId: String,
-        userId: String
+        userId: String,
+        eventEmitter: EventEmitter? = nil,
+        validationPipeline: ValidationPipeline? = nil
     ) {
         self.database = database
         self.registry = registry
         self.validator = SchemaValidator()
         self.eventBus = eventBus
+        self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
+        self.validationPipeline = validationPipeline ?? ValidationPipeline()
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -47,6 +53,28 @@ public final class DocumentEngine {
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
 
+            // ADR-022: Run the structured validation pipeline.
+            let validationContext = ValidationContext(
+                docType: docType,
+                userId: userId,
+                expressionEvaluator: ExpressionEvaluator(),
+                documentExists: { [weak self] linkedDocType, linkedId in
+                    guard let self else { return true }
+                    return (try? self.fetch(docType: linkedDocType, id: linkedId)) != nil
+                },
+                uniqueConflictExists: { [weak self] docTypeName, fieldKey, value, excludeId in
+                    guard let self else { return false }
+                    let docs = (try? self.list(docType: docTypeName)) ?? []
+                    return docs.contains { doc in
+                        doc.id != excludeId && doc.fields[fieldKey] == value
+                    }
+                }
+            )
+            let pipelineErrors = validationPipeline.validate(document: document, context: validationContext)
+            if !pipelineErrors.isEmpty {
+                throw DocumentEngineError.validationFailed(errors: pipelineErrors)
+            }
+
             // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: document, docType: docType)
@@ -59,6 +87,37 @@ public final class DocumentEngine {
         // Encode field values as the payload JSON.
         let payloadData = try encoder.encode(document.fields)
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
+
+        // ADR-023: Optimistic concurrency check via modifiedAt (updatedAt) timestamp.
+        // ADR-024: Load the existing document for diff computation.
+        // If the document already exists, compare its stored updatedAt against the
+        // in-memory value. If they differ, another save occurred between load and save.
+        let existingRow = try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
+                arguments: [document.id, document.docType]
+            )
+        }
+        if let row = existingRow {
+            let storedTimestamp: String? = row["updatedAt"]
+            let inMemoryTimestamp = ISO8601DateFormatter().string(from: document.updatedAt)
+            if let storedTimestamp, storedTimestamp != inMemoryTimestamp {
+                throw DocumentEngineError.concurrencyConflict(documentId: document.id)
+            }
+        }
+
+        // ADR-024: Compute field-level diff for version tracking.
+        var oldFields: [String: FieldValue] = [:]
+        if let row = existingRow {
+            let existingPayloadString: String = row["payload"] ?? "{}"
+            if let existingPayloadData = existingPayloadString.data(using: .utf8) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                oldFields = (try? decoder.decode([String: FieldValue].self, from: existingPayloadData)) ?? [:]
+            }
+        }
+        let fieldDiffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
 
         // Build the mutation record.
         let mutation = MutationRecord(
@@ -74,7 +133,9 @@ public final class DocumentEngine {
         let mutationPayloadString = String(data: mutation.payload, encoding: .utf8) ?? "{}"
         let mutationTimestamp = ISO8601DateFormatter().string(from: mutation.localTimestamp)
         let createdAtString = ISO8601DateFormatter().string(from: document.createdAt)
-        let updatedAtString = ISO8601DateFormatter().string(from: document.updatedAt)
+        // ADR-023: Set updatedAt to the current time on every successful save.
+        let saveTimestamp = Date()
+        let updatedAtString = ISO8601DateFormatter().string(from: saveTimestamp)
 
         try database.write { db in
             // Upsert the document row.
@@ -169,13 +230,43 @@ public final class DocumentEngine {
                     mutation.status.rawValue
                 ]
             )
+
+            // ADR-024: Store the document version (field-level diff) if any fields changed.
+            if !fieldDiffs.isEmpty {
+                let version = DocumentVersion(
+                    documentId: document.id,
+                    docType: document.docType,
+                    savedAt: saveTimestamp,
+                    savedBy: userId,
+                    fieldDiffs: fieldDiffs
+                )
+                let versionEncoder = JSONEncoder()
+                versionEncoder.dateEncodingStrategy = .iso8601
+                let diffsData = try versionEncoder.encode(version.fieldDiffs)
+                let diffsString = String(data: diffsData, encoding: .utf8) ?? "[]"
+                let versionSavedAt = ISO8601DateFormatter().string(from: version.savedAt)
+
+                try db.execute(
+                    sql: """
+                        INSERT INTO document_versions
+                            (id, documentId, docType, savedAt, savedBy, fieldDiffs)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [
+                        version.id,
+                        version.documentId,
+                        version.docType,
+                        versionSavedAt,
+                        version.savedBy,
+                        diffsString
+                    ]
+                )
+            }
         }
 
-        eventBus.publish(EventBus.Event(
-            name: "document.saved",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentSavedEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -226,11 +317,9 @@ public final class DocumentEngine {
             )
         }
 
-        eventBus.publish(EventBus.Event(
-            name: "document.deleted",
-            docType: docType,
+        eventEmitter.publish(DocumentDeletedEvent(
             documentId: id,
-            payload: [:]
+            docType: docType
         ))
     }
 
@@ -258,11 +347,9 @@ public final class DocumentEngine {
         document.updatedAt = Date()
         try save(document)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.submitted",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentSubmittedEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -300,11 +387,9 @@ public final class DocumentEngine {
         document.updatedAt = Date()
         try save(document)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.cancelled",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [:]
+        eventEmitter.publish(DocumentCancelledEvent(
+            document: document,
+            docType: document.docType
         ))
     }
 
@@ -360,11 +445,10 @@ public final class DocumentEngine {
 
         try save(amended)
 
-        eventBus.publish(EventBus.Event(
-            name: "document.amended",
-            docType: document.docType,
-            documentId: newId,
-            payload: ["amendedFrom": document.id]
+        eventEmitter.publish(DocumentAmendedEvent(
+            newDocumentId: newId,
+            amendedFrom: document.id,
+            docType: document.docType
         ))
 
         return amended
@@ -588,6 +672,8 @@ public final class DocumentEngine {
         case fieldImmutableAfterSubmit(fieldKey: String, documentId: String)
         case cancelBlockedByLinks(id: String, blockingIds: [String])
         case cannotDeleteSubmitted(id: String)
+        case validationFailed(errors: [DocumentValidationError])
+        case concurrencyConflict(documentId: String)
     }
 
     // MARK: - Private Types

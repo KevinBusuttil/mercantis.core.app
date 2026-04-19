@@ -11,9 +11,11 @@ import Foundation
 public final class WorkflowEngine {
 
     private let eventBus: EventBus
+    private let eventEmitter: EventEmitter
 
-    public init(eventBus: EventBus = EventBus()) {
+    public init(eventBus: EventBus = EventBus(), eventEmitter: EventEmitter? = nil) {
         self.eventBus = eventBus
+        self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
     }
 
     // MARK: - Available Transitions
@@ -90,16 +92,12 @@ public final class WorkflowEngine {
             timestamp: Date()
         )
 
-        eventBus.publish(EventBus.Event(
-            name: "workflow.transition",
-            docType: document.docType,
-            documentId: document.id,
-            payload: [
-                "workflowId": workflow.id,
-                "action": action,
-                "from": previousState,
-                "to": matched.to
-            ]
+        eventEmitter.publish(WorkflowTransitionEvent(
+            document: document,
+            fromState: previousState,
+            toState: matched.to,
+            action: action,
+            workflowId: workflow.id
         ))
 
         return history

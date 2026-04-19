@@ -78,6 +78,7 @@ public struct MigrationRunner {
     public static func registerAll(into runner: inout MigrationRunner, pool: DatabasePool) {
         runner.register(version: 1, name: "initial_schema", sql: MigrationRunner.v1SQL)
         runner.register(version: 2, name: "add_doc_status_columns", sql: MigrationRunner.v2SQL)
+        runner.register(version: 3, name: "add_document_versions", sql: MigrationRunner.v3SQL)
     }
 
     // MARK: - v1 Schema
@@ -183,5 +184,23 @@ public struct MigrationRunner {
         -- ADR-013: Submit / Cancel / Amend lifecycle columns.
         ALTER TABLE documents ADD COLUMN docStatus INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE documents ADD COLUMN amendedFrom TEXT;
+        """
+
+    // MARK: - v3 Schema — document_versions (ADR-024)
+
+    private static let v3SQL = """
+        -- ADR-024: Document versioning and field-level diff tracking.
+        -- Append-only table: records are never modified or deleted.
+        CREATE TABLE IF NOT EXISTS document_versions (
+            id              TEXT    PRIMARY KEY NOT NULL,
+            documentId      TEXT    NOT NULL,
+            docType         TEXT    NOT NULL,
+            savedAt         TEXT    NOT NULL,
+            savedBy         TEXT    NOT NULL,
+            fieldDiffs      TEXT    NOT NULL DEFAULT '[]'   -- JSON-encoded [FieldDiff]
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_document_versions_document ON document_versions(documentId);
+        CREATE INDEX IF NOT EXISTS idx_document_versions_doctype  ON document_versions(docType);
         """
 }
