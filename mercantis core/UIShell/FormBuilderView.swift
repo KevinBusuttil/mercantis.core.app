@@ -614,8 +614,8 @@ public struct FormBuilderView: View {
             BuilderStatusItem(
                 id: "deployment",
                 title: "Fields deployed",
-                tone: isDeployed ? .success : .danger,
-                icon: isDeployed ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                tone: isDeployed ? .success : .warning,
+                icon: isDeployed ? "checkmark.circle.fill" : "clock.badge.exclamationmark.fill"
             )
         ]
     }

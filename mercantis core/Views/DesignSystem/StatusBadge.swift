@@ -1,19 +1,32 @@
 import SwiftUI
 
+private enum SemanticBadgeStatus: String {
+    case submitted
+    case done
+    case completed
+    case validated
+    case warning
+    case attention
+    case error
+    case failed
+    case draft
+    case pending
+}
+
 struct StatusBadge: View {
     let text: String
 
     private var tone: MercantisSemanticTone {
-        switch text.lowercased() {
-        case "submitted", "done", "completed", "validated":
+        switch SemanticBadgeStatus(rawValue: text.lowercased()) {
+        case .submitted, .done, .completed, .validated:
             return .success
-        case "warning", "attention":
+        case .warning, .attention:
             return .warning
-        case "error", "failed":
+        case .error, .failed:
             return .danger
-        case "draft", "pending":
+        case .draft, .pending:
             return .muted
-        default:
+        case .none:
             return .info
         }
     }
