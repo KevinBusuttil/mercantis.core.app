@@ -75,7 +75,7 @@ public struct FormBuilderView: View {
     @State private var validationError: String?
     @State private var isDeployed = false
     @State private var timelineEvents: [BuilderTimelineEvent] = []
-    @State private var didAttemptInitialDocTypeLoad = false
+    @State private var hasAttemptedInitialDocTypeLoad = false
 
     private let paletteGroups: [BuilderPaletteGroup] = [
         BuilderPaletteGroup(
@@ -190,9 +190,9 @@ public struct FormBuilderView: View {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
             }
-            if !didAttemptInitialDocTypeLoad, docTypeId.isEmpty, fields.isEmpty {
+            if !hasAttemptedInitialDocTypeLoad, docTypeId.isEmpty, fields.isEmpty {
                 loadInitialDocType()
-                didAttemptInitialDocTypeLoad = true
+                hasAttemptedInitialDocTypeLoad = true
             }
         }
     }
