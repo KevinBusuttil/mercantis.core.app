@@ -3,6 +3,7 @@ import Foundation
 /// Built-in system DocTypes that bootstrap customization tooling.
 public enum BuiltInDocTypes {
     private static let coreAppId = "core.system"
+    public static let moduleNameFieldKey = "module_name"
 
     /// IDs of system meta-DocTypes that should not generate list reports or dashboards.
     public static let systemMetaDocTypeIds: Set<String> = [
@@ -16,15 +17,15 @@ public enum BuiltInDocTypes {
         appId: coreAppId,
         isChildTable: false,
         fields: [
-            FieldDefinition(key: "module_name", label: "Module Name", type: .text, required: true),
+            FieldDefinition(key: moduleNameFieldKey, label: "Module Name", type: .text, required: true),
             FieldDefinition(key: "app_id", label: "App ID", type: .text, required: false),
             FieldDefinition(key: "is_custom", label: "Is Custom", type: .boolean, required: false)
         ],
         permissions: [],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
         indexes: [IndexDefinition(fieldKey: "module_name", unique: true)],
-        searchFields: ["module_name"],
-        titleField: "module_name"
+        searchFields: [moduleNameFieldKey],
+        titleField: moduleNameFieldKey
     )
 
     /// Child-table metadata row managed within a selected `DocType` workflow,
