@@ -2,6 +2,9 @@ import SwiftUI
 
 public struct DocTypeListView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     @State private var selectedDocType: DocType?
     @State private var selectedDocTypeForBuilder: DocType?
@@ -51,7 +54,7 @@ public struct DocTypeListView: View {
 
                         HStack(spacing: 8) {
                             Button("Open Visual Builder") {
-                                selectedDocTypeForBuilder = docType
+                                openVisualBuilder(for: docType)
                             }
                             .buttonStyle(MercantisSecondaryButtonStyle())
 
@@ -94,7 +97,8 @@ public struct DocTypeListView: View {
                 }
                 .buttonStyle(MercantisPrimaryButtonStyle())
                 Button("Open Visual Builder") {
-                    selectedDocTypeForBuilder = selectedDocTypeForSelection
+                    guard let selectedDocTypeForSelection else { return }
+                    openVisualBuilder(for: selectedDocTypeForSelection)
                 }
                 .buttonStyle(MercantisSecondaryButtonStyle())
                 .disabled(selectedDocTypeForSelection == nil)
@@ -136,6 +140,7 @@ public struct DocTypeListView: View {
             #endif
             .environmentObject(tooling)
         }
+        #if !os(macOS)
         .sheet(item: $selectedDocTypeForBuilder) { docType in
             NavigationStack {
                 FormBuilderView(initialDocTypeID: docType.id) {
@@ -150,6 +155,7 @@ public struct DocTypeListView: View {
             #endif
             .environmentObject(tooling)
         }
+        #endif
         .alert(
             "Delete DocType?",
             isPresented: $showDeleteConfirmation,
@@ -187,5 +193,13 @@ public struct DocTypeListView: View {
     private var selectedDocTypeForSelection: DocType? {
         guard let selectedDocTypeID else { return nil }
         return tooling.docTypes.first(where: { $0.id == selectedDocTypeID })
+    }
+
+    private func openVisualBuilder(for docType: DocType) {
+        #if os(macOS)
+        openWindow(id: mercantis_coreApp.visualBuilderWindowID, value: docType.id)
+        #else
+        selectedDocTypeForBuilder = docType
+        #endif
     }
 }

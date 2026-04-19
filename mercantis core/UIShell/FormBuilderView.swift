@@ -53,7 +53,6 @@ private enum BuilderPaneWidth {
 
 public struct FormBuilderView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
-    @Environment(\.dismiss) private var dismiss
 
     private let initialDocTypeID: String?
     private let onSave: (() -> Void)?
@@ -170,7 +169,7 @@ public struct FormBuilderView: View {
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .navigationTitle("Visual Builder")
+        .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button("Save", action: save)
@@ -202,6 +201,20 @@ public struct FormBuilderView: View {
     // Kept as a dedicated predicate so the onAppear startup path remains easy to scan.
     private var shouldLoadInitialDocType: Bool {
         !hasAttemptedInitialDocTypeLoad && docTypeId.isEmpty && fields.isEmpty
+    }
+
+    private var windowTitle: String {
+        let preferredName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !preferredName.isEmpty {
+            return "Visual Builder — \(preferredName)"
+        }
+
+        let fallbackId = docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fallbackId.isEmpty {
+            return "Visual Builder — \(fallbackId)"
+        }
+
+        return "Visual Builder"
     }
 
     private var controlsPalette: some View {
@@ -725,7 +738,6 @@ public struct FormBuilderView: View {
             isDeployed = true
             trackEvent("Fields deployed")
             onSave?()
-            dismiss()
         } catch {
             validationError = tooling.errorMessage(for: error)
         }
