@@ -76,7 +76,15 @@ enum ResolvedMetaCanvasAdapter {
     }
 
     private static func normalizedGroup(for field: ResolvedFieldDefinition) -> String {
-        guard let column = field.column, column > 0 else {
+        columnGroupTitle(forColumn: field.column)
+    }
+
+    /// Returns the canvas group title derived from a field column hint.
+    ///
+    /// A nil/zero column maps to the primary group, while positive values map
+    /// to `Column N`. Shared between adapter projection and inspector labels.
+    static func columnGroupTitle(forColumn column: Int?) -> String {
+        guard let column, column > 0 else {
             return "Primary"
         }
         return "Column \(column)"

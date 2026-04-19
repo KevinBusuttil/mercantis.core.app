@@ -97,8 +97,8 @@ public struct FormBuilderView: View {
             id: "numeric",
             title: "Numeric",
             controls: [
-                BuilderControlItem(id: "int", title: "Int", subtitle: "Whole number", icon: "number", kind: .field(.number)),
-                BuilderControlItem(id: "float", title: "Float", subtitle: "Decimal number", icon: "sum", kind: .field(.decimal)),
+                BuilderControlItem(id: "number", title: "Int", subtitle: "Whole number", icon: "number", kind: .field(.number)),
+                BuilderControlItem(id: "decimal", title: "Decimal", subtitle: "Decimal number", icon: "sum", kind: .field(.decimal)),
                 BuilderControlItem(id: "currency", title: "Currency", subtitle: "Monetary value", icon: "dollarsign.circle", kind: .field(.currency))
             ]
         ),
@@ -155,9 +155,6 @@ public struct FormBuilderView: View {
         .onAppear {
             if expandedPaletteGroupIDs.isEmpty {
                 expandedPaletteGroupIDs = Set(paletteGroups.map(\.id))
-            }
-            if module.isEmpty, let firstModule = tooling.moduleNames.first {
-                module = firstModule
             }
             if docTypeId.isEmpty, fields.isEmpty {
                 loadInitialDocType()
@@ -227,6 +224,7 @@ public struct FormBuilderView: View {
     }
 
     private var metadataCanvas: some View {
+        let selectedFieldKey = selectedFieldBinding?.wrappedValue.key
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 builderHeader
@@ -249,7 +247,7 @@ public struct FormBuilderView: View {
                                             .foregroundStyle(.secondary)
 
                                         ForEach(group.fields) { field in
-                                            canvasFieldRow(field)
+                                            canvasFieldRow(field, selectedFieldKey: selectedFieldKey)
                                         }
 
                                         if group.fields.isEmpty {
@@ -283,8 +281,8 @@ public struct FormBuilderView: View {
     }
 
     @ViewBuilder
-    private func canvasFieldRow(_ field: CanvasFieldViewModel) -> some View {
-        let selected = selectedFieldBinding?.wrappedValue.key == field.key
+    private func canvasFieldRow(_ field: CanvasFieldViewModel, selectedFieldKey: String?) -> some View {
+        let selected = selectedFieldKey == field.key
         Button {
             if let selectedField = fields.first(where: { $0.key == field.key }) {
                 selectedFieldID = selectedField.id
@@ -304,7 +302,7 @@ public struct FormBuilderView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if field.readOnlyExpression?.lowercased() == "true" {
+                if isReadOnlyExpression(field.readOnlyExpression) {
                     Image(systemName: "lock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -416,7 +414,7 @@ public struct FormBuilderView: View {
                 Toggle(
                     "Read Only",
                     isOn: Binding(
-                        get: { binding.readOnlyExpression.wrappedValue.lowercased() == "true" },
+                        get: { isReadOnlyExpression(binding.readOnlyExpression.wrappedValue) },
                         set: { binding.readOnlyExpression.wrappedValue = $0 ? "true" : "" }
                     )
                 )
@@ -442,7 +440,7 @@ public struct FormBuilderView: View {
                 TextField("Section", text: binding.section)
                     .mercantisInput()
                 Stepper(value: binding.column, in: 0...4) {
-                    Text(binding.column.wrappedValue <= 0 ? "Group: Primary" : "Group: Column \(binding.column.wrappedValue)")
+                    Text("Group: \(ResolvedMetaCanvasAdapter.columnGroupTitle(forColumn: binding.column.wrappedValue))")
                 }
                 TextField("Visibility Expression", text: binding.visibilityExpression)
                     .mercantisInput()
@@ -484,7 +482,7 @@ public struct FormBuilderView: View {
                 Text("No recent builder activity")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(timelineEvents.prefix(10)) { event in
+                ForEach(recentTimelineEvents) { event in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(event.title)
                             .font(.callout)
@@ -521,17 +519,29 @@ public struct FormBuilderView: View {
 
     private var statusItems: [BuilderStatusItem] {
         [
-            BuilderStatusItem(id: "draft", title: "Draft defined", isComplete: !docTypeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+            BuilderStatusItem(id: "draft", title: "Draft defined", isComplete: !normalizedDocTypeId.isEmpty),
             BuilderStatusItem(id: "layout", title: "Layout validated", isComplete: !canvasSections.isEmpty),
             BuilderStatusItem(id: "deployed", title: "Fields deployed", isComplete: isDeployed)
         ]
     }
 
-    private var previewDocType: DocType {
-        let normalizedDocTypeId = docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedModule = module.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var recentTimelineEvents: [BuilderTimelineEvent] {
+        Array(timelineEvents.suffix(10).reversed())
+    }
 
+    private var normalizedDocTypeId: String {
+        docTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedModule: String {
+        module.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var previewDocType: DocType {
         let outputFields = fields.map(\.fieldDefinition)
         return DocType(
             id: normalizedDocTypeId.isEmpty ? "PreviewDocType" : normalizedDocTypeId,
@@ -600,8 +610,7 @@ public struct FormBuilderView: View {
         let base = fieldType.rawValue.lowercased()
         var index = 1
         var candidate = "\(base)_\(index)"
-        let existing = Set(fields.map(\.key))
-        while existing.contains(candidate) {
+        while fields.contains(where: { $0.key == candidate }) {
             index += 1
             candidate = "\(base)_\(index)"
         }
@@ -643,8 +652,13 @@ public struct FormBuilderView: View {
         }
     }
 
+    private func isReadOnlyExpression(_ expression: String?) -> Bool {
+        let normalized = expression?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return normalized == "true" || normalized == "1" || normalized == "yes"
+    }
+
     private func trackEvent(_ title: String) {
-        timelineEvents.insert(BuilderTimelineEvent(title: title, timestamp: Date()), at: 0)
+        timelineEvents.append(BuilderTimelineEvent(title: title, timestamp: Date()))
     }
 
     private func save() {
