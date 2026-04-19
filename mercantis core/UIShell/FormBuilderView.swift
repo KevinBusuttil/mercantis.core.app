@@ -40,6 +40,17 @@ private struct BuilderTimelineEvent: Identifiable {
     let timestamp: Date
 }
 
+private enum BuilderPaneWidth {
+    static let controlsMin: CGFloat = 220
+    static let controlsIdeal: CGFloat = 260
+    static let controlsMax: CGFloat = 320
+    static let canvasMin: CGFloat = 360
+    static let canvasIdeal: CGFloat = 720
+    static let inspectorMin: CGFloat = 260
+    static let inspectorIdeal: CGFloat = 320
+    static let inspectorMax: CGFloat = 380
+}
+
 public struct FormBuilderView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
     @Environment(\.dismiss) private var dismiss
@@ -127,15 +138,33 @@ public struct FormBuilderView: View {
     public var body: some View {
         HSplitView {
             controlsPalette
-                .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    minWidth: BuilderPaneWidth.controlsMin,
+                    idealWidth: BuilderPaneWidth.controlsIdeal,
+                    maxWidth: BuilderPaneWidth.controlsMax,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
                 .layoutPriority(1)
 
             metadataCanvas
-                .frame(minWidth: 360, idealWidth: 720, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    minWidth: BuilderPaneWidth.canvasMin,
+                    idealWidth: BuilderPaneWidth.canvasIdeal,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
                 .layoutPriority(2)
 
             inspectorPane
-                .frame(minWidth: 260, idealWidth: 320, maxWidth: 380, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    minWidth: BuilderPaneWidth.inspectorMin,
+                    idealWidth: BuilderPaneWidth.inspectorIdeal,
+                    maxWidth: BuilderPaneWidth.inspectorMax,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("Visual Builder")
@@ -163,6 +192,7 @@ public struct FormBuilderView: View {
             if !hasLoadedInitialDocType, docTypeId.isEmpty, fields.isEmpty {
                 hasLoadedInitialDocType = true
                 DispatchQueue.main.async {
+                    // Defer initial data mutation until after the first layout pass so split sizing stabilizes.
                     loadInitialDocType()
                 }
             }
