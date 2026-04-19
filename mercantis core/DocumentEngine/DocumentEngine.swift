@@ -19,6 +19,7 @@ public final class DocumentEngine {
     private let validator: SchemaValidator
     private let eventBus: EventBus
     private let eventEmitter: EventEmitter
+    private let validationPipeline: ValidationPipeline
     private let deviceId: String
     private let userId: String
 
@@ -28,13 +29,15 @@ public final class DocumentEngine {
         eventBus: EventBus,
         deviceId: String,
         userId: String,
-        eventEmitter: EventEmitter? = nil
+        eventEmitter: EventEmitter? = nil,
+        validationPipeline: ValidationPipeline? = nil
     ) {
         self.database = database
         self.registry = registry
         self.validator = SchemaValidator()
         self.eventBus = eventBus
         self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
+        self.validationPipeline = validationPipeline ?? ValidationPipeline()
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -49,6 +52,28 @@ public final class DocumentEngine {
         // Validate the document's DocType if it is registered.
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
+
+            // ADR-022: Run the structured validation pipeline.
+            let validationContext = ValidationContext(
+                docType: docType,
+                userId: userId,
+                expressionEvaluator: ExpressionEvaluator(),
+                documentExists: { [weak self] linkedDocType, linkedId in
+                    guard let self else { return true }
+                    return (try? self.fetch(docType: linkedDocType, id: linkedId)) != nil
+                },
+                uniqueConflictExists: { [weak self] docTypeName, fieldKey, value, excludeId in
+                    guard let self else { return false }
+                    let docs = (try? self.list(docType: docTypeName)) ?? []
+                    return docs.contains { doc in
+                        doc.id != excludeId && doc.fields[fieldKey] == value
+                    }
+                }
+            )
+            let pipelineErrors = validationPipeline.validate(document: document, context: validationContext)
+            if !pipelineErrors.isEmpty {
+                throw DocumentEngineError.validationFailed(errors: pipelineErrors)
+            }
 
             // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
@@ -582,6 +607,8 @@ public final class DocumentEngine {
         case fieldImmutableAfterSubmit(fieldKey: String, documentId: String)
         case cancelBlockedByLinks(id: String, blockingIds: [String])
         case cannotDeleteSubmitted(id: String)
+        case validationFailed(errors: [DocumentValidationError])
+        case concurrencyConflict(documentId: String)
     }
 
     // MARK: - Private Types
