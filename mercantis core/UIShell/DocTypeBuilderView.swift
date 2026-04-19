@@ -9,6 +9,8 @@ final class DocTypeToolingContext: ObservableObject {
     @Published var dashboards: [DashboardDefinition] = []
     @Published var moduleNames: [String] = []
 
+    /// Validator is mutable because `knownModules` is updated on each `reload()`
+    /// to reflect the current set of registered modules.
     var validator = SchemaValidator()
     let registry: MetadataRegistry
     private let database: MercantisDatabase

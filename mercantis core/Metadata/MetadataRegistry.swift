@@ -146,17 +146,18 @@ public final class MetadataRegistry: @unchecked Sendable {
     /// Ensure a module name exists in the doctypes table by registering
     /// the built-in Module DocType record for it if it isn't already referenced.
     /// This is used during seed to guarantee baseline modules exist.
+    ///
+    /// Note: Built-in seed modules (Core, Setup) are naturally referenced by
+    /// their respective built-in DocTypes. This method is a safety net for
+    /// future seed modules that may not yet have built-in DocTypes.
     public func registerModuleIfNeeded(_ moduleName: String) {
-        // Check if any DocType already references this module
         let existing = (try? database.read { db in
             try Row.fetchOne(db, sql: "SELECT 1 FROM doctypes WHERE module = ? LIMIT 1", arguments: [moduleName])
         }) != nil
 
-        if !existing {
-            // The Module DocType itself uses module "Core", and the seed modules
-            // (Core, Setup) will be naturally referenced by built-in DocTypes.
-            // This is a no-op safety net for future seed modules that don't have built-in DocTypes.
-        }
+        guard !existing else { return }
+        // Future: create a Module document record here when document-based
+        // module tracking is implemented.
     }
 
     // MARK: - Private Helpers
