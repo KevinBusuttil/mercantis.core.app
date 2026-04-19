@@ -130,7 +130,10 @@ private struct WorkspaceRecordsScreen: View {
                                     Text(record.updatedAt, style: .date)
                                 }
                                 LabeledContent("Review Date") {
-                                    Text(record.updatedAt.addingTimeInterval(172800), style: .date)
+                                    Text(
+                                        Calendar.current.date(byAdding: .day, value: 2, to: record.updatedAt) ?? record.updatedAt,
+                                        style: .date
+                                    )
                                 }
                                 LabeledContent("Workspace", value: "Core Studio")
                             }
