@@ -23,12 +23,6 @@ final class UIShellRouter: ObservableObject {
         selectedItem = nil
     }
 
-    func openModule(_ module: String) {
-        selectedSection = .modules
-        selectedModule = module
-        selectedItem = nil
-    }
-
     func openDocType(_ docTypeId: String, module: String?) {
         selectedSection = .home
         selectedModule = module
@@ -204,7 +198,7 @@ public struct NavigationShell: View {
             case .home:
                 homeDetail
             case .modules:
-                moduleBrowser
+                moduleManagementView
             case .reports:
                 reportBrowser
             case .dashboards:
@@ -223,7 +217,7 @@ public struct NavigationShell: View {
         }
     }
 
-    private var moduleBrowser: some View {
+    private var moduleManagementView: some View {
         if tooling.docType(withId: BuiltInDocTypes.module.id) != nil {
             docTypeDetail(docTypeId: BuiltInDocTypes.module.id)
                 .onAppear {
@@ -333,7 +327,7 @@ public struct NavigationShell: View {
 
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Core Tooling").font(.headline)
+            Text("Management").font(.headline)
             Button {
                 selectSection(.docTypes)
             } label: {
@@ -536,12 +530,12 @@ public struct NavigationShell: View {
 
     private var phoneHome: some View {
         List {
-            Section("Core Tooling") {
+            Section("Management") {
                 NavigationLink("DocTypes") {
                     DocTypeListView()
                 }
                 NavigationLink("Modules") {
-                    moduleBrowser
+                    moduleManagementView
                 }
             }
             Section("Reports") {
@@ -572,7 +566,7 @@ public struct NavigationShell: View {
         }
         .navigationDestination(for: MoreDestination.self) { destination in
             switch destination {
-            case .modules: moduleBrowser
+            case .modules: moduleManagementView
             case .docTypes: DocTypeListView()
             case .reports: reportBrowser
             case .dashboards: dashboardBrowser
