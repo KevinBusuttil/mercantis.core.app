@@ -18,7 +18,11 @@ struct mercantis_coreApp: App {
                 .environmentObject(docTypeTooling)
                 .environmentObject(shellRouter)
                 .tint(MercantisTheme.primary)
-                .font(.system(size: 14, weight: .regular, design: .default))
+                #if os(macOS)
+                .font(.system(size: 13, weight: .regular, design: .default))
+                #else
+                .font(.system(size: 15, weight: .regular, design: .default))
+                #endif
         }
         #if os(macOS)
         .commands {

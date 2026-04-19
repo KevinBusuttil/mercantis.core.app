@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 enum MercantisTheme {
     static let primary = Color(red: 37 / 255, green: 99 / 255, blue: 235 / 255)
@@ -7,12 +12,29 @@ enum MercantisTheme {
     static let warning = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)
     static let danger = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)
 
-    static let background = Color(red: 244 / 255, green: 247 / 255, blue: 252 / 255)
-    static let surface = Color.white
-    static let surfaceMuted = Color(red: 248 / 255, green: 250 / 255, blue: 252 / 255)
-    static let border = Color(red: 203 / 255, green: 213 / 255, blue: 225 / 255)
-    static let textPrimary = Color(red: 15 / 255, green: 23 / 255, blue: 42 / 255)
-    static let textMuted = Color(red: 71 / 255, green: 85 / 255, blue: 105 / 255)
+    #if os(macOS)
+    static let background = Color(NSColor.windowBackgroundColor)
+    static let surface = Color(NSColor.controlBackgroundColor)
+    static let surfaceMuted = Color(NSColor.underPageBackgroundColor)
+    static let border = Color(NSColor.separatorColor)
+    static let textPrimary = Color(NSColor.labelColor)
+    static let textMuted = Color(NSColor.secondaryLabelColor)
+    #else
+    static let background = Color(UIColor.systemGroupedBackground)
+    static let surface = Color(UIColor.secondarySystemGroupedBackground)
+    static let surfaceMuted = Color(UIColor.tertiarySystemBackground)
+    static let border = Color(UIColor.separator)
+    static let textPrimary = Color(UIColor.label)
+    static let textMuted = Color(UIColor.secondaryLabel)
+    #endif
+}
+
+enum MercantisType {
+    static let pageTitle = Font.system(size: 20, weight: .semibold)
+    static let sectionHead = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: 13, weight: .regular)
+    static let meta = Font.system(size: 11, weight: .medium)
+    static let mono = Font.system(size: 12, design: .monospaced)
 }
 
 struct MercantisPrimaryButtonStyle: ButtonStyle {
@@ -23,7 +45,7 @@ struct MercantisPrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(configuration.isPressed ? MercantisTheme.primaryPressed : MercantisTheme.primary)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 
@@ -35,11 +57,11 @@ struct MercantisSecondaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(MercantisTheme.surfaceMuted)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.85 : 1)
@@ -50,11 +72,12 @@ struct MercantisDestructiveButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(MercantisTheme.danger)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(configuration.isPressed ? MercantisTheme.danger.opacity(0.82) : MercantisTheme.danger)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(MercantisTheme.danger.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .opacity(configuration.isPressed ? 0.85 : 1)
     }
 }
 
@@ -64,11 +87,11 @@ private struct MercantisInputModifier: ViewModifier {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(MercantisTheme.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
     }
@@ -81,11 +104,11 @@ private struct MercantisPickerModifier: ViewModifier {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(MercantisTheme.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .stroke(MercantisTheme.border, lineWidth: 1)
             )
     }
@@ -96,12 +119,11 @@ private struct MercantisCardModifier: ViewModifier {
         content
             .padding()
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(MercantisTheme.surface)
-                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
             )
             .accessibilityElement(children: .contain)
@@ -115,9 +137,9 @@ struct MercantisSectionHeading: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
             Text(title.uppercased())
-                .font(.system(size: 12, weight: .semibold))
+                .font(MercantisType.meta)
                 .foregroundStyle(MercantisTheme.textMuted)
-                .tracking(0.5)
+                .tracking(0.6)
                 .accessibilityAddTraits(.isHeader)
         }
     }
