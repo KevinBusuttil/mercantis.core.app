@@ -26,6 +26,15 @@ struct mercantis_coreApp: App {
                 #endif
         }
         #if os(macOS)
+        .commands {
+            CommandMenu("DocTypes") {
+                Button("Open DocTypes") {
+                    shellRouter.openDocTypes()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+            }
+        }
+
         WindowGroup("Visual Builder", id: Self.visualBuilderWindowID, for: String.self) { $docTypeID in
             NavigationStack {
                 if let selectedDocTypeID = docTypeID {
@@ -43,16 +52,6 @@ struct mercantis_coreApp: App {
             .frame(minWidth: 1000, idealWidth: 1280, minHeight: 620, idealHeight: 760)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .environmentObject(docTypeTooling)
-        }
-        #endif
-        #if os(macOS)
-        .commands {
-            CommandMenu("DocTypes") {
-                Button("Open DocTypes") {
-                    shellRouter.openDocTypes()
-                }
-                .keyboardShortcut("d", modifiers: [.command, .option])
-            }
         }
         #endif
     }
