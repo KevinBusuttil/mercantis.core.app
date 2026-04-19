@@ -26,8 +26,8 @@ struct LiquidGlassShellView: View {
                 }
             }
             .background(DesignSystemPalette.windowBackground)
-            .toolbar(id: "main-toolbar") {
-                ToolbarItemGroup(placement: .navigation) {
+            .toolbar {
+                ToolbarItemGroup(placement: .automatic) {
                     Button(action: toggleSidebar) {
                         Image(systemName: "sidebar.leading")
                     }
