@@ -8,7 +8,7 @@ final class DocTypeToolingContext: ObservableObject {
     @Published var reports: [ReportDefinition] = []
     @Published var dashboards: [DashboardDefinition] = []
     /// Canonical module record names for validation and module-management workflows.
-    /// This supports `Modules` tooling and metadata integrity, not per-module sidebar groupings.
+    /// This supports Modules tooling and metadata integrity, not per-module sidebar groupings.
     @Published var moduleNames: [String] = []
 
     /// Validator is mutable because `knownModules` is updated on each `reload()`

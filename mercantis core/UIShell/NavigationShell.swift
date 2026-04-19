@@ -221,13 +221,7 @@ public struct NavigationShell: View {
         if tooling.docType(withId: BuiltInDocTypes.module.id) != nil {
             docTypeDetail(docTypeId: BuiltInDocTypes.module.id)
                 .onAppear {
-                    guard let selectedModule = router.selectedModule else { return }
-                    if activeModuleName(in: activeDocument) == selectedModule {
-                        return
-                    }
-                    activeDocument = tooling
-                        .listDocuments(docTypeId: BuiltInDocTypes.module.id)
-                        .first(where: { activeModuleName(in: $0) == selectedModule })
+                    syncActiveDocumentToSelectedModule()
                 }
         } else {
             ContentUnavailableView("Module DocType unavailable", systemImage: "square.grid.2x2")
@@ -743,6 +737,16 @@ public struct NavigationShell: View {
             return moduleName
         }
         return nil
+    }
+
+    private func syncActiveDocumentToSelectedModule() {
+        guard let selectedModule = router.selectedModule else { return }
+        if activeModuleName(in: activeDocument) == selectedModule {
+            return
+        }
+        activeDocument = tooling
+            .listDocuments(docTypeId: BuiltInDocTypes.module.id)
+            .first(where: { activeModuleName(in: $0) == selectedModule })
     }
 
     private var bindingForActiveDocument: Binding<Document> {
