@@ -3,49 +3,49 @@ import Observation
 
 @Observable
 final class LiquidGlassUIModel {
-    var selectedScreen: DesignSystemScreen = .salesOrder
-    var selectedOrderID: SalesOrderRecord.ID?
-    var salesSearchText: String = ""
-    var selectedFilters: Set<OrderFilterChip> = [.orderID]
+    var selectedScreen: DesignSystemScreen = .workspaceRecords
+    var selectedRecordID: WorkspaceRecord.ID?
+    var searchText: String = ""
+    var selectedFilters: Set<RecordFilterChip> = [.recordID]
     var scriptText: String = """
-func validateOrder(_ order: SalesOrder) throws {
-    guard order.items.isEmpty == false else {
-        throw ValidationError(\"Order must include at least one line item\")
+func validate(_ record: WorkspaceRecord) throws {
+    guard record.items.isEmpty == false else {
+        throw ValidationError(\"Record must include at least one item\")
     }
 
-    if order.totalAmount <= 0 {
-        throw ValidationError(\"Total amount must be positive\")
+    if record.total <= 0 {
+        throw ValidationError(\"Total must be positive\")
     }
 }
 """
 
-    var orderRecords: [SalesOrderRecord] = SalesOrderRecord.mockRows
-    var orderItems: [SalesOrderItem] = SalesOrderItem.mockRows
+    var records: [WorkspaceRecord] = WorkspaceRecord.mockRows
+    var recordItems: [WorkspaceItem] = WorkspaceItem.mockRows
 
     init() {
-        selectedOrderID = orderRecords.first?.id
+        selectedRecordID = records.first?.id
     }
 
-    var filteredOrders: [SalesOrderRecord] {
-        if salesSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return orderRecords
+    var filteredRecords: [WorkspaceRecord] {
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return records
         }
 
-        let query = salesSearchText.lowercased()
-        return orderRecords.filter {
+        let query = searchText.lowercased()
+        return records.filter {
             $0.id.lowercased().contains(query)
-                || $0.customer.lowercased().contains(query)
+                || $0.title.lowercased().contains(query)
                 || $0.status.lowercased().contains(query)
         }
     }
 
-    var selectedOrder: SalesOrderRecord? {
-        guard let selectedOrderID else { return nil }
-        return orderRecords.first { $0.id == selectedOrderID }
+    var selectedRecord: WorkspaceRecord? {
+        guard let selectedRecordID else { return nil }
+        return records.first { $0.id == selectedRecordID }
     }
 
     var subtotal: Double {
-        orderItems.reduce(0) { $0 + $1.amount }
+        recordItems.reduce(0) { $0 + $1.amount }
     }
 
     var tax: Double {
@@ -58,7 +58,7 @@ func validateOrder(_ order: SalesOrder) throws {
 }
 
 enum DesignSystemScreen: String, CaseIterable, Identifiable {
-    case salesOrder
+    case workspaceRecords
     case buildModule
     case doctypeBuilder
 
@@ -66,23 +66,23 @@ enum DesignSystemScreen: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .salesOrder: return "Sales Order"
+        case .workspaceRecords: return "Workspace Records"
         case .buildModule: return "Build Module"
-        case .doctypeBuilder: return "Doctype Visual Builder"
+        case .doctypeBuilder: return "DocType Builder"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .salesOrder: return "Manage customer orders and fulfillment workflows"
-        case .buildModule: return "Create and deploy custom ERP components"
-        case .doctypeBuilder: return "Design flexible forms with reusable schema blocks"
+        case .workspaceRecords: return "Review platform records, tasks, and statuses"
+        case .buildModule: return "Create and deploy Core platform components"
+        case .doctypeBuilder: return "Design reusable metadata schema blocks"
         }
     }
 
     var icon: String {
         switch self {
-        case .salesOrder: return "dollarsign.circle"
+        case .workspaceRecords: return "list.bullet.rectangle.portrait"
         case .buildModule: return "hammer"
         case .doctypeBuilder: return "doc.text"
         }
@@ -90,15 +90,15 @@ enum DesignSystemScreen: String, CaseIterable, Identifiable {
 
     var inspectorTitle: String {
         switch self {
-        case .salesOrder: return "Order Details & History"
+        case .workspaceRecords: return "Record Details & Activity"
         case .buildModule: return "Component Details & Deployment"
-        case .doctypeBuilder: return "Doctype 'Customer' Configuration"
+        case .doctypeBuilder: return "DocType Configuration"
         }
     }
 
     var linkedSectionTitle: String {
         switch self {
-        case .salesOrder: return "Linked Docs"
+        case .workspaceRecords: return "Linked Resources"
         case .buildModule: return "Linked Code"
         case .doctypeBuilder: return "Linked Code"
         }
@@ -122,15 +122,15 @@ enum SidebarCategory: String, CaseIterable, Identifiable {
 }
 
 enum SidebarModule: String, CaseIterable, Identifiable {
-    case salesOrder = "Sales order"
+    case records = "Records"
     case build = "Build"
-    case doctypeBuilder = "Doctype Builder"
+    case doctypeBuilder = "DocType Builder"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .salesOrder: return "dollarsign.circle"
+        case .records: return "list.bullet.rectangle.portrait"
         case .build: return "hammer"
         case .doctypeBuilder: return "doc.text"
         }
@@ -138,41 +138,41 @@ enum SidebarModule: String, CaseIterable, Identifiable {
 
     var screen: DesignSystemScreen {
         switch self {
-        case .salesOrder: return .salesOrder
+        case .records: return .workspaceRecords
         case .build: return .buildModule
         case .doctypeBuilder: return .doctypeBuilder
         }
     }
 }
 
-enum OrderFilterChip: String, CaseIterable, Identifiable {
-    case orderID = "Order ID"
-    case customer = "Customer"
+enum RecordFilterChip: String, CaseIterable, Identifiable {
+    case recordID = "Record ID"
+    case owner = "Owner"
     case date = "Date"
     case amount = "Amount"
 
     var id: String { rawValue }
 }
 
-struct SalesOrderRecord: Identifiable, Hashable {
+struct WorkspaceRecord: Identifiable, Hashable {
     let id: String
-    let customer: String
-    let postingDate: Date
+    let title: String
+    let updatedAt: Date
     let amount: Double
     let status: String
 
-    static let mockRows: [SalesOrderRecord] = {
-        let customers = ["Acme Trading", "Northwind Co.", "Blue Harbor", "Evergreen Retail", "Rivera Supplies"]
-        return (1...18).map { index -> SalesOrderRecord in
-            let id = String(format: "SAL-ORD-2026-%04d", index)
-            let customer = customers[index % customers.count]
-            let postingDate = Calendar.current.date(byAdding: .day, value: -index, to: .now) ?? .now
+    static let mockRows: [WorkspaceRecord] = {
+        let titles = ["Core Setup Review", "Permissions Audit", "Workflow Update", "Sync Health Check", "Dashboard Refresh"]
+        return (1...18).map { index -> WorkspaceRecord in
+            let id = String(format: "WRK-REC-2026-%04d", index)
+            let title = titles[index % titles.count]
+            let updatedAt = Calendar.current.date(byAdding: .day, value: -index, to: .now) ?? .now
             let amount = Double(900 + (index * 135))
             let status = index % 4 == 0 ? "Draft" : "Submitted"
-            return SalesOrderRecord(
+            return WorkspaceRecord(
                 id: id,
-                customer: customer,
-                postingDate: postingDate,
+                title: title,
+                updatedAt: updatedAt,
                 amount: amount,
                 status: status
             )
@@ -180,20 +180,20 @@ struct SalesOrderRecord: Identifiable, Hashable {
     }()
 }
 
-struct SalesOrderItem: Identifiable, Hashable {
+struct WorkspaceItem: Identifiable, Hashable {
     let id = UUID()
-    let itemCode: String
-    let itemName: String
-    let qty: Double
-    let uom: String
+    let code: String
+    let name: String
+    let quantity: Double
+    let unit: String
     let rate: Double
 
-    var amount: Double { qty * rate }
+    var amount: Double { quantity * rate }
 
-    static let mockRows: [SalesOrderItem] = [
-        SalesOrderItem(itemCode: "ITM-1001", itemName: "Ultra Laptop 14\"", qty: 2, uom: "Nos", rate: 1499),
-        SalesOrderItem(itemCode: "ITM-1008", itemName: "Docking Station", qty: 2, uom: "Nos", rate: 189),
-        SalesOrderItem(itemCode: "ITM-1042", itemName: "Ergonomic Keyboard", qty: 5, uom: "Nos", rate: 129)
+    static let mockRows: [WorkspaceItem] = [
+        WorkspaceItem(code: "CMP-1001", name: "DocType Schema Review", quantity: 2, unit: "hrs", rate: 149),
+        WorkspaceItem(code: "CMP-1008", name: "Dashboard Wiring", quantity: 2, unit: "hrs", rate: 89),
+        WorkspaceItem(code: "CMP-1042", name: "Workflow Validation", quantity: 5, unit: "hrs", rate: 129)
     ]
 }
 

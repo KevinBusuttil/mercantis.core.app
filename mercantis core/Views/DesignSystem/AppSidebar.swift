@@ -12,7 +12,7 @@ struct AppSidebar: View {
                 }
             }
 
-            Section("Modules") {
+            Section("Workspaces") {
                 ForEach(SidebarModule.allCases) { module in
                     Button {
                         selectedScreen = module.screen
@@ -22,25 +22,25 @@ struct AppSidebar: View {
                     .buttonStyle(.plain)
                 }
 
-                Label("Accounts", systemImage: "creditcard")
+                Label("Dashboards", systemImage: "rectangle.3.group")
                     .foregroundStyle(.secondary)
-                Label("Customers", systemImage: "person.2")
+                Label("Reports", systemImage: "chart.bar")
                     .foregroundStyle(.secondary)
-                Label("Profile", systemImage: "person.crop.circle")
+                Label("Setup", systemImage: "wrench.and.screwdriver")
                     .foregroundStyle(.secondary)
-                Label("Shipping", systemImage: "shippingbox")
+                Label("Settings", systemImage: "gearshape")
                     .foregroundStyle(.secondary)
             }
         }
         .scrollContentBackground(.hidden)
         .background(.ultraThinMaterial)
         .listStyle(.sidebar)
-        .navigationTitle("Mercantis ERP")
+        .navigationTitle("Mercantis Design Lab")
     }
 }
 
 #Preview("Light") {
-    AppSidebar(selectedScreen: .constant(.salesOrder))
+    AppSidebar(selectedScreen: .constant(.workspaceRecords))
         .preferredColorScheme(.light)
 }
 

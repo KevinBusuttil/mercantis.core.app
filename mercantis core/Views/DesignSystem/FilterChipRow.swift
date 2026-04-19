@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct FilterChipRow: View {
-    @Binding var selected: Set<OrderFilterChip>
+    @Binding var selected: Set<RecordFilterChip>
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(OrderFilterChip.allCases) { chip in
+                ForEach(RecordFilterChip.allCases) { chip in
                     Button(chip.rawValue) {
                         if selected.contains(chip) {
                             selected.remove(chip)
@@ -23,14 +23,14 @@ struct FilterChipRow: View {
 }
 
 #Preview("Light") {
-    FilterChipRow(selected: .constant([.orderID, .date]))
+    FilterChipRow(selected: .constant([.recordID, .date]))
         .padding()
         .background(DesignSystemPalette.windowBackground)
         .preferredColorScheme(.light)
 }
 
 #Preview("Dark") {
-    FilterChipRow(selected: .constant([.customer]))
+    FilterChipRow(selected: .constant([.owner]))
         .padding()
         .background(DesignSystemPalette.windowBackground)
         .preferredColorScheme(.dark)

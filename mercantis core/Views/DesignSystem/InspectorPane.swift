@@ -11,13 +11,13 @@ struct InspectorPane: View {
     ]
 
     private let timelineEvents: [TimelineEvent] = [
-        TimelineEvent(author: "John Doe", text: "Validated document totals and tax.", date: "Apr 16"),
-        TimelineEvent(author: "Anna Lee", text: "Requested delivery slot confirmation.", date: "Apr 17")
+        TimelineEvent(author: "John Doe", text: "Validated record metadata and status.", date: "Apr 16"),
+        TimelineEvent(author: "Anna Lee", text: "Requested workflow routing confirmation.", date: "Apr 17")
     ]
 
     private let linkedItems: [LinkedResource] = [
-        LinkedResource(title: "DEL-NOTE-2026-0022", subtitle: "Delivery Note"),
-        LinkedResource(title: "INV-2026-0119", subtitle: "Invoice")
+        LinkedResource(title: "WRK-REC-2026-0022", subtitle: "Workspace Record"),
+        LinkedResource(title: "RPT-2026-0119", subtitle: "Report")
     ]
 
     var body: some View {
@@ -112,7 +112,7 @@ struct InspectorPane: View {
 }
 
 #Preview("Light") {
-    InspectorPane(title: "Order Details & History", linkedTitle: "Linked Docs")
+    InspectorPane(title: "Record Details & Activity", linkedTitle: "Linked Resources")
         .preferredColorScheme(.light)
 }
 

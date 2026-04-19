@@ -331,7 +331,7 @@ public struct NavigationShell: View {
                 }
             }
         }
-        .navigationTitle("Workspace")
+        .navigationTitle("Workspaces")
     }
 
     private var reportBrowser: some View {
@@ -444,7 +444,7 @@ public struct NavigationShell: View {
             .padding()
         }
         .background(MercantisTheme.background)
-        .navigationTitle("Desk")
+        .navigationTitle("Home")
     }
 
     private var quickCreateSection: some View {
@@ -466,7 +466,7 @@ public struct NavigationShell: View {
 
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pinned Modules").font(.headline)
+            Text("Pinned Workspaces").font(.headline)
             ForEach(moduleNames.prefix(6), id: \.self) { module in
                 Button {
                     router.openModule(module)
@@ -681,7 +681,7 @@ public struct NavigationShell: View {
 
     private var phoneHome: some View {
         List {
-            Section("Modules") {
+            Section("Workspaces") {
                 ForEach(moduleNames, id: \.self) { module in
                     NavigationLink(module) {
                         phoneModuleDetail(module: module)
@@ -703,7 +703,7 @@ public struct NavigationShell: View {
                 }
             }
         }
-        .navigationTitle("Desk")
+        .navigationTitle("Home")
     }
 
     private func phoneModuleDetail(module: String) -> some View {
@@ -866,11 +866,11 @@ public struct NavigationShell: View {
     // MARK: - Helpers
 
     private var splitSections: [NavigationSection] {
-        [.home, .inbox, .recents, .setup, .settings]
+        [.home, .modules, .reports, .dashboards, .recents, .setup, .settings]
     }
 
     private var topSplitSections: [NavigationSection] {
-        splitSections.filter { [.home, .inbox, .recents].contains($0) }
+        splitSections.filter { [.home, .modules, .reports, .dashboards, .recents].contains($0) }
     }
 
     private var bottomSplitSections: [NavigationSection] {
@@ -1058,8 +1058,8 @@ public enum NavigationSection: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .home: return "Desk"
-        case .modules: return "Modules"
+        case .home: return "Home"
+        case .modules: return "Workspaces"
         case .inbox: return "Inbox"
         case .search: return "Search"
         case .reports: return "Reports"
