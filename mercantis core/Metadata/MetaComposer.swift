@@ -137,7 +137,7 @@ public final class MetaComposer {
             isCustom: base.isCustom,
             titleField: base.titleField,
             searchFields: base.searchFields,
-            autoname: base.autoname
+            autoname: base.autoname ?? ""
         )
     }
 
@@ -146,7 +146,7 @@ public final class MetaComposer {
             key: field.key,
             label: field.label,
             type: field.type,
-            isRequired: field.isRequired,
+            isRequired: field.required,
             defaultValue: field.defaultValue,
             options: field.options,
             linkedDocType: field.linkedDocType,
