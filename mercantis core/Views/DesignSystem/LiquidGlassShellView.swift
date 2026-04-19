@@ -17,8 +17,8 @@ struct LiquidGlassShellView: View {
         } detail: {
             Group {
                 switch model.selectedScreen {
-                case .salesOrder:
-                    SalesOrderScreen(model: model)
+                case .workspaceRecords:
+                    WorkspaceRecordsScreen(model: model)
                 case .buildModule:
                     BuildModuleScreen(model: model)
                 case .doctypeBuilder:
@@ -84,7 +84,7 @@ struct LiquidGlassShellView: View {
     }
 }
 
-private struct SalesOrderScreen: View {
+private struct WorkspaceRecordsScreen: View {
     @Bindable var model: LiquidGlassUIModel
 
     @State private var showMain = true
@@ -96,53 +96,53 @@ private struct SalesOrderScreen: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
 
-                SearchField(text: $model.salesSearchText)
+                SearchField(text: $model.searchText)
 
                 FilterChipRow(selected: $model.selectedFilters)
 
                 SectionCard {
-                    Table(model.filteredOrders, selection: $model.selectedOrderID) {
-                        TableColumn("Order") { order in
-                            Text(order.id)
+                    Table(model.filteredRecords, selection: $model.selectedRecordID) {
+                        TableColumn("Record") { record in
+                            Text(record.id)
                         }
-                        TableColumn("Customer") { order in
-                            Text(order.customer)
+                        TableColumn("Title") { record in
+                            Text(record.title)
                         }
-                        TableColumn("Date") { order in
-                            Text(order.postingDate, style: .date)
+                        TableColumn("Updated") { record in
+                            Text(record.updatedAt, style: .date)
                         }
-                        TableColumn("Amount") { order in
-                            Text(order.amount, format: .currency(code: "USD"))
+                        TableColumn("Effort") { record in
+                            Text(record.amount, format: .currency(code: "USD"))
                         }
-                        TableColumn("Status") { order in
-                            StatusBadge(text: order.status)
+                        TableColumn("Status") { record in
+                            StatusBadge(text: record.status)
                         }
                     }
                     .frame(minHeight: 280)
                 }
 
-                if let order = model.selectedOrder {
+                if let record = model.selectedRecord {
                     SectionCard {
                         DisclosureGroup("Main Information", isExpanded: $showMain) {
                             VStack(alignment: .leading, spacing: 12) {
-                                LabeledContent("Customer", value: order.customer)
-                                LabeledContent("Posting Date") {
-                                    Text(order.postingDate, style: .date)
+                                LabeledContent("Title", value: record.title)
+                                LabeledContent("Updated At") {
+                                    Text(record.updatedAt, style: .date)
                                 }
-                                LabeledContent("Delivery Date") {
-                                    Text(order.postingDate.addingTimeInterval(172800), style: .date)
+                                LabeledContent("Review Date") {
+                                    Text(record.updatedAt.addingTimeInterval(172800), style: .date)
                                 }
-                                LabeledContent("Warehouse", value: "Central Warehouse")
+                                LabeledContent("Workspace", value: "Core Studio")
                             }
                             .padding(.top, 8)
                         }
                     }
 
                     SectionCard {
-                        DisclosureGroup("Currency & Price List", isExpanded: $showCurrency) {
+                        DisclosureGroup("Metrics", isExpanded: $showCurrency) {
                             VStack(alignment: .leading, spacing: 12) {
                                 LabeledContent("Currency", value: "USD")
-                                LabeledContent("Price List", value: "Standard Selling")
+                                LabeledContent("Profile", value: "Standard")
                             }
                             .padding(.top, 8)
                         }
@@ -151,13 +151,13 @@ private struct SalesOrderScreen: View {
                     SectionCard {
                         DisclosureGroup("Items", isExpanded: $showItems) {
                             VStack(alignment: .leading, spacing: 12) {
-                                Table(model.orderItems) {
-                                    TableColumn("Item Code", value: \.itemCode)
-                                    TableColumn("Item Name", value: \.itemName)
+                                Table(model.recordItems) {
+                                    TableColumn("Code", value: \.code)
+                                    TableColumn("Name", value: \.name)
                                     TableColumn("Qty") { item in
-                                        Text(item.qty, format: .number)
+                                        Text(item.quantity, format: .number)
                                     }
-                                    TableColumn("UOM", value: \.uom)
+                                    TableColumn("Unit", value: \.unit)
                                     TableColumn("Rate") { item in
                                         Text(item.rate, format: .currency(code: "USD"))
                                     }
@@ -180,28 +180,28 @@ private struct SalesOrderScreen: View {
                     }
 
                     HStack(spacing: 12) {
-                        Button("Amend") {}
+                        Button("Review") {}
                             .buttonStyle(.bordered)
-                        Button("Cancel") {}
+                        Button("Archive") {}
                             .buttonStyle(.bordered)
-                        Button("Create Delivery Note") {}
+                        Button("Open Builder") {}
                             .buttonStyle(.borderedProminent)
                             .tint(.blue)
                     }
                 } else {
-                    ContentUnavailableView("No matching orders", systemImage: "magnifyingglass")
+                    ContentUnavailableView("No matching records", systemImage: "magnifyingglass")
                 }
             }
             .padding(24)
         }
-        .searchable(text: $model.salesSearchText, placement: .toolbar, prompt: "Search orders")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search records")
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Sales Order")
+            Text("Workspace Records")
                 .font(.largeTitle.weight(.bold))
-            Text("Review customer transactions, pricing, and fulfillment details")
+            Text("Review platform records, status updates, and linked metadata")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -224,7 +224,7 @@ private struct BuildModuleScreen: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Build Module")
                         .font(.largeTitle.weight(.bold))
-                    Text("Create custom components and deploy updates")
+                    Text("Create custom platform components and deploy updates")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -240,7 +240,7 @@ private struct BuildModuleScreen: View {
                 HStack(spacing: 12) {
                     Button("Save Changes") {}
                         .buttonStyle(.bordered)
-                    Button("Preview Component") {}
+                    Button("Preview Module") {}
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                 }
@@ -274,10 +274,10 @@ private struct DoctypeVisualBuilderScreen: View {
                     ZStack(alignment: .topTrailing) {
                         SectionCard {
                             VStack(alignment: .leading, spacing: 12) {
-                                formGroup(title: "Basic Info", isExpanded: $basicExpanded, fields: ["Customer ID", "Customer Name"])
-                                formGroup(title: "Contact Details", isExpanded: $contactExpanded, fields: ["Email", "Phone"])
-                                formGroup(title: "Financial Info", isExpanded: $financialExpanded, fields: ["Credit Limit", "Payment Terms"])
-                                formGroup(title: "Address", isExpanded: $addressExpanded, fields: ["Street", "City", "Country"])
+                                formGroup(title: "Basic Info", isExpanded: $basicExpanded, fields: ["Record ID", "Record Name"])
+                                formGroup(title: "Ownership", isExpanded: $contactExpanded, fields: ["Owner", "Team"])
+                                formGroup(title: "Metrics", isExpanded: $financialExpanded, fields: ["Threshold", "Status"])
+                                formGroup(title: "Context", isExpanded: $addressExpanded, fields: ["Workspace", "Module", "DocType"])
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(4)

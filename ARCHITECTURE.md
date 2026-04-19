@@ -496,10 +496,11 @@ The Realtime Updates subsystem keeps the UI consistent with the underlying docum
 
 The UI Shell provides a generic, metadata-driven SwiftUI interface:
 
-- **`NavigationShell`** — Top-level navigation: `NavigationSplitView` on macOS/iPad, tab bar on iPhone. Sections: Home, Inbox, Search, Modules, Reports, Settings, Setup. Setup uses shared shell routing so Setup screen actions and app `CommandMenu` actions open workspaces in the main content area.
+- **`NavigationShell`** — Default runtime shell. Top-level navigation uses `NavigationSplitView` on macOS/iPad and a tab shell on iPhone. Core sections are domain-neutral (Home, Workspaces, Reports, Dashboards, Recents, Setup, Settings). Setup uses shared shell routing so Setup screen actions and app `CommandMenu` actions open workspaces in the main content area.
 - **`GenericFormView`** — Dynamically renders a form from a `DocType` and a `Document`: text fields, toggles, date pickers, select dropdowns, child tables, etc.
 - **`GenericListView`** — Sortable, filterable list/table of documents driven by `DocType` metadata.
 - **`CommandBarView`** — Spotlight-like search overlay for navigating across DocTypes and documents.
+- **Design system demos** — `mercantis core/Views/DesignSystem/` contains design-lab/demo surfaces and preview fixtures. These assets are intentionally non-default and do not define Core runtime behavior.
 
 ### 5.2 Reporting Engine
 

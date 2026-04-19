@@ -14,7 +14,7 @@ struct mercantis_coreApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LiquidGlassShellView()
+            NavigationShell()
                 .environmentObject(docTypeTooling)
                 .environmentObject(shellRouter)
                 #if os(macOS)

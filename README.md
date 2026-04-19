@@ -27,6 +27,12 @@ Mercantis Core is the general-purpose platform layer that provides the foundatio
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture document, including subsystem descriptions, design principles, and an ASCII diagram.
 
+## Runtime UX Boundary
+
+- The default app runtime launches into the domain-neutral `NavigationShell` (`mercantis core/UIShell/NavigationShell.swift`).
+- Core navigation is platform/studio oriented (Home, Workspaces, Reports, Dashboards, Setup, Settings, Recents) and metadata-driven.
+- `mercantis core/Views/DesignSystem/` contains design-lab/demo surfaces and preview fixtures. They are preserved for UI exploration, but are not the default Core product path.
+
 ## Architecture Decision Records
 
 All architectural decisions are recorded in [`Docs/ADR/`](./Docs/ADR/). See the [ADR index](./Docs/ADR/README.md) for a summary table.

@@ -7,7 +7,7 @@ struct SearchField: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search orders", text: $text)
+            TextField("Search records", text: $text)
                 .textFieldStyle(.plain)
             Text("⌘K")
                 .font(.caption)
@@ -27,7 +27,7 @@ struct SearchField: View {
 }
 
 #Preview("Dark") {
-    SearchField(text: .constant("SAL-ORD-2026"))
+    SearchField(text: .constant("WRK-REC-2026"))
         .padding()
         .background(DesignSystemPalette.windowBackground)
         .preferredColorScheme(.dark)
