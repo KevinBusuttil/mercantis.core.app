@@ -35,6 +35,7 @@ enum MercantisTheme {
     #if os(macOS)
     static let background = Color(NSColor.windowBackgroundColor)
     static let surface = Color(NSColor.controlBackgroundColor)
+    static let surfaceElevated = Color(NSColor.textBackgroundColor)
     static let surfaceMuted = Color(NSColor.underPageBackgroundColor)
     static let border = Color(NSColor.separatorColor)
     static let textPrimary = Color(NSColor.labelColor)
@@ -42,6 +43,7 @@ enum MercantisTheme {
     #else
     static let background = Color(UIColor.systemGroupedBackground)
     static let surface = Color(UIColor.secondarySystemGroupedBackground)
+    static let surfaceElevated = Color(UIColor.systemBackground)
     static let surfaceMuted = Color(UIColor.tertiarySystemBackground)
     static let border = Color(UIColor.separator)
     static let textPrimary = Color(UIColor.label)
@@ -88,6 +90,7 @@ enum MercantisType {
     static let sectionHead = Font.system(size: 13, weight: .semibold)
     static let body = Font.system(size: 13, weight: .regular)
     static let meta = Font.system(size: 11, weight: .medium)
+    static let compactLabel = Font.system(size: 12, weight: .semibold)
     static let mono = Font.system(size: 12, design: .monospaced)
 }
 
@@ -240,27 +243,29 @@ struct MercantisSectionHeading: View {
     let title: String
     var tone: MercantisSemanticTone = .muted
     var symbol: String? = nil
+    var showsDivider: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Divider()
+            if showsDivider {
+                Divider()
+            }
             HStack(spacing: 6) {
                 if let symbol {
                     Image(systemName: symbol)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MercantisTheme.tint(for: tone))
                 }
-                Text(title.uppercased())
-                    .font(MercantisType.meta)
+                Text(title)
+                    .font(MercantisType.compactLabel)
                     .foregroundStyle(MercantisTheme.tint(for: tone))
-                    .tracking(0.6)
                     .accessibilityAddTraits(.isHeader)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(MercantisTheme.fillSoft(for: tone))
+                    .fill(MercantisTheme.fillSoft(for: tone).opacity(0.9))
             )
         }
     }

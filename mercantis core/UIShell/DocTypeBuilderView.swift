@@ -445,7 +445,7 @@ public struct DocTypeBuilderView: View {
 
     private let existingDocType: DocType?
     private let onSave: (() -> Void)?
-    private let formLabelWidth: CGFloat = 190
+    private let formLabelWidth: CGFloat = 152
 
     @State private var docTypeId = ""
     @State private var name = ""
@@ -469,7 +469,7 @@ public struct DocTypeBuilderView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 builderHeader
 
                 if let validationError {
@@ -479,49 +479,70 @@ public struct DocTypeBuilderView: View {
                         .padding(10)
                         .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .mercantisCard()
                 }
 
                 MercantisSectionHeading(title: "Basic Info", tone: .accent, symbol: "doc.text")
-                VStack(spacing: 12) {
-                    labeledFormRow("DocType ID") {
-                        TextField("DocType ID", text: $docTypeId)
-                            .mercantisInput()
-                    }
-                    labeledFormRow("Name") {
-                        TextField("Name", text: $name)
-                            .mercantisInput()
-                    }
-                    labeledFormRow("Module") {
-                        Picker("Module", selection: $module) {
-                            if module.isEmpty || !tooling.moduleNames.contains(module) {
-                                Text("Select Module").tag("")
-                            }
-                            ForEach(tooling.moduleNames, id: \.self) { moduleName in
-                                Text(moduleName).tag(moduleName)
-                            }
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
+                        basicInfoInputRow("DocType ID") {
+                            TextField("DocType ID", text: $docTypeId)
+                                .mercantisInput()
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .mercantisPicker()
+                        basicInfoInputRow("Name") {
+                            TextField("Name", text: $name)
+                                .mercantisInput()
+                        }
                     }
-                    labeledFormRow("Title Field") {
-                        TextField("Title Field", text: $titleField)
-                            .mercantisInput()
+                    HStack(alignment: .top, spacing: 14) {
+                        basicInfoInputRow("Module") {
+                            Picker("Module", selection: $module) {
+                                if module.isEmpty || !tooling.moduleNames.contains(module) {
+                                    Text("Select Module").tag("")
+                                }
+                                ForEach(tooling.moduleNames, id: \.self) { moduleName in
+                                    Text(moduleName).tag(moduleName)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .mercantisPicker()
+                        }
+                        basicInfoInputRow("Title Field") {
+                            TextField("Title Field", text: $titleField)
+                                .mercantisInput()
+                        }
                     }
-                    labeledFormRow("Search Fields") {
+                    basicInfoInputRow("Search Fields") {
                         TextField("comma-separated", text: $searchFields)
                             .mercantisInput()
                     }
-                    checkboxRow("Submittable", isOn: $isSubmittable)
-                    checkboxRow("Child Table", isOn: $isChildTable)
+                    HStack(spacing: 18) {
+                        Toggle("Submittable", isOn: $isSubmittable)
+                        Toggle("Child Table", isOn: $isChildTable)
+                    }
+                    .font(MercantisType.sectionHead)
+                    .foregroundStyle(MercantisTheme.textPrimary)
                 }
-                .mercantisCard()
+                .padding(18)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(MercantisTheme.surfaceElevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(MercantisTheme.accentBorder.opacity(0.65), lineWidth: 1)
+                )
 
                 MercantisSectionHeading(title: "Fields", tone: .info, symbol: "list.bullet.rectangle")
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     ForEach($fields) { $field in
                         VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(field.key.isEmpty ? "New Field" : field.key)
+                                    .font(MercantisType.compactLabel)
+                                    .foregroundStyle(MercantisTheme.textMuted)
+                                Spacer()
+                            }
                             labeledFormRow("Key") {
                                 TextField("field_key", text: $field.key)
                                     .mercantisInput()
@@ -571,7 +592,15 @@ public struct DocTypeBuilderView: View {
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
-                        .mercantisCard()
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(MercantisTheme.surfaceMuted)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(MercantisTheme.border.opacity(0.55), lineWidth: 1)
+                        )
                     }
 
                     Button("Add Field") {
@@ -579,11 +608,26 @@ public struct DocTypeBuilderView: View {
                     }
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(MercantisTheme.surface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+                )
 
                 MercantisSectionHeading(title: "Permission Rules", tone: .warning, symbol: "person.2.badge.gearshape")
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     ForEach($permissions) { $permission in
                         VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(permission.role.isEmpty ? "New Role Rule" : permission.role)
+                                    .font(MercantisType.compactLabel)
+                                    .foregroundStyle(MercantisTheme.textMuted)
+                                Spacer()
+                            }
                             labeledFormRow("Role") {
                                 TextField("Role", text: $permission.role)
                                     .mercantisInput()
@@ -599,7 +643,15 @@ public struct DocTypeBuilderView: View {
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
-                        .mercantisCard()
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(MercantisTheme.surfaceMuted)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(MercantisTheme.border.opacity(0.55), lineWidth: 1)
+                        )
                     }
 
                     Button("Add Permission Rule") {
@@ -607,8 +659,17 @@ public struct DocTypeBuilderView: View {
                     }
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(MercantisTheme.surface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+                )
 
-                MercantisSectionHeading(title: "Sync Policy", tone: .accent, symbol: "arrow.triangle.2.circlepath")
+                MercantisSectionHeading(title: "Sync Policy", tone: .muted, symbol: "arrow.triangle.2.circlepath")
                 VStack(spacing: 12) {
                     labeledFormRow("Conflict Resolution") {
                         Picker("Conflict Resolution", selection: $conflictResolution) {
@@ -622,12 +683,26 @@ public struct DocTypeBuilderView: View {
                     }
                     checkboxRow("Immutable After Submit", isOn: $immutableAfterSubmit)
                 }
-                .mercantisCard()
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(MercantisTheme.surfaceMuted)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(MercantisTheme.border.opacity(0.5), lineWidth: 1)
+                )
 
-                MercantisSectionHeading(title: "Indexes", tone: .success, symbol: "magnifyingglass")
-                VStack(spacing: 12) {
+                MercantisSectionHeading(title: "Indexes", tone: .muted, symbol: "magnifyingglass")
+                VStack(spacing: 10) {
                     ForEach($indexes) { $index in
                         VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(index.fieldKey.isEmpty ? "New Index" : index.fieldKey)
+                                    .font(MercantisType.compactLabel)
+                                    .foregroundStyle(MercantisTheme.textMuted)
+                                Spacer()
+                            }
                             labeledFormRow("Field Key") {
                                 TextField("Field Key", text: $index.fieldKey)
                                     .mercantisInput()
@@ -638,7 +713,15 @@ public struct DocTypeBuilderView: View {
                             }
                             .buttonStyle(MercantisDestructiveButtonStyle())
                         }
-                        .mercantisCard()
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(MercantisTheme.surfaceMuted)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(MercantisTheme.border.opacity(0.5), lineWidth: 1)
+                        )
                     }
 
                     Button("Add Index") {
@@ -646,13 +729,19 @@ public struct DocTypeBuilderView: View {
                     }
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
-
-                bottomActionBar
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(MercantisTheme.surfaceMuted.opacity(0.7))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(MercantisTheme.border.opacity(0.45), lineWidth: 1)
+                )
             }
-            .padding()
+            .padding(16)
         }
         .background(MercantisTheme.background)
-        .navigationTitle(isCreatingDocType ? "New DocType" : "Edit DocType")
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .automatic) {
@@ -683,54 +772,53 @@ public struct DocTypeBuilderView: View {
     }
 
     private var builderHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(isCreatingDocType ? "Create DocType" : "Edit DocType")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(MercantisTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(isCreatingDocType ? "Create DocType" : "Edit DocType")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(MercantisTheme.textPrimary)
+
+                    Text("Define metadata, structure, permissions, sync behavior, and indexes in one native authoring sheet.")
+                        .font(MercantisType.meta)
+                        .foregroundStyle(MercantisTheme.textMuted)
+                }
+
                 Spacer()
-                Text(isCreatingDocType ? "New" : "Existing")
-                    .mercantisSemanticBadge(tone: isCreatingDocType ? .accent : .info)
+
+                HStack(spacing: 10) {
+                    Button("Cancel", action: cancel)
+                        .buttonStyle(MercantisSecondaryButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+
+                    Button("Save", action: save)
+                        .buttonStyle(MercantisPrimaryButtonStyle())
+                        .keyboardShortcut(.defaultAction)
+                }
             }
 
-            Text("Define metadata, structure, permissions, sync behavior, and indexes in one native authoring sheet.")
-                .font(.caption)
-                .foregroundStyle(MercantisTheme.textMuted)
+            Text(isCreatingDocType ? "New DocType" : "Existing DocType")
+                .mercantisSemanticBadge(tone: isCreatingDocType ? .accent : .info)
         }
-        .padding(14)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(MercantisTheme.fillSoft(for: .accent))
+            RoundedRectangle(cornerRadius: 12)
+                .fill(MercantisTheme.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(MercantisTheme.accentBorder, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(MercantisTheme.accentBorder.opacity(0.55), lineWidth: 1)
         )
     }
 
-    private var bottomActionBar: some View {
-        HStack(spacing: 10) {
-            Button("Cancel", action: cancel)
-                .buttonStyle(MercantisSecondaryButtonStyle())
-                .keyboardShortcut(.cancelAction)
-
-            Spacer()
-
-            Button("Save", action: save)
-                .buttonStyle(MercantisPrimaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
+    private func basicInfoInputRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(MercantisType.compactLabel)
+                .foregroundStyle(MercantisTheme.textPrimary)
+            content()
         }
-        .padding(.top, 6)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(MercantisTheme.surfaceMuted)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(MercantisTheme.border, lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func labeledFormRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
