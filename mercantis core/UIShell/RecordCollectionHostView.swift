@@ -187,6 +187,11 @@ public struct RecordCollectionHostView: View {
 
     private func handleCreateDocument() {
         guard let draft = onCreateDocument?() else { return }
+        if configuration.supportedViewModes.contains(.detail) {
+            selectedViewMode = .detail
+        } else if configuration.supportedViewModes.contains(.browse) {
+            selectedViewMode = .browse
+        }
         selectDocument(draft)
     }
 
