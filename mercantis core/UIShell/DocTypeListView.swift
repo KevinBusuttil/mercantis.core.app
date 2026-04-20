@@ -20,12 +20,18 @@ public struct DocTypeListView: View {
         RecordCollectionHostView(
             preferenceKey: "docType.management",
             docType: BuiltInDocTypes.docType,
+            workspaceTitle: "DocTypes",
+            workspaceStatusText: "\(tooling.navigableDocTypes.count) registered",
             documents: projectedDocTypeDocuments,
             configuration: RecordCollectionViewConfiguration(
                 supportedViewModes: [.list, .browse, .detail],
                 defaultViewMode: .list
             ),
             allowsDetailEditing: false,
+            onCreateDocument: {
+                showNewDocTypeSheet = true
+                return nil
+            },
             initialSelectedDocumentID: selectedDocTypeID,
             onSelectionChange: { selected in
                 selectedDocTypeID = selected?.id
@@ -34,20 +40,6 @@ public struct DocTypeListView: View {
                 AnyView(selectedDocTypeHeader(for: document))
             }
         )
-        .navigationTitle("DocTypes")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("\(tooling.navigableDocTypes.count) registered")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            ToolbarItemGroup(placement: .automatic) {
-                Button("New DocType") {
-                    showNewDocTypeSheet = true
-                }
-                .buttonStyle(MercantisPrimaryButtonStyle())
-            }
-        }
         .onAppear {
             tooling.reload()
             refreshProjectedDocTypeDocuments()
@@ -207,40 +199,37 @@ public struct DocTypeListView: View {
     @ViewBuilder
     private func selectedDocTypeHeader(for document: Document) -> some View {
         if let docType = tooling.navigableDocTypes.first(where: { $0.id == document.id }) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(docType.name)
-                        .font(.headline)
+            let badges = [
+                docType.module,
+                recordCustomizationBadge(isCustom: docType.isCustom, nonCustomLabel: "Built-in")
+            ]
 
-                    Text(docType.module)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.quaternary, in: Capsule())
-                    .accessibilityLabel("Module: \(docType.module)")
-                    .accessibilityElement(children: .ignore)
+            SelectedRecordHeader(
+                title: docType.name,
+                badges: badges,
+                actions: {
+                    AnyView(
+                        HStack(spacing: 10) {
+                            Button("Open Visual Builder") {
+                                openVisualBuilder(for: docType)
+                            }
+                            .buttonStyle(MercantisSecondaryButtonStyle())
+
+                            Button(role: .destructive) {
+                                docTypeToDelete = docType
+                                showDeleteConfirmation = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.body)
+                                    .accessibilityLabel("Delete DocType")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(!docType.isCustom)
+                            .help("Delete DocType")
+                        }
+                    )
                 }
-
-                Spacer()
-
-                Button("Open Visual Builder") {
-                    openVisualBuilder(for: docType)
-                }
-                .buttonStyle(MercantisSecondaryButtonStyle())
-
-                Button(role: .destructive) {
-                    docTypeToDelete = docType
-                    showDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.body)
-                        .accessibilityLabel("Delete DocType")
-                }
-                .buttonStyle(.borderless)
-                .disabled(!docType.isCustom)
-                .help("Delete DocType")
-            }
+            )
         }
     }
 }
