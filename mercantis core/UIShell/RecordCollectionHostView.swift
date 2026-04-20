@@ -86,12 +86,15 @@ public struct RecordCollectionHostView: View {
 
     @ToolbarContentBuilder
     private func workspaceToolbar() -> some ToolbarContent {
+        let statusText = workspaceStatusText ?? "\(documents.count) records"
+        let primaryAction: (() -> Void)? = onCreateDocument == nil ? nil : handleCreateDocument
+
         RecordWorkspaceToolbarContent(
-            statusText: workspaceStatusText ?? "\(documents.count) records",
+            statusText: statusText,
             selectedViewMode: $selectedViewMode,
             supportedViewModes: configuration.supportedViewModes,
             primaryActionTitle: primaryCreateActionTitle,
-            onPrimaryAction: onCreateDocument == nil ? nil : handleCreateDocument,
+            onPrimaryAction: primaryAction,
             overflowMenuContent: workspaceOverflowMenu
         )
     }
