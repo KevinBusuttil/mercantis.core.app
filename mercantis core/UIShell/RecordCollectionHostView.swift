@@ -113,7 +113,6 @@ public struct RecordCollectionHostView: View {
                             }
                         }
                         .buttonStyle(MercantisPrimaryButtonStyle())
-                        .disabled(selectedDocument == nil)
                     }
                     .padding(.horizontal)
                     .padding(.bottom, 12)

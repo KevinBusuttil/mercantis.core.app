@@ -729,8 +729,8 @@ public struct NavigationShell: View {
             .first(where: { activeModuleName(in: $0) == selectedModule })
     }
 
-    private func recordCollectionConfiguration(for docType: DocType) -> RecordCollectionViewConfiguration {
-        return RecordCollectionViewConfiguration(
+    private func recordCollectionConfiguration(for _: DocType) -> RecordCollectionViewConfiguration {
+        RecordCollectionViewConfiguration(
             supportedViewModes: [.list, .browse, .detail],
             defaultViewMode: .list
         )
