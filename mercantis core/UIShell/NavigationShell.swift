@@ -364,49 +364,28 @@ public struct NavigationShell: View {
     private func docTypeDetail(docTypeId: String) -> some View {
         if let docType = tooling.docType(withId: docTypeId) {
             let documents = tooling.listDocuments(docTypeId: docType.id)
-            HStack(spacing: 0) {
-                GenericListView(
-                    docType: docType,
-                    documents: documents,
-                    onSelect: { document in
-                        activeDocument = document
-                        addRecent(.record(docTypeId: docType.id, documentId: document.id))
-                    },
-                    onCreate: {
-                        activeDocument = tooling.createDraftDocument(for: docType)
-                        addRecent(.docType(docType.id))
+            RecordCollectionHostView(
+                preferenceKey: "docType.\(docType.id)",
+                docType: docType,
+                documents: documents,
+                configuration: recordCollectionConfiguration(),
+                onCreateDocument: {
+                    let draft = tooling.createDraftDocument(for: docType)
+                    activeDocument = draft
+                    addRecent(.docType(docType.id))
+                    return draft
+                },
+                onSaveDocument: { document in
+                    try? tooling.saveDocument(document)
+                },
+                initialSelectedDocumentID: activeDocument?.id,
+                onSelectionChange: { selected in
+                    activeDocument = selected
+                    if let selected {
+                        addRecent(.record(docTypeId: docType.id, documentId: selected.id))
                     }
-                )
-                .frame(minWidth: 400, maxWidth: .infinity)
-
-                Divider()
-
-                if let activeDocument {
-                    VStack(alignment: .leading, spacing: 10) {
-                        GenericFormView(docType: docType, document: bindingForActiveDocument)
-                        HStack {
-                            Spacer()
-                            Button("Save") {
-                                try? tooling.saveDocument(activeDocument)
-                            }
-                            .buttonStyle(MercantisPrimaryButtonStyle())
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom, 12)
-                    }
-                    .frame(minWidth: 380, maxWidth: .infinity)
-                } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Text("Select a record to view details")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-            .navigationTitle(docType.name)
+            )
         } else {
             Text("DocType not found")
                 .foregroundStyle(.secondary)
@@ -750,25 +729,10 @@ public struct NavigationShell: View {
             .first(where: { activeModuleName(in: $0) == selectedModule })
     }
 
-    private var bindingForActiveDocument: Binding<Document> {
-        Binding<Document>(
-            get: {
-                activeDocument ?? Document(
-                    id: UUID().uuidString,
-                    docType: "",
-                    company: "",
-                    status: "",
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    syncVersion: 0,
-                    syncState: .local,
-                    fields: [:],
-                    children: [:]
-                )
-            },
-            set: { newValue in
-                activeDocument = newValue
-            }
+    private func recordCollectionConfiguration() -> RecordCollectionViewConfiguration {
+        RecordCollectionViewConfiguration(
+            supportedViewModes: [.list, .browse, .detail],
+            defaultViewMode: .list
         )
     }
 
