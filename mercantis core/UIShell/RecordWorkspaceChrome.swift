@@ -32,7 +32,7 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
         }
 
         ToolbarItem(placement: .automatic) {
-            Picker("Record View Mode", selection: $selectedViewMode) {
+            Picker(LocalizedStringKey("Record View Mode"), selection: $selectedViewMode) {
                 ForEach(supportedViewModes) { mode in
                     Text(mode.title).tag(mode)
                 }
@@ -40,7 +40,7 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(minWidth: 220)
-            .accessibilityLabel("Record View Mode")
+            .accessibilityLabel(Text("Record View Mode"))
         }
 
         if let onPrimaryAction {
@@ -95,8 +95,8 @@ public struct SelectedRecordHeader: View {
 
                 if !badges.isEmpty {
                     HStack(spacing: 6) {
-                        ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
-                            Text(badge)
+                        ForEach(badges.indices, id: \.self) { index in
+                            Text(badges[index])
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 8)
@@ -114,4 +114,13 @@ public struct SelectedRecordHeader: View {
             }
         }
     }
+}
+
+/// Returns a shared origin badge label used in selected-record headers.
+/// - Parameters:
+///   - isCustom: Whether the selected record is marked as custom.
+///   - nonCustomLabel: The badge label used when the record is not custom.
+/// - Returns: `"Custom"` when `isCustom` is true, otherwise `nonCustomLabel`.
+internal func recordCustomizationBadge(isCustom: Bool, nonCustomLabel: String) -> String {
+    isCustom ? "Custom" : nonCustomLabel
 }

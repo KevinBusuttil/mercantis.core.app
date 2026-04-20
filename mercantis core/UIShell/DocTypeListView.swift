@@ -28,7 +28,6 @@ public struct DocTypeListView: View {
                 defaultViewMode: .list
             ),
             allowsDetailEditing: false,
-            primaryCreateActionTitle: "New",
             onCreateDocument: {
                 showNewDocTypeSheet = true
                 return nil
@@ -200,9 +199,14 @@ public struct DocTypeListView: View {
     @ViewBuilder
     private func selectedDocTypeHeader(for document: Document) -> some View {
         if let docType = tooling.navigableDocTypes.first(where: { $0.id == document.id }) {
+            let badges = [
+                docType.module,
+                recordCustomizationBadge(isCustom: docType.isCustom, nonCustomLabel: "Built-in")
+            ]
+
             SelectedRecordHeader(
                 title: docType.name,
-                badges: [docType.isCustom ? "Custom" : "Built-in", docType.module],
+                badges: badges,
                 actions: {
                     AnyView(
                         HStack(spacing: 10) {
@@ -226,8 +230,6 @@ public struct DocTypeListView: View {
                     )
                 }
             )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("DocType \(docType.name)")
         }
     }
 }

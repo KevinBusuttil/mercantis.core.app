@@ -744,7 +744,7 @@ public struct NavigationShell: View {
         let moduleName = stringValue(for: BuiltInDocTypes.moduleNameFieldKey, in: document) ?? document.id
         let appId = stringValue(for: "app_id", in: document)
         let isCustom = boolValue(for: "is_custom", in: document) ?? false
-        var badges = [isCustom ? "Custom" : "System"]
+        var badges = [recordCustomizationBadge(isCustom: isCustom, nonCustomLabel: "System")]
         if let appId {
             badges.append(appId)
         }
