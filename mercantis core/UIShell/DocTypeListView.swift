@@ -202,7 +202,7 @@ public struct DocTypeListView: View {
         if let docType = tooling.navigableDocTypes.first(where: { $0.id == document.id }) {
             SelectedRecordHeader(
                 title: docType.name,
-                badges: [docType.module, docType.isCustom ? "Custom" : "Built-in"],
+                badges: [docType.isCustom ? "Custom" : "Built-in", docType.module],
                 actions: {
                     AnyView(
                         HStack(spacing: 10) {
