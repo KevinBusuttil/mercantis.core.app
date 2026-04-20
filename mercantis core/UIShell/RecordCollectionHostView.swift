@@ -54,27 +54,9 @@ public struct RecordCollectionHostView: View {
     }
 
     public var body: some View {
-        Group {
-            switch selectedViewMode {
-            case .list:
-                listPane
-            case .browse:
-                browsePane
-            case .detail:
-                detailPane
-            }
-        }
+        contentPane
         .navigationTitle(workspaceTitle)
-        .toolbar {
-            RecordWorkspaceToolbarContent(
-                statusText: workspaceStatusText ?? "\(documents.count) records",
-                selectedViewMode: $selectedViewMode,
-                supportedViewModes: configuration.supportedViewModes,
-                primaryActionTitle: primaryCreateActionTitle,
-                onPrimaryAction: onCreateDocument == nil ? nil : handleCreateDocument,
-                overflowMenuContent: workspaceOverflowMenu
-            )
-        }
+        .toolbar(content: workspaceToolbar)
         .onAppear {
             restorePersistedViewMode()
             syncSelection(from: initialSelectedDocumentID)
@@ -88,6 +70,30 @@ public struct RecordCollectionHostView: View {
         .onChange(of: initialSelectedDocumentID) { _, selectedId in
             syncSelection(from: selectedId)
         }
+    }
+
+    @ViewBuilder
+    private var contentPane: some View {
+        switch selectedViewMode {
+        case .list:
+            listPane
+        case .browse:
+            browsePane
+        case .detail:
+            detailPane
+        }
+    }
+
+    @ToolbarContentBuilder
+    private func workspaceToolbar() -> some ToolbarContent {
+        RecordWorkspaceToolbarContent(
+            statusText: workspaceStatusText ?? "\(documents.count) records",
+            selectedViewMode: $selectedViewMode,
+            supportedViewModes: configuration.supportedViewModes,
+            primaryActionTitle: primaryCreateActionTitle,
+            onPrimaryAction: onCreateDocument == nil ? nil : handleCreateDocument,
+            overflowMenuContent: workspaceOverflowMenu
+        )
     }
 
     private var listPane: some View {
