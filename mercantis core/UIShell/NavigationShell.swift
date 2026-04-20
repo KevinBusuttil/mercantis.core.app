@@ -217,6 +217,7 @@ public struct NavigationShell: View {
         }
     }
 
+    @ViewBuilder
     private var moduleManagementView: some View {
         if tooling.docType(withId: BuiltInDocTypes.module.id) != nil {
             docTypeDetail(docTypeId: BuiltInDocTypes.module.id)
