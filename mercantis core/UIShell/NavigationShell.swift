@@ -367,6 +367,7 @@ public struct NavigationShell: View {
             RecordCollectionHostView(
                 preferenceKey: "docType.\(docType.id)",
                 docType: docType,
+                workspaceTitle: docType.id == BuiltInDocTypes.module.id ? "Modules" : nil,
                 documents: documents,
                 configuration: recordCollectionConfiguration(),
                 onCreateDocument: {
@@ -384,7 +385,10 @@ public struct NavigationShell: View {
                     if let selected {
                         addRecent(.record(docTypeId: docType.id, documentId: selected.id))
                     }
-                }
+                },
+                detailHeader: docType.id == BuiltInDocTypes.module.id
+                    ? { document in AnyView(moduleSelectedRecordHeader(for: document)) }
+                    : nil
             )
         } else {
             Text("DocType not found")
@@ -734,6 +738,32 @@ public struct NavigationShell: View {
             supportedViewModes: [.list, .browse, .detail],
             defaultViewMode: .list
         )
+    }
+
+    private func moduleSelectedRecordHeader(for document: Document) -> some View {
+        let moduleName = stringValue(for: BuiltInDocTypes.moduleNameFieldKey, in: document) ?? document.id
+        let appId = stringValue(for: "app_id", in: document)
+        let isCustom = boolValue(for: "is_custom", in: document) ?? false
+        var badges = [isCustom ? "Custom" : "System"]
+        if let appId {
+            badges.append(appId)
+        }
+
+        return SelectedRecordHeader(
+            title: moduleName,
+            badges: badges
+        )
+    }
+
+    private func stringValue(for field: String, in document: Document) -> String? {
+        guard case .string(let value)? = document.fields[field] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func boolValue(for field: String, in document: Document) -> Bool? {
+        guard case .bool(let value)? = document.fields[field] else { return nil }
+        return value
     }
 
     private func addRecent(_ destination: RecentDestination) {

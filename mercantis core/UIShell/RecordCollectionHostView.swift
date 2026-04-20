@@ -3,10 +3,14 @@ import SwiftUI
 public struct RecordCollectionHostView: View {
     let preferenceKey: String
     let docType: DocType
+    let workspaceTitle: String
+    let workspaceStatusText: String?
     let documents: [Document]
     let configuration: RecordCollectionViewConfiguration
     let allowsDetailEditing: Bool
+    let primaryCreateActionTitle: String
     let onCreateDocument: (() -> Document?)?
+    let workspaceOverflowMenu: (() -> AnyView)?
     let onSaveDocument: ((Document) -> Void)?
     let initialSelectedDocumentID: String?
     let onSelectionChange: ((Document?) -> Void)?
@@ -19,10 +23,14 @@ public struct RecordCollectionHostView: View {
     public init(
         preferenceKey: String,
         docType: DocType,
+        workspaceTitle: String? = nil,
+        workspaceStatusText: String? = nil,
         documents: [Document],
         configuration: RecordCollectionViewConfiguration = RecordCollectionViewConfiguration(),
         allowsDetailEditing: Bool = true,
+        primaryCreateActionTitle: String = "New",
         onCreateDocument: (() -> Document?)? = nil,
+        workspaceOverflowMenu: (() -> AnyView)? = nil,
         onSaveDocument: ((Document) -> Void)? = nil,
         initialSelectedDocumentID: String? = nil,
         onSelectionChange: ((Document?) -> Void)? = nil,
@@ -30,10 +38,14 @@ public struct RecordCollectionHostView: View {
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
+        self.workspaceTitle = workspaceTitle ?? docType.name
+        self.workspaceStatusText = workspaceStatusText
         self.documents = documents
         self.configuration = configuration
         self.allowsDetailEditing = allowsDetailEditing
+        self.primaryCreateActionTitle = primaryCreateActionTitle
         self.onCreateDocument = onCreateDocument
+        self.workspaceOverflowMenu = workspaceOverflowMenu
         self.onSaveDocument = onSaveDocument
         self.initialSelectedDocumentID = initialSelectedDocumentID
         self.onSelectionChange = onSelectionChange
@@ -52,19 +64,16 @@ public struct RecordCollectionHostView: View {
                 detailPane
             }
         }
-        .navigationTitle(docType.name)
+        .navigationTitle(workspaceTitle)
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Picker("Record View Mode", selection: $selectedViewMode) {
-                    ForEach(configuration.supportedViewModes) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(minWidth: 220)
-                .accessibilityLabel("Record View Mode")
-            }
+            RecordWorkspaceToolbarContent(
+                statusText: workspaceStatusText ?? "\(documents.count) records",
+                selectedViewMode: $selectedViewMode,
+                supportedViewModes: configuration.supportedViewModes,
+                primaryActionTitle: primaryCreateActionTitle,
+                onPrimaryAction: onCreateDocument == nil ? nil : handleCreateDocument,
+                overflowMenuContent: workspaceOverflowMenu
+            )
         }
         .onAppear {
             restorePersistedViewMode()

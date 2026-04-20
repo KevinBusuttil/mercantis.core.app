@@ -43,20 +43,6 @@ public struct GenericListView: View {
             }
         }
         .background(MercantisTheme.background)
-        .navigationTitle(docType.name)
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Text("\(processedDocuments.count) records")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            if let onCreate {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("New") { onCreate() }
-                        .buttonStyle(MercantisPrimaryButtonStyle())
-                }
-            }
-        }
     }
 
     private var controlsBar: some View {
