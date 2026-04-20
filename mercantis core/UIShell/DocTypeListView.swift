@@ -47,7 +47,7 @@ public struct DocTypeListView: View {
                     selectedDocType = selectedDocTypeForSelection
                 }
                 .buttonStyle(MercantisSecondaryButtonStyle())
-                .disabled(selectedDocTypeForSelection?.isCustom != true)
+                .disabled(!canManageSelectedDocType)
                 Button("Open Visual Builder") {
                     guard let selectedDocTypeForSelection else { return }
                     openVisualBuilder(for: selectedDocTypeForSelection)
@@ -60,7 +60,7 @@ public struct DocTypeListView: View {
                     showDeleteConfirmation = true
                 }
                 .buttonStyle(MercantisDestructiveButtonStyle())
-                .disabled(selectedDocTypeForSelection?.isCustom != true)
+                .disabled(!canManageSelectedDocType)
             }
         }
         .onAppear {
@@ -159,9 +159,22 @@ public struct DocTypeListView: View {
         return tooling.navigableDocTypes.first(where: { $0.id == selectedDocTypeID })
     }
 
-    private var docTypeProjectionSignature: [String] {
+    private var canManageSelectedDocType: Bool {
+        selectedDocTypeForSelection?.isCustom == true
+    }
+
+    private var docTypeProjectionSignature: [DocTypeProjectionSignature] {
         tooling.navigableDocTypes.map { docType in
-            "\(docType.id)|\(docType.name)|\(docType.module)|\(docType.isSubmittable)|\(docType.isChildTable)|\(docType.isCustom)|\(docType.fields.count)|\(docType.permissions.count)"
+            DocTypeProjectionSignature(
+                id: docType.id,
+                name: docType.name,
+                module: docType.module,
+                isSubmittable: docType.isSubmittable,
+                isChildTable: docType.isChildTable,
+                isCustom: docType.isCustom,
+                fieldCount: docType.fields.count,
+                permissionCount: docType.permissions.count
+            )
         }
     }
 
@@ -226,4 +239,16 @@ public struct DocTypeListView: View {
         selectedDocTypeForBuilder = docType
         #endif
     }
+}
+
+private struct DocTypeProjectionSignature: Hashable {
+    let id: String
+    let name: String
+    let module: String
+    let isSubmittable: Bool
+    let isChildTable: Bool
+    let isCustom: Bool
+    let fieldCount: Int
+    let permissionCount: Int
+
 }

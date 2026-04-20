@@ -163,6 +163,12 @@ public struct RecordCollectionHostView: View {
             selectedViewMode = configuration.defaultViewMode
         }
 
+        if let selectedDocument,
+           documents.contains(where: { $0.id == selectedDocument.id }) == false,
+           documentID == nil || documentID == selectedDocument.id {
+            return
+        }
+
         if let documentID,
            let matching = documents.first(where: { $0.id == documentID }) {
             selectDocument(matching)
