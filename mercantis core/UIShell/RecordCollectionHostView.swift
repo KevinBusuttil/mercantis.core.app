@@ -52,13 +52,15 @@ public struct RecordCollectionHostView: View {
         .navigationTitle(docType.name)
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Picker("View", selection: $selectedViewMode) {
+                Picker("Record View Mode", selection: $selectedViewMode) {
                     ForEach(configuration.supportedViewModes) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(minWidth: 220)
+                .accessibilityLabel("Record View Mode")
             }
         }
         .onAppear {
@@ -68,7 +70,7 @@ public struct RecordCollectionHostView: View {
         .onChange(of: selectedViewMode) { _, mode in
             persistViewMode(mode)
         }
-        .onChange(of: documents.map(\.id)) { _, _ in
+        .onChange(of: documentIDs) { _, _ in
             syncSelection(from: selectedDocumentID ?? initialSelectedDocumentID)
         }
         .onChange(of: initialSelectedDocumentID) { _, selectedId in
@@ -139,6 +141,10 @@ public struct RecordCollectionHostView: View {
 
     private var viewModeStorageKey: String {
         "recordViewMode.\(preferenceKey)"
+    }
+
+    private var documentIDs: [String] {
+        documents.map(\.id)
     }
 
     private func selectDocument(_ document: Document) {

@@ -368,7 +368,7 @@ public struct NavigationShell: View {
                 preferenceKey: "docType.\(docType.id)",
                 docType: docType,
                 documents: documents,
-                configuration: recordCollectionConfiguration(for: docType),
+                configuration: recordCollectionConfiguration(),
                 onCreateDocument: {
                     let draft = tooling.createDraftDocument(for: docType)
                     activeDocument = draft
@@ -729,7 +729,7 @@ public struct NavigationShell: View {
             .first(where: { activeModuleName(in: $0) == selectedModule })
     }
 
-    private func recordCollectionConfiguration(for _: DocType) -> RecordCollectionViewConfiguration {
+    private func recordCollectionConfiguration() -> RecordCollectionViewConfiguration {
         RecordCollectionViewConfiguration(
             supportedViewModes: [.list, .browse, .detail],
             defaultViewMode: .list

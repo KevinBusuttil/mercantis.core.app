@@ -13,6 +13,7 @@ public struct DocTypeListView: View {
     @State private var docTypeToDelete: DocType?
     @State private var showDeleteConfirmation = false
     @State private var deleteErrorMessage: String?
+    @State private var projectedDocTypeDocuments: [Document] = []
 
     public init() {}
 
@@ -20,7 +21,7 @@ public struct DocTypeListView: View {
         RecordCollectionHostView(
             preferenceKey: "docType.management",
             docType: BuiltInDocTypes.docType,
-            documents: docTypeDocuments,
+            documents: projectedDocTypeDocuments,
             configuration: RecordCollectionViewConfiguration(
                 supportedViewModes: [.list, .browse, .detail],
                 defaultViewMode: .list
@@ -64,15 +65,20 @@ public struct DocTypeListView: View {
         }
         .onAppear {
             tooling.reload()
+            refreshProjectedDocTypeDocuments()
             if selectedDocTypeID == nil {
                 selectedDocTypeID = tooling.navigableDocTypes.first?.id
             }
         }
         .onChange(of: tooling.navigableDocTypes.map(\.id)) { _, ids in
+            refreshProjectedDocTypeDocuments()
             if let selectedDocTypeID, ids.contains(selectedDocTypeID) {
                 return
             }
             self.selectedDocTypeID = ids.first
+        }
+        .onChange(of: docTypeProjectionSignature) { _, _ in
+            refreshProjectedDocTypeDocuments()
         }
         .sheet(item: $selectedDocType) { docType in
             NavigationStack {
@@ -153,9 +159,15 @@ public struct DocTypeListView: View {
         return tooling.navigableDocTypes.first(where: { $0.id == selectedDocTypeID })
     }
 
-    private var docTypeDocuments: [Document] {
-        let now = Date()
+    private var docTypeProjectionSignature: [String] {
         tooling.navigableDocTypes.map { docType in
+            "\(docType.id)|\(docType.name)|\(docType.module)|\(docType.isSubmittable)|\(docType.isChildTable)|\(docType.isCustom)|\(docType.fields.count)|\(docType.permissions.count)"
+        }
+    }
+
+    private func refreshProjectedDocTypeDocuments() {
+        let now = Date()
+        projectedDocTypeDocuments = tooling.navigableDocTypes.map { docType in
             Document(
                 id: docType.id,
                 docType: BuiltInDocTypes.docType.id,
