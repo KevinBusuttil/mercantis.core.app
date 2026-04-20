@@ -520,7 +520,7 @@ public struct DocTypeBuilderView: View {
                         Toggle("Submittable", isOn: $isSubmittable)
                         Toggle("Child Table", isOn: $isChildTable)
                     }
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(MercantisType.sectionHead)
                     .foregroundStyle(MercantisTheme.textPrimary)
                 }
                 .padding(18)
@@ -539,7 +539,7 @@ public struct DocTypeBuilderView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Text(field.key.isEmpty ? "New Field" : field.key)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(MercantisType.compactLabel)
                                     .foregroundStyle(MercantisTheme.textMuted)
                                 Spacer()
                             }
@@ -624,7 +624,7 @@ public struct DocTypeBuilderView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Text(permission.role.isEmpty ? "New Role Rule" : permission.role)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(MercantisType.compactLabel)
                                     .foregroundStyle(MercantisTheme.textMuted)
                                 Spacer()
                             }
@@ -699,7 +699,7 @@ public struct DocTypeBuilderView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Text(index.fieldKey.isEmpty ? "New Index" : index.fieldKey)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(MercantisType.compactLabel)
                                     .foregroundStyle(MercantisTheme.textMuted)
                                 Spacer()
                             }
@@ -780,7 +780,7 @@ public struct DocTypeBuilderView: View {
                         .foregroundStyle(MercantisTheme.textPrimary)
 
                     Text("Define metadata, structure, permissions, sync behavior, and indexes in one native authoring sheet.")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(MercantisType.meta)
                         .foregroundStyle(MercantisTheme.textMuted)
                 }
 
@@ -814,7 +814,7 @@ public struct DocTypeBuilderView: View {
     private func basicInfoInputRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .font(MercantisType.compactLabel)
                 .foregroundStyle(MercantisTheme.textPrimary)
             content()
         }
