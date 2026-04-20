@@ -238,15 +238,30 @@ private struct MercantisCardModifier: ViewModifier {
 
 struct MercantisSectionHeading: View {
     let title: String
+    var tone: MercantisSemanticTone = .muted
+    var symbol: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text(title.uppercased())
-                .font(MercantisType.meta)
-                .foregroundStyle(MercantisTheme.textMuted)
-                .tracking(0.6)
-                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 6) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MercantisTheme.tint(for: tone))
+                }
+                Text(title.uppercased())
+                    .font(MercantisType.meta)
+                    .foregroundStyle(MercantisTheme.tint(for: tone))
+                    .tracking(0.6)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(MercantisTheme.fillSoft(for: tone))
+            )
         }
     }
 }

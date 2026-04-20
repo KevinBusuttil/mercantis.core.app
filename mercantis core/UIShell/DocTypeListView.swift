@@ -63,7 +63,7 @@ public struct DocTypeListView: View {
                     tooling.reload()
                 }
             }
-            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
+            .frame(minWidth: 760, idealWidth: 1020, minHeight: 600, idealHeight: 740)
             #if os(macOS)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif

@@ -470,15 +470,19 @@ public struct DocTypeBuilderView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                builderHeader
+
                 if let validationError {
                     Text(validationError)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(MercantisTheme.danger)
+                        .padding(10)
+                        .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .mercantisCard()
                 }
 
-                MercantisSectionHeading(title: "Basic Info")
+                MercantisSectionHeading(title: "Basic Info", tone: .accent, symbol: "doc.text")
                 VStack(spacing: 12) {
                     labeledFormRow("DocType ID") {
                         TextField("DocType ID", text: $docTypeId)
@@ -514,7 +518,7 @@ public struct DocTypeBuilderView: View {
                 }
                 .mercantisCard()
 
-                MercantisSectionHeading(title: "Fields")
+                MercantisSectionHeading(title: "Fields", tone: .info, symbol: "list.bullet.rectangle")
                 VStack(spacing: 12) {
                     ForEach($fields) { $field in
                         VStack(alignment: .leading, spacing: 10) {
@@ -576,7 +580,7 @@ public struct DocTypeBuilderView: View {
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
 
-                MercantisSectionHeading(title: "Permission Rules")
+                MercantisSectionHeading(title: "Permission Rules", tone: .warning, symbol: "person.2.badge.gearshape")
                 VStack(spacing: 12) {
                     ForEach($permissions) { $permission in
                         VStack(alignment: .leading, spacing: 10) {
@@ -604,7 +608,7 @@ public struct DocTypeBuilderView: View {
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
 
-                MercantisSectionHeading(title: "Sync Policy")
+                MercantisSectionHeading(title: "Sync Policy", tone: .accent, symbol: "arrow.triangle.2.circlepath")
                 VStack(spacing: 12) {
                     labeledFormRow("Conflict Resolution") {
                         Picker("Conflict Resolution", selection: $conflictResolution) {
@@ -620,7 +624,7 @@ public struct DocTypeBuilderView: View {
                 }
                 .mercantisCard()
 
-                MercantisSectionHeading(title: "Indexes")
+                MercantisSectionHeading(title: "Indexes", tone: .success, symbol: "magnifyingglass")
                 VStack(spacing: 12) {
                     ForEach($indexes) { $index in
                         VStack(alignment: .leading, spacing: 10) {
@@ -642,21 +646,19 @@ public struct DocTypeBuilderView: View {
                     }
                     .buttonStyle(MercantisSecondaryButtonStyle())
                 }
+
+                bottomActionBar
             }
             .padding()
         }
         .background(MercantisTheme.background)
-        .navigationTitle(existingDocType == nil ? "New DocType" : "Edit DocType")
+        .navigationTitle(isCreatingDocType ? "New DocType" : "Edit DocType")
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .automatic) {
                 EditButton()
             }
             #endif
-            ToolbarItem(placement: .primaryAction) {
-                Button("Save", action: save)
-                    .buttonStyle(MercantisPrimaryButtonStyle())
-            }
         }
         .onAppear {
             guard !didLoadExisting, let existingDocType else { return }
@@ -674,6 +676,61 @@ public struct DocTypeBuilderView: View {
             indexes = existingDocType.indexes.map(EditableIndex.init)
             didLoadExisting = true
         }
+    }
+
+    private var isCreatingDocType: Bool {
+        existingDocType == nil
+    }
+
+    private var builderHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(isCreatingDocType ? "Create DocType" : "Edit DocType")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(MercantisTheme.textPrimary)
+                Spacer()
+                Text(isCreatingDocType ? "New" : "Existing")
+                    .mercantisSemanticBadge(tone: isCreatingDocType ? .accent : .info)
+            }
+
+            Text("Define metadata, structure, permissions, sync behavior, and indexes in one native authoring sheet.")
+                .font(.caption)
+                .foregroundStyle(MercantisTheme.textMuted)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(MercantisTheme.fillSoft(for: .accent))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(MercantisTheme.accentBorder, lineWidth: 1)
+        )
+    }
+
+    private var bottomActionBar: some View {
+        HStack(spacing: 10) {
+            Button("Cancel", action: cancel)
+                .buttonStyle(MercantisSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            Button("Save", action: save)
+                .buttonStyle(MercantisPrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(.top, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(MercantisTheme.surfaceMuted)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(MercantisTheme.border, lineWidth: 1)
+        )
     }
 
     private func labeledFormRow<Content: View>(_ label: String?, @ViewBuilder content: () -> Content) -> some View {
@@ -712,6 +769,10 @@ public struct DocTypeBuilderView: View {
 
     private func removeIndex(with id: UUID) {
         indexes.removeAll { $0.id == id }
+    }
+
+    private func cancel() {
+        dismiss()
     }
 
     private func save() {
