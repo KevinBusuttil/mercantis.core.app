@@ -659,13 +659,6 @@ public struct DocTypeBuilderView: View {
                 EditButton()
             }
             #endif
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", action: cancel)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button("Save", action: save)
-                    .buttonStyle(MercantisPrimaryButtonStyle())
-            }
         }
         .onAppear {
             guard !didLoadExisting, let existingDocType else { return }
