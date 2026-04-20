@@ -23,11 +23,6 @@ final class UIShellRouter: ObservableObject {
         selectedItem = nil
     }
 
-    func openModule(_ module: String) {
-        selectedSection = .home
-        selectedModule = module
-    }
-
     func openDocType(_ docTypeId: String, module: String?) {
         selectedSection = .home
         selectedModule = module
@@ -60,7 +55,6 @@ public struct NavigationShell: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
 
     @State private var showCommandBar = false
-    @State private var expandedModules: Set<String> = []
     @State private var activeDocument: Document?
     @State private var recents: [RecentDestination] = []
     @State private var sidebarSearchText = ""
@@ -80,13 +74,6 @@ public struct NavigationShell: View {
             if router.selectedModule == nil {
                 router.selectedModule = moduleNames.first
             }
-            ensureInitialModuleExpanded()
-        }
-        .onChange(of: router.selectedItem) { _, _ in
-            expandSelectedModuleIfNeeded()
-        }
-        .onChange(of: router.selectedModule) { _, _ in
-            expandSelectedModuleIfNeeded()
         }
     }
 
@@ -155,18 +142,6 @@ public struct NavigationShell: View {
                 .mercantisSidebarSelection(isActive: router.selectedSection == workspace.section)
             }
 
-            if !filteredModuleNames.isEmpty {
-                Section {
-                    ForEach(filteredModuleNames, id: \.self) { module in
-                        moduleDisclosureGroup(for: module)
-                    }
-                } header: {
-                    Text(NavigationSection.modules.title)
-                        .font(MercantisType.meta)
-                        .tracking(0.6)
-                }
-            }
-
             ForEach(bottomSplitSections) { workspace in
                 Button {
                     selectSection(workspace.section)
@@ -223,7 +198,7 @@ public struct NavigationShell: View {
             case .home:
                 homeDetail
             case .modules:
-                moduleBrowser
+                moduleManagementView
             case .reports:
                 reportBrowser
             case .dashboards:
@@ -242,50 +217,15 @@ public struct NavigationShell: View {
         }
     }
 
-    private var moduleBrowser: some View {
-        List(selection: $router.selectedModule) {
-            ForEach(moduleNames, id: \.self) { module in
-                Section(module) {
-                    Button {
-                        router.openModule(module)
-                    } label: {
-                        Label(module, systemImage: "square.grid.2x2")
-                    }
-                    .buttonStyle(.plain)
-
-                    ForEach(docTypes(in: module), id: \.id) { docType in
-                        Button {
-                            router.openDocType(docType.id, module: module)
-                            addRecent(.docType(docType.id))
-                        } label: {
-                            Label(docType.name, systemImage: "doc.text")
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    ForEach(reports(in: module), id: \.id) { report in
-                        Button {
-                            router.openReport(report.id, module: module)
-                            addRecent(.report(report.id))
-                        } label: {
-                            Label(report.name, systemImage: "chart.bar.doc.horizontal")
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    ForEach(dashboards(in: module), id: \.id) { dashboard in
-                        Button {
-                            router.openDashboard(dashboard.id, module: module)
-                            addRecent(.dashboard(dashboard.id))
-                        } label: {
-                            Label(dashboard.name, systemImage: "rectangle.3.group")
-                        }
-                        .buttonStyle(.plain)
-                    }
+    private var moduleManagementView: some View {
+        if tooling.docType(withId: BuiltInDocTypes.module.id) != nil {
+            docTypeDetail(docTypeId: BuiltInDocTypes.module.id)
+                .onAppear {
+                    syncActiveDocumentToSelectedModule()
                 }
-            }
+        } else {
+            ContentUnavailableView("Module DocType unavailable", systemImage: "square.grid.2x2")
         }
-        .navigationTitle("Workspaces")
     }
 
     private var reportBrowser: some View {
@@ -366,7 +306,7 @@ public struct NavigationShell: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Create").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], spacing: 8) {
-                ForEach(tooling.docTypes.prefix(8), id: \.id) { docType in
+                ForEach(tooling.navigableDocTypes.prefix(8), id: \.id) { docType in
                     Button("New \(docType.name)") {
                         router.openDocType(docType.id, module: docType.module)
                         activeDocument = tooling.createDraftDocument(for: docType)
@@ -381,15 +321,20 @@ public struct NavigationShell: View {
 
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pinned Workspaces").font(.headline)
-            ForEach(moduleNames.prefix(6), id: \.self) { module in
-                Button {
-                    router.openModule(module)
-                } label: {
-                    Label(module, systemImage: "square.grid.2x2")
-                }
-                .buttonStyle(.plain)
+            Text("Management").font(.headline)
+            Button {
+                selectSection(.docTypes)
+            } label: {
+                Label("DocTypes", systemImage: "doc.text")
             }
+            .buttonStyle(.plain)
+
+            Button {
+                selectSection(.modules)
+            } label: {
+                Label("Modules", systemImage: "square.grid.2x2")
+            }
+            .buttonStyle(.plain)
         }
         .mercantisCard()
     }
@@ -579,11 +524,12 @@ public struct NavigationShell: View {
 
     private var phoneHome: some View {
         List {
-            Section("Workspaces") {
-                ForEach(moduleNames, id: \.self) { module in
-                    NavigationLink(module) {
-                        phoneModuleDetail(module: module)
-                    }
+            Section("Management") {
+                NavigationLink("DocTypes") {
+                    DocTypeListView()
+                }
+                NavigationLink("Modules") {
+                    moduleManagementView
                 }
             }
             Section("Reports") {
@@ -604,33 +550,6 @@ public struct NavigationShell: View {
         .navigationTitle("Home")
     }
 
-    private func phoneModuleDetail(module: String) -> some View {
-        List {
-            Section("DocTypes") {
-                ForEach(docTypes(in: module), id: \.id) { docType in
-                    NavigationLink(docType.name) {
-                        docTypeDetail(docTypeId: docType.id)
-                    }
-                }
-            }
-            Section("Reports") {
-                ForEach(reports(in: module), id: \.id) { report in
-                    NavigationLink(report.name) {
-                        reportDetail(reportId: report.id)
-                    }
-                }
-            }
-            Section("Dashboards") {
-                ForEach(dashboards(in: module), id: \.id) { dashboard in
-                    NavigationLink(dashboard.name) {
-                        dashboardDetail(dashboardId: dashboard.id)
-                    }
-                }
-            }
-        }
-        .navigationTitle(module)
-    }
-
     private var phoneMore: some View {
         List {
             NavigationLink("Modules", value: MoreDestination.modules)
@@ -641,7 +560,7 @@ public struct NavigationShell: View {
         }
         .navigationDestination(for: MoreDestination.self) { destination in
             switch destination {
-            case .modules: moduleBrowser
+            case .modules: moduleManagementView
             case .docTypes: DocTypeListView()
             case .reports: reportBrowser
             case .dashboards: dashboardBrowser
@@ -654,21 +573,7 @@ public struct NavigationShell: View {
     // MARK: - Command Bar
 
     private var commandBarActions: [CommandBarAction] {
-        let moduleActions = moduleNames.map { module in
-            CommandBarAction(
-                id: "module-\(module)",
-                title: module,
-                subtitle: "Module",
-                icon: "square.grid.2x2",
-                badge: "Module",
-                keywords: [module],
-                isQuickAction: true
-            ) {
-                router.openModule(module)
-            }
-        }
-
-        let docTypeActions = tooling.docTypes.map { docType in
+        let docTypeActions = tooling.navigableDocTypes.map { docType in
             CommandBarAction(
                 id: "doctype-\(docType.id)",
                 title: docType.name,
@@ -683,7 +588,7 @@ public struct NavigationShell: View {
             }
         }
 
-        let createActions = tooling.docTypes.prefix(10).map { docType in
+        let createActions = tooling.navigableDocTypes.prefix(10).map { docType in
             CommandBarAction(
                 id: "create-\(docType.id)",
                 title: "New \(docType.name)",
@@ -736,7 +641,15 @@ public struct NavigationShell: View {
                 icon: "doc.text",
                 badge: "DocTypes",
                 isQuickAction: true
-            ) { router.openDocTypes() }
+            ) { router.openDocTypes() },
+            CommandBarAction(
+                id: "open-modules",
+                title: "Open Modules",
+                subtitle: nil,
+                icon: "square.grid.2x2",
+                badge: "Modules",
+                isQuickAction: true
+            ) { selectSection(.modules) }
         ]
 
         let recentActions = recents.map { recent in
@@ -750,7 +663,7 @@ public struct NavigationShell: View {
             ) { openRecent(recent) }
         }
 
-        return moduleActions + createActions + docTypeActions + reportActions + dashboardActions + docTypeShellActions + recentActions
+        return createActions + docTypeActions + reportActions + dashboardActions + docTypeShellActions + recentActions
     }
 
     // MARK: - Helpers
@@ -767,22 +680,12 @@ public struct NavigationShell: View {
         workspaceDefinitions.filter { $0.placement == .secondary }
     }
 
-    private var filteredModuleNames: [String] {
-        guard !sidebarSearchText.isEmpty else { return moduleNames }
-        return moduleNames.filter { module in
-            module.localizedCaseInsensitiveContains(sidebarSearchText)
-            || docTypes(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
-            || reports(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
-            || dashboards(in: module).contains(where: { $0.name.localizedCaseInsensitiveContains(sidebarSearchText) || $0.id.localizedCaseInsensitiveContains(sidebarSearchText) })
-        }
-    }
-
     private func workspaceBadge(for section: NavigationSection) -> String? {
         switch section {
         case .recents:
             return recents.isEmpty ? nil : "\(recents.count)"
         case .docTypes:
-            return tooling.docTypes.isEmpty ? nil : "\(tooling.docTypes.count)"
+            return tooling.navigableDocTypes.isEmpty ? nil : "\(tooling.navigableDocTypes.count)"
         case .reports:
             return tooling.reports.isEmpty ? nil : "\(tooling.reports.count)"
         case .dashboards:
@@ -790,89 +693,6 @@ public struct NavigationShell: View {
         default:
             return nil
         }
-    }
-
-    private func moduleExpansionBinding(for module: String) -> Binding<Bool> {
-        Binding(
-            get: { expandedModules.contains(module) },
-            set: { isExpanded in
-                if isExpanded {
-                    expandedModules.insert(module)
-                } else {
-                    expandedModules.remove(module)
-                }
-            }
-        )
-    }
-
-    private func moduleDisclosureGroup(for module: String) -> some View {
-        DisclosureGroup(isExpanded: moduleExpansionBinding(for: module)) {
-            moduleDocTypeRows(in: module)
-            moduleReportRows(in: module)
-            moduleDashboardRows(in: module)
-        } label: {
-            Text(module.uppercased())
-                .font(MercantisType.meta)
-                .tracking(0.6)
-        }
-        .mercantisSidebarSelection(isActive: isModuleActive(module))
-    }
-
-    @ViewBuilder
-    private func moduleDocTypeRows(in module: String) -> some View {
-        ForEach(docTypes(in: module), id: \.id) { docType in
-            moduleDocTypeRow(docType, module: module)
-        }
-    }
-
-    private func moduleDocTypeRow(_ docType: DocType, module: String) -> some View {
-        Button {
-            router.openDocType(docType.id, module: module)
-            addRecent(.docType(docType.id))
-        } label: {
-            Label(docType.name, systemImage: "doc.text")
-                .fontWeight(router.selectedItem == .docType(docType.id) ? .semibold : .regular)
-        }
-        .buttonStyle(.plain)
-        .mercantisSidebarSelection(isActive: router.selectedItem == .docType(docType.id))
-    }
-
-    @ViewBuilder
-    private func moduleReportRows(in module: String) -> some View {
-        ForEach(reports(in: module), id: \.id) { report in
-            moduleReportRow(report, module: module)
-        }
-    }
-
-    private func moduleReportRow(_ report: ReportDefinition, module: String) -> some View {
-        Button {
-            router.openReport(report.id, module: module)
-            addRecent(.report(report.id))
-        } label: {
-            Label(report.name, systemImage: "chart.bar.doc.horizontal")
-                .fontWeight(router.selectedItem == .report(report.id) ? .semibold : .regular)
-        }
-        .buttonStyle(.plain)
-        .mercantisSidebarSelection(isActive: router.selectedItem == .report(report.id))
-    }
-
-    @ViewBuilder
-    private func moduleDashboardRows(in module: String) -> some View {
-        ForEach(dashboards(in: module), id: \.id) { dashboard in
-            moduleDashboardRow(dashboard, module: module)
-        }
-    }
-
-    private func moduleDashboardRow(_ dashboard: DashboardDefinition, module: String) -> some View {
-        Button {
-            router.openDashboard(dashboard.id, module: module)
-            addRecent(.dashboard(dashboard.id))
-        } label: {
-            Label(dashboard.name, systemImage: "rectangle.3.group")
-                .fontWeight(router.selectedItem == .dashboard(dashboard.id) ? .semibold : .regular)
-        }
-        .buttonStyle(.plain)
-        .mercantisSidebarSelection(isActive: router.selectedItem == .dashboard(dashboard.id))
     }
 
     private func selectSection(_ section: NavigationSection) {
@@ -890,48 +710,8 @@ public struct NavigationShell: View {
         #endif
     }
 
-    private func ensureInitialModuleExpanded() {
-        guard expandedModules.isEmpty else { return }
-        guard let selectedModule = selectedModuleForCurrentContext() else { return }
-        expandedModules = [selectedModule]
-    }
-
-    private func expandSelectedModuleIfNeeded() {
-        guard let selectedModule = selectedModuleForCurrentContext() else { return }
-        expandedModules.insert(selectedModule)
-    }
-
-    private func selectedModuleForCurrentContext() -> String? {
-        switch router.selectedItem {
-        case .docType(let id):
-            return tooling.docType(withId: id)?.module
-        case .report(let id):
-            return tooling.report(withId: id).flatMap(moduleForReport)
-        case .dashboard(let id):
-            return tooling.dashboard(withId: id).flatMap(moduleForDashboard)
-        case nil:
-            return router.selectedModule
-        }
-    }
-
-    private func isModuleActive(_ module: String) -> Bool {
-        selectedModuleForCurrentContext() == module
-    }
-
     private var moduleNames: [String] {
         tooling.moduleNames
-    }
-
-    private func docTypes(in module: String) -> [DocType] {
-        tooling.docTypes.filter { $0.module == module && !$0.isChildTable }
-    }
-
-    private func reports(in module: String) -> [ReportDefinition] {
-        tooling.reports.filter { moduleForReport($0) == module }
-    }
-
-    private func dashboards(in module: String) -> [DashboardDefinition] {
-        tooling.dashboards.filter { moduleForDashboard($0) == module }
     }
 
     private func moduleForReport(_ report: ReportDefinition) -> String? {
@@ -949,6 +729,24 @@ public struct NavigationShell: View {
             }
             return nil
         }.first
+    }
+
+    private func activeModuleName(in document: Document?) -> String? {
+        guard let document else { return nil }
+        if case .string(let moduleName)? = document.fields[BuiltInDocTypes.moduleNameFieldKey] {
+            return moduleName
+        }
+        return nil
+    }
+
+    private func syncActiveDocumentToSelectedModule() {
+        guard let selectedModule = router.selectedModule else { return }
+        if activeModuleName(in: activeDocument) == selectedModule {
+            return
+        }
+        activeDocument = tooling
+            .listDocuments(docTypeId: BuiltInDocTypes.module.id)
+            .first(where: { activeModuleName(in: $0) == selectedModule })
     }
 
     private var bindingForActiveDocument: Binding<Document> {

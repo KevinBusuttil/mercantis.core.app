@@ -7,6 +7,8 @@ final class DocTypeToolingContext: ObservableObject {
     @Published var docTypes: [DocType] = []
     @Published var reports: [ReportDefinition] = []
     @Published var dashboards: [DashboardDefinition] = []
+    /// Canonical module record names for validation and module-management workflows.
+    /// This supports Module tooling and metadata integrity, not per-module sidebar groupings.
     @Published var moduleNames: [String] = []
 
     /// Validator is mutable because `knownModules` is updated on each `reload()`
@@ -47,7 +49,7 @@ final class DocTypeToolingContext: ObservableObject {
             .all()
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
-        // Derive module names from non-child-table DocTypes for sidebar display.
+        // Derive canonical module names from non-child-table DocTypes for metadata and module-management workflows.
         moduleNames = Array(Set(
             docTypes.filter { !$0.isChildTable }.map(\.module)
         )).sorted()
@@ -99,6 +101,10 @@ final class DocTypeToolingContext: ObservableObject {
 
     func dashboard(withId id: String) -> DashboardDefinition? {
         dashboards.first(where: { $0.id == id })
+    }
+
+    var navigableDocTypes: [DocType] {
+        docTypes.filter { !$0.isChildTable }
     }
 
     func listDocuments(docTypeId: String) -> [Document] {
