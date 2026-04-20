@@ -84,17 +84,13 @@ public struct RecordCollectionHostView: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private func workspaceToolbar() -> some ToolbarContent {
-        let statusText = workspaceStatusText ?? "\(documents.count) records"
-        let primaryAction: (() -> Void)? = onCreateDocument == nil ? nil : handleCreateDocument
-
+    private func workspaceToolbar() -> RecordWorkspaceToolbarContent {
         RecordWorkspaceToolbarContent(
-            statusText: statusText,
+            statusText: workspaceRecordStatusText,
             selectedViewMode: $selectedViewMode,
             supportedViewModes: configuration.supportedViewModes,
             primaryActionTitle: primaryCreateActionTitle,
-            onPrimaryAction: primaryAction,
+            onPrimaryAction: createDocumentAction,
             overflowMenuContent: workspaceOverflowMenu
         )
     }
@@ -168,6 +164,15 @@ public struct RecordCollectionHostView: View {
 
     private var viewModeStorageKey: String {
         "recordViewMode.\(preferenceKey)"
+    }
+
+    private var workspaceRecordStatusText: String {
+        workspaceStatusText ?? "\(documents.count) records"
+    }
+
+    private var createDocumentAction: (() -> Void)? {
+        guard onCreateDocument != nil else { return nil }
+        return handleCreateDocument
     }
 
     private var documentIDs: [String] {
