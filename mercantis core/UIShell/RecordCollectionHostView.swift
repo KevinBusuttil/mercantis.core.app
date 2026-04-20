@@ -10,6 +10,7 @@ public struct RecordCollectionHostView: View {
     let onSaveDocument: ((Document) -> Void)?
     let initialSelectedDocumentID: String?
     let onSelectionChange: ((Document?) -> Void)?
+    let detailHeader: ((Document) -> AnyView)?
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
@@ -24,7 +25,8 @@ public struct RecordCollectionHostView: View {
         onCreateDocument: (() -> Document?)? = nil,
         onSaveDocument: ((Document) -> Void)? = nil,
         initialSelectedDocumentID: String? = nil,
-        onSelectionChange: ((Document?) -> Void)? = nil
+        onSelectionChange: ((Document?) -> Void)? = nil,
+        detailHeader: ((Document) -> AnyView)? = nil
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -35,6 +37,7 @@ public struct RecordCollectionHostView: View {
         self.onSaveDocument = onSaveDocument
         self.initialSelectedDocumentID = initialSelectedDocumentID
         self.onSelectionChange = onSelectionChange
+        self.detailHeader = detailHeader
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
     }
 
@@ -103,6 +106,12 @@ public struct RecordCollectionHostView: View {
     private var detailPane: some View {
         if selectedDocument != nil {
             VStack(alignment: .leading, spacing: 10) {
+                if let selectedDocument, let detailHeader {
+                    detailHeader(selectedDocument)
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+                }
+
                 GenericFormView(docType: docType, document: selectedDocumentBinding)
                     .disabled(!allowsDetailEditing)
 

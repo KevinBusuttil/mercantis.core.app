@@ -6,7 +6,6 @@ public struct DocTypeListView: View {
     @Environment(\.openWindow) private var openWindow
     #endif
 
-    @State private var selectedDocType: DocType?
     @State private var selectedDocTypeForBuilder: DocType?
     @State private var selectedDocTypeID: String?
     @State private var showNewDocTypeSheet = false
@@ -30,37 +29,23 @@ public struct DocTypeListView: View {
             initialSelectedDocumentID: selectedDocTypeID,
             onSelectionChange: { selected in
                 selectedDocTypeID = selected?.id
+            },
+            detailHeader: { document in
+                AnyView(selectedDocTypeHeader(for: document))
             }
         )
         .navigationTitle("DocTypes")
         .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
+            ToolbarItem(placement: .principal) {
                 Text("\(tooling.navigableDocTypes.count) registered")
                     .foregroundStyle(.secondary)
                     .font(.caption)
+            }
+            ToolbarItemGroup(placement: .automatic) {
                 Button("New DocType") {
                     showNewDocTypeSheet = true
                 }
                 .buttonStyle(MercantisPrimaryButtonStyle())
-                Button("Edit DocType") {
-                    guard let selectedDocTypeForSelection else { return }
-                    selectedDocType = selectedDocTypeForSelection
-                }
-                .buttonStyle(MercantisSecondaryButtonStyle())
-                .disabled(!canManageSelectedDocType)
-                Button("Open Visual Builder") {
-                    guard let selectedDocTypeForSelection else { return }
-                    openVisualBuilder(for: selectedDocTypeForSelection)
-                }
-                .buttonStyle(MercantisPrimaryButtonStyle())
-                .disabled(selectedDocTypeForSelection == nil)
-                Button("Delete DocType", role: .destructive) {
-                    guard let selectedDocTypeForSelection else { return }
-                    docTypeToDelete = selectedDocTypeForSelection
-                    showDeleteConfirmation = true
-                }
-                .buttonStyle(MercantisDestructiveButtonStyle())
-                .disabled(!canManageSelectedDocType)
             }
         }
         .onAppear {
@@ -79,18 +64,6 @@ public struct DocTypeListView: View {
         }
         .onChange(of: docTypeChangeDetectionSignatures) { _, _ in
             refreshProjectedDocTypeDocuments()
-        }
-        .sheet(item: $selectedDocType) { docType in
-            NavigationStack {
-                DocTypeBuilderView(docType: docType) {
-                    tooling.reload()
-                }
-            }
-            .frame(minWidth: 640, idealWidth: 820, minHeight: 520, idealHeight: 680)
-            #if os(macOS)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            #endif
-            .environmentObject(tooling)
         }
         .sheet(isPresented: $showNewDocTypeSheet) {
             NavigationStack {
@@ -152,15 +125,6 @@ public struct DocTypeListView: View {
         } message: {
             Text(deleteErrorMessage ?? "An unknown error occurred.")
         }
-    }
-
-    private var selectedDocTypeForSelection: DocType? {
-        guard let selectedDocTypeID else { return nil }
-        return tooling.navigableDocTypes.first(where: { $0.id == selectedDocTypeID })
-    }
-
-    private var canManageSelectedDocType: Bool {
-        selectedDocTypeForSelection?.isCustom == true
     }
 
     private var docTypeChangeDetectionSignatures: [DocTypeProjectionSignature] {
@@ -238,6 +202,46 @@ public struct DocTypeListView: View {
         #else
         selectedDocTypeForBuilder = docType
         #endif
+    }
+
+    @ViewBuilder
+    private func selectedDocTypeHeader(for document: Document) -> some View {
+        if let docType = tooling.navigableDocTypes.first(where: { $0.id == document.id }) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(docType.name)
+                        .font(.headline)
+
+                    Text(docType.module)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                    .accessibilityLabel("Module: \(docType.module)")
+                    .accessibilityElement(children: .ignore)
+                }
+
+                Spacer()
+
+                Button("Open Visual Builder") {
+                    openVisualBuilder(for: docType)
+                }
+                .buttonStyle(MercantisSecondaryButtonStyle())
+
+                Button(role: .destructive) {
+                    docTypeToDelete = docType
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.body)
+                        .accessibilityLabel("Delete DocType")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!docType.isCustom)
+                .help("Delete DocType")
+            }
+        }
     }
 }
 
