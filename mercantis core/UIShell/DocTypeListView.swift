@@ -37,12 +37,9 @@ public struct DocTypeListView: View {
         .navigationTitle("DocTypes")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("DocTypes")
-                    Text("\(tooling.navigableDocTypes.count) registered")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
+                Text("\(tooling.navigableDocTypes.count) registered")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
             ToolbarItemGroup(placement: .automatic) {
                 Button("New DocType") {
@@ -221,6 +218,8 @@ public struct DocTypeListView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
+                    .accessibilityLabel("Module: \(docType.module)")
+                    .accessibilityElement(children: .ignore)
                 }
 
                 Spacer()
@@ -230,19 +229,17 @@ public struct DocTypeListView: View {
                 }
                 .buttonStyle(MercantisSecondaryButtonStyle())
 
-                Menu {
-                    Button("Delete DocType", role: .destructive) {
-                        docTypeToDelete = docType
-                        showDeleteConfirmation = true
-                    }
-                    .disabled(!docType.isCustom)
+                Button(role: .destructive) {
+                    docTypeToDelete = docType
+                    showDeleteConfirmation = true
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.title3)
-                        .accessibilityLabel("More actions")
+                    Image(systemName: "trash")
+                        .font(.body)
+                        .accessibilityLabel("Delete DocType")
                 }
-                .menuStyle(.borderlessButton)
-                .help("More actions")
+                .buttonStyle(.borderless)
+                .disabled(!docType.isCustom)
+                .help("Delete DocType")
             }
         }
     }
