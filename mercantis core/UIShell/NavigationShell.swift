@@ -730,13 +730,6 @@ public struct NavigationShell: View {
     }
 
     private func recordCollectionConfiguration(for docType: DocType) -> RecordCollectionViewConfiguration {
-        if docType.id == BuiltInDocTypes.module.id {
-            return RecordCollectionViewConfiguration(
-                supportedViewModes: [.list, .browse, .detail],
-                defaultViewMode: .list
-            )
-        }
-
         return RecordCollectionViewConfiguration(
             supportedViewModes: [.list, .browse, .detail],
             defaultViewMode: .list

@@ -154,14 +154,15 @@ public struct DocTypeListView: View {
     }
 
     private var docTypeDocuments: [Document] {
+        let now = Date()
         tooling.navigableDocTypes.map { docType in
             Document(
                 id: docType.id,
                 docType: BuiltInDocTypes.docType.id,
                 company: "",
                 status: docType.isCustom ? "Custom" : "Built-in",
-                createdAt: Date.distantPast,
-                updatedAt: Date(),
+                createdAt: now,
+                updatedAt: now,
                 syncVersion: 0,
                 syncState: .local,
                 fields: [

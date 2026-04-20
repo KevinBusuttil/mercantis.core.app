@@ -128,18 +128,7 @@ public struct RecordCollectionHostView: View {
     private var selectedDocumentBinding: Binding<Document> {
         Binding<Document>(
             get: {
-                selectedDocument ?? Document(
-                    id: UUID().uuidString,
-                    docType: docType.id,
-                    company: "",
-                    status: "",
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    syncVersion: 0,
-                    syncState: .local,
-                    fields: [:],
-                    children: [:]
-                )
+                selectedDocument ?? emptyDocument(for: docType.id)
             },
             set: { updated in
                 selectedDocument = updated
@@ -204,5 +193,21 @@ public struct RecordCollectionHostView: View {
 
     private func persistViewMode(_ mode: RecordViewMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: viewModeStorageKey)
+    }
+
+    private func emptyDocument(for docTypeId: String) -> Document {
+        let now = Date()
+        return Document(
+            id: UUID().uuidString,
+            docType: docTypeId,
+            company: "",
+            status: "",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: [:],
+            children: [:]
+        )
     }
 }
