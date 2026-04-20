@@ -163,9 +163,7 @@ public struct RecordCollectionHostView: View {
             selectedViewMode = configuration.defaultViewMode
         }
 
-        if let selectedDocument,
-           documents.contains(where: { $0.id == selectedDocument.id }) == false,
-           documentID == nil || documentID == selectedDocument.id {
+        if shouldPreserveTransientSelection(incomingDocumentID: documentID) {
             return
         }
 
@@ -204,6 +202,13 @@ public struct RecordCollectionHostView: View {
 
     private func persistViewMode(_ mode: RecordViewMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: viewModeStorageKey)
+    }
+
+    private func shouldPreserveTransientSelection(incomingDocumentID: String?) -> Bool {
+        guard let selectedDocument else { return false }
+        let selectionExistsInDocuments = documents.contains(where: { $0.id == selectedDocument.id })
+        guard !selectionExistsInDocuments else { return false }
+        return incomingDocumentID == nil || incomingDocumentID == selectedDocument.id
     }
 
     private func emptyDocument(for docTypeId: String) -> Document {

@@ -77,7 +77,7 @@ public struct DocTypeListView: View {
             }
             self.selectedDocTypeID = ids.first
         }
-        .onChange(of: docTypeProjectionSignature) { _, _ in
+        .onChange(of: docTypeChangeDetectionSignatures) { _, _ in
             refreshProjectedDocTypeDocuments()
         }
         .sheet(item: $selectedDocType) { docType in
@@ -163,7 +163,7 @@ public struct DocTypeListView: View {
         selectedDocTypeForSelection?.isCustom == true
     }
 
-    private var docTypeProjectionSignature: [DocTypeProjectionSignature] {
+    private var docTypeChangeDetectionSignatures: [DocTypeProjectionSignature] {
         tooling.navigableDocTypes.map { docType in
             DocTypeProjectionSignature(
                 id: docType.id,
