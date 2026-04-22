@@ -636,3 +636,4 @@ mercantis core/
 | [ADR-024](Docs/ADR/ADR-024-document-versioning-diff-tracking.md) | Document Versioning and Field-Level Diff Tracking |
 | [ADR-025](Docs/ADR/ADR-025-automation-action-registry.md) | Automation Action Registry |
 | [ADR-026](Docs/ADR/ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model |
+| [ADR-027](Docs/ADR/ADR-027-doctype-creation-strategy.md) | DocType Creation Tooling — Phased Strategy |
