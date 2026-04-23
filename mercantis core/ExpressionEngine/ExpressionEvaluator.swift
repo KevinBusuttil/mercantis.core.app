@@ -91,8 +91,9 @@ public final class ExpressionEvaluator {
                 continue
             }
 
-            // Number literal.
-            if ch.isNumber || (ch == "-" && tokens.isEmpty) {
+            // Number literal. `-` is always an operator at the lexer level;
+            // unary minus is handled by the parser.
+            if ch.isNumber {
                 var numStr = String(ch)
                 idx = expression.index(after: idx)
                 while idx < expression.endIndex && (expression[idx].isNumber || expression[idx] == ".") {
@@ -247,6 +248,16 @@ public final class ExpressionEvaluator {
     private func parseFactor(tokens: [Token], pos: inout Int, context: [String: FieldValue]) throws -> Double {
         guard pos < tokens.count else { return 0 }
 
+        // Unary +/- prefix: `-5`, `--x`, `+3`.
+        if case .op("-") = tokens[pos] {
+            pos += 1
+            return -(try parseFactor(tokens: tokens, pos: &pos, context: context))
+        }
+        if case .op("+") = tokens[pos] {
+            pos += 1
+            return try parseFactor(tokens: tokens, pos: &pos, context: context)
+        }
+
         if case .lparen = tokens[pos] {
             pos += 1
             let result = try parseArithmetic(tokens: tokens, pos: &pos, context: context)
@@ -298,6 +309,16 @@ public final class ExpressionEvaluator {
                 return .null
             }
             return fieldValueToExprValue(fieldValue)
+        case .op("-"):
+            pos += 1
+            let inner = try parseValue(tokens: tokens, pos: &pos, context: context)
+            guard case .number(let n) = inner else {
+                throw EvaluatorError.typeMismatch(expected: "number", got: "\(inner)")
+            }
+            return .number(-n)
+        case .op("+"):
+            pos += 1
+            return try parseValue(tokens: tokens, pos: &pos, context: context)
         default:
             throw EvaluatorError.unexpectedToken("\(tokens[pos])")
         }

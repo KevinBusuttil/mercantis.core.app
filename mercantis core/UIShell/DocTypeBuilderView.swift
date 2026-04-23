@@ -16,14 +16,14 @@ final class DocTypeToolingContext: ObservableObject {
     var validator = SchemaValidator()
     let registry: MetadataRegistry
     private let database: MercantisDatabase
-    private let eventBus = EventBus()
+    private let eventEmitter = EventEmitter()
     private lazy var metaComposer = MetaComposer(registry: registry)
     private lazy var documentEngine = DocumentEngine(
         database: database,
         registry: registry,
-        eventBus: eventBus,
         deviceId: "local-device",
-        userId: "local-user"
+        userId: "local-user",
+        eventEmitter: eventEmitter
     )
     private var reportEngine: ReportEngine?
 

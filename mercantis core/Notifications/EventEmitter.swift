@@ -133,13 +133,10 @@ public final class SubscriptionToken: Sendable {
 
 /// Typed event bus for Mercantis Core. (ADR-020)
 ///
-/// Replaces the stringly-typed `EventBus` with compile-time verified,
-/// type-parameterised subscriptions. Each event is a concrete Swift type
-/// conforming to `MercantisEvent`.
-///
-/// This also maintains backward compatibility with the legacy `EventBus`
-/// interface by bridging typed events to the existing string-based bus
-/// during the migration period.
+/// Each event is a concrete Swift type conforming to `MercantisEvent`, and
+/// subscriptions are type-parameterised so the compiler verifies the handler's
+/// event type. Callers retain the returned `SubscriptionToken`; releasing or
+/// cancelling the token removes the handler.
 public final class EventEmitter: @unchecked Sendable {
 
     private struct AnySubscription {
@@ -152,12 +149,7 @@ public final class EventEmitter: @unchecked Sendable {
     private var subscriptions: [ObjectIdentifier: [AnySubscription]] = [:]
     private let lock = NSLock()
 
-    /// Optional legacy EventBus bridge for backward compatibility.
-    private let legacyBus: EventBus?
-
-    public init(legacyBus: EventBus? = nil) {
-        self.legacyBus = legacyBus
-    }
+    public init() {}
 
     // MARK: - Subscribe
 
@@ -214,9 +206,6 @@ public final class EventEmitter: @unchecked Sendable {
         for sub in handlers {
             sub.handler(event)
         }
-
-        // Bridge to legacy EventBus if present.
-        bridgeToLegacyBus(event)
     }
 
     // MARK: - Private
@@ -225,31 +214,5 @@ public final class EventEmitter: @unchecked Sendable {
         lock.lock()
         subscriptions[key]?.removeAll { $0.id == id }
         lock.unlock()
-    }
-
-    /// Bridge typed events to the legacy `EventBus` for backward compatibility.
-    private func bridgeToLegacyBus<E: MercantisEvent>(_ event: E) {
-        guard let bus = legacyBus else { return }
-
-        switch event {
-        case let e as DocumentSavedEvent:
-            bus.publish(EventBus.Event(name: "document.saved", docType: e.docType, documentId: e.document.id, payload: [:]))
-        case let e as DocumentDeletedEvent:
-            bus.publish(EventBus.Event(name: "document.deleted", docType: e.docType, documentId: e.documentId, payload: [:]))
-        case let e as DocumentSubmittedEvent:
-            bus.publish(EventBus.Event(name: "document.submitted", docType: e.docType, documentId: e.document.id, payload: [:]))
-        case let e as DocumentCancelledEvent:
-            bus.publish(EventBus.Event(name: "document.cancelled", docType: e.docType, documentId: e.document.id, payload: [:]))
-        case let e as DocumentAmendedEvent:
-            bus.publish(EventBus.Event(name: "document.amended", docType: e.docType, documentId: e.newDocumentId, payload: ["amendedFrom": e.amendedFrom]))
-        case let e as WorkflowTransitionEvent:
-            bus.publish(EventBus.Event(name: "workflow.transition", docType: nil, documentId: e.document.id, payload: [
-                "workflowId": e.workflowId, "action": e.action, "from": e.fromState, "to": e.toState
-            ]))
-        case let e as AppInstalledEvent:
-            bus.publish(EventBus.Event(name: "app.installed", docType: nil, documentId: nil, payload: ["appId": e.appId, "version": e.version]))
-        default:
-            break
-        }
     }
 }
