@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-22_
+_Last updated: 2026-04-23_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR it relates to so the backlog is obvious.
 
@@ -184,6 +184,23 @@ canAccessRow(document:, userRoles:, rowExpression: String?) -> Bool
 ---
 
 ## P2 — Structural improvements
+
+### P2.0 — Metadata workspace UX refactor [S, low risk] — ADR-016 / ADR-027 ✅ shipped 2026-04-23
+
+**Rationale:** `DocTypeBuilderView`, `Modules`, and `DocTypes` shared the same workspace chrome but did not read as one coherent family. Section headers (`MercantisSectionHeading`) were visually indistinguishable from interactive chips. Repeated collections (fields, permissions, indexes) were stacked full-form cards — noisy at any count above three.
+
+**Implemented:**
+
+- `MercantisSectionHeading` redesigned as a genuine structural header: uppercase tracking text, no background fill, no border-radius. Looks like a macOS grouped-table section label, not a button.
+- `DocTypeBuilderView` restructured into three logical groups:
+  - **Basic Info** — compact card for DocType ID, name, module, title field, search fields, flags.
+  - **Schema** — segmented tab (`Fields` / `Permissions`). Each collection renders compact single-line summary rows (key · type · Required badge; role · R/W/C/D/S/A matrix). Selecting a row expands an inline editor; other rows stay collapsed. Replaces the previous stacked full-form card-per-item layout.
+  - **Configuration** — sync policy card + compact Indexes collection, clearly separated from the schema concerns above.
+- `SelectedRecordHeader` given a surface background and bottom divider, making it a proper workspace entity banner. Shared by both Modules and DocTypes detail views.
+- `moduleSelectedRecordHeader` (NavigationShell) enriched with a `subtitle` ("Custom Module" / "System Module") and a DocType count badge derived from existing `tooling.navigableDocTypes`. No invented analytics.
+- External padding removed from `RecordCollectionHostView`'s `detailHeader` slot to avoid double-padding now that `SelectedRecordHeader` carries its own padding.
+
+**Non-goals respected:** no nav model change, no design-lab promotion, no fake dashboards, no extra color, FormBuilderView left structurally intact.
 
 ### P2.1 — Turn the ExpressionEvaluator into a real AST [M, low risk] — ADR-017
 

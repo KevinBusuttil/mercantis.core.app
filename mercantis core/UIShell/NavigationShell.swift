@@ -744,13 +744,19 @@ public struct NavigationShell: View {
         let moduleName = stringValue(for: BuiltInDocTypes.moduleNameFieldKey, in: document) ?? document.id
         let appId = stringValue(for: "app_id", in: document)
         let isCustom = boolValue(for: "is_custom", in: document) ?? false
-        var badges = [recordCustomizationBadge(isCustom: isCustom, nonCustomLabel: "System")]
-        if let appId {
+        let docTypeCount = tooling.navigableDocTypes.filter { $0.module == moduleName }.count
+
+        var badges: [String] = [recordCustomizationBadge(isCustom: isCustom, nonCustomLabel: "System")]
+        if let appId, !appId.isEmpty, appId != "custom.local" {
             badges.append(appId)
+        }
+        if docTypeCount > 0 {
+            badges.append("\(docTypeCount) DocType\(docTypeCount == 1 ? "" : "s")")
         }
 
         return SelectedRecordHeader(
             title: moduleName,
+            subtitle: isCustom ? "Custom Module" : "System Module",
             badges: badges
         )
     }

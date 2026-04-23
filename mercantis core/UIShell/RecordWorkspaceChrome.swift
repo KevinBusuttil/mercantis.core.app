@@ -82,28 +82,26 @@ public struct SelectedRecordHeader: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(MercantisTheme.textPrimary)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(MercantisTheme.textMuted)
                 }
 
                 if !badges.isEmpty {
                     HStack(spacing: 6) {
                         ForEach(badges.indices, id: \.self) { index in
                             Text(badges[index])
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(.quaternary, in: Capsule())
+                                .mercantisSemanticBadge(tone: .muted)
                         }
                     }
+                    .padding(.top, 2)
                 }
             }
 
@@ -112,6 +110,13 @@ public struct SelectedRecordHeader: View {
             if let actions {
                 actions()
             }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MercantisTheme.surface)
+        .overlay(alignment: .bottom) {
+            Divider()
         }
     }
 }
