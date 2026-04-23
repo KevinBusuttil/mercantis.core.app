@@ -19,6 +19,7 @@ public final class DocumentEngine {
     private let validator: SchemaValidator
     private let eventEmitter: EventEmitter
     private let validationPipeline: ValidationPipeline
+    private let namingService: NamingService
     private let deviceId: String
     private let userId: String
 
@@ -28,13 +29,15 @@ public final class DocumentEngine {
         deviceId: String,
         userId: String,
         eventEmitter: EventEmitter = EventEmitter(),
-        validationPipeline: ValidationPipeline = ValidationPipeline()
+        validationPipeline: ValidationPipeline = ValidationPipeline(),
+        namingService: NamingService = NamingService()
     ) {
         self.database = database
         self.registry = registry
         self.validator = SchemaValidator()
         self.eventEmitter = eventEmitter
         self.validationPipeline = validationPipeline
+        self.namingService = namingService
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -45,7 +48,19 @@ public final class DocumentEngine {
     ///
     /// If the document belongs to a submittable DocType and has `docStatus == 1` (Submitted),
     /// only fields marked `allowOnSubmit: true` can be changed. (ADR-013)
-    public func save(_ document: Document) throws {
+    ///
+    /// If `document.id` is empty, `NamingService` resolves it from the DocType's
+    /// `autoname` (defaulting to UUIDv7). Callers can capture the returned
+    /// `Document` to observe the resolved ID. (P1.1 / ADR-014)
+    @discardableResult
+    public func save(_ document: Document, userSuppliedName: String? = nil) throws -> Document {
+        // P1.1 / ADR-014: Resolve the document ID from DocType.autoname when the
+        // caller hasn't provided one. Runs before validation so downstream stages
+        // see the final ID; NamingSeries counters increment here, so a subsequent
+        // validation failure leaves a sequence gap (documented in ADR-014 and in
+        // NamingSeriesStrategy).
+        let document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
+
         // ADR-023: Optimistic concurrency check via updatedAt.
         // ADR-024: Load existing fields for diff computation.
         // P1.5: isNew drives `DocumentOperation.create` vs `.write` in the pipeline.
@@ -111,6 +126,78 @@ public final class DocumentEngine {
             document: document,
             docType: document.docType
         ))
+        return document
+    }
+
+    // MARK: - Naming (P1.1 / ADR-014)
+
+    /// If `document.id` is empty, resolve it via `NamingService` and return a
+    /// copy of the document with the assigned ID. Otherwise returns the input
+    /// unchanged.
+    ///
+    /// `applyRemote` deliberately does **not** call this — remote mutations
+    /// always arrive pre-named, and running naming on the remote side would
+    /// burn counter values on every synced document.
+    private func assigningNameIfNeeded(
+        _ document: Document,
+        userSuppliedName: String?
+    ) throws -> Document {
+        guard document.id.isEmpty else { return document }
+        guard let docType = registry.get(document.docType) else {
+            throw DocumentEngineError.docTypeNotFound(document.docType)
+        }
+        let context = NamingContext(
+            userSuppliedName: userSuppliedName,
+            now: Date(),
+            counterProvider: { [database] seriesKey in
+                try Self.reserveCounter(in: database, seriesKey: seriesKey)
+            }
+        )
+        let resolvedId = try namingService.resolve(
+            docType: docType,
+            document: document,
+            context: context
+        )
+        return Document(
+            id: resolvedId,
+            docType: document.docType,
+            company: document.company,
+            status: document.status,
+            createdAt: document.createdAt,
+            updatedAt: document.updatedAt,
+            syncVersion: document.syncVersion,
+            syncState: document.syncState,
+            docStatus: document.docStatus,
+            amendedFrom: document.amendedFrom,
+            fields: document.fields,
+            children: document.children
+        )
+    }
+
+    /// Atomically increment and return the next counter value for a naming-series key.
+    ///
+    /// Runs in its own short write transaction so concurrent saves don't read
+    /// the same value. Gap behaviour on save failure is intentional (ADR-014).
+    private static func reserveCounter(
+        in database: MercantisDatabase,
+        seriesKey: String
+    ) throws -> Int {
+        try database.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO naming_counters (seriesKey, value) VALUES (?, 1)
+                    ON CONFLICT(seriesKey) DO UPDATE SET value = value + 1
+                    """,
+                arguments: [seriesKey]
+            )
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT value FROM naming_counters WHERE seriesKey = ?",
+                arguments: [seriesKey]
+            )
+            let value: Int = row?["value"] ?? 0
+            return value
+        }
     }
 
     // MARK: - Apply Remote (ADR-005, P0.2)

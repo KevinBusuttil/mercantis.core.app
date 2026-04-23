@@ -104,6 +104,7 @@ enum TestSupport {
         fields: [FieldDefinition] = [textField("title", required: true)],
         permissions: [PermissionRule] = [permissionRule()],
         isSubmittable: Bool = false,
+        autoname: String? = nil,
         syncPolicy: SyncPolicy? = nil,
         indexes: [IndexDefinition] = [],
         titleField: String = "title"
@@ -117,6 +118,7 @@ enum TestSupport {
             isSubmittable: isSubmittable,
             fields: fields,
             permissions: permissions,
+            autoname: autoname,
             syncPolicy: syncPolicy ?? defaultSyncPolicy(),
             indexes: indexes,
             searchFields: [titleField],
