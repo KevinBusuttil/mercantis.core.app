@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct DocTypeListView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext
+    @EnvironmentObject private var router: UIShellRouter
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
@@ -29,6 +30,9 @@ public struct DocTypeListView: View {
             ),
             allowsDetailEditing: false,
             onCreateDocument: {
+                // DocType metadata is authored in `DocTypeBuilderView`, not the
+                // generic form. Returning nil short-circuits the host's sheet and
+                // lets our bespoke sheet below take over.
                 showNewDocTypeSheet = true
                 return nil
             },
@@ -38,7 +42,13 @@ public struct DocTypeListView: View {
             },
             detailHeader: { document in
                 AnyView(selectedDocTypeHeader(for: document))
-            }
+            },
+            externalCreateTrigger: Binding<Bool>(
+                get: { router.pendingCreate == BuiltInDocTypes.docType.id },
+                set: { newValue in
+                    if !newValue { router.consumePendingCreate(BuiltInDocTypes.docType.id) }
+                }
+            )
         )
         .onAppear {
             tooling.reload()

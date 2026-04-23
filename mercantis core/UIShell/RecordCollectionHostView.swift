@@ -11,14 +11,17 @@ public struct RecordCollectionHostView: View {
     let primaryCreateActionTitle: String
     let onCreateDocument: (() -> Document?)?
     let workspaceOverflowMenu: (() -> AnyView)?
-    let onSaveDocument: ((Document) -> Void)?
+    let onSaveDocument: ((Document) throws -> Void)?
     let initialSelectedDocumentID: String?
     let onSelectionChange: ((Document?) -> Void)?
     let detailHeader: ((Document) -> AnyView)?
+    let externalCreateTrigger: Binding<Bool>?
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
     @State private var selectedViewMode: RecordViewMode
+    @State private var createSheetDraft: Document?
+    @State private var detailSaveError: String?
 
     public init(
         preferenceKey: String,
@@ -31,10 +34,11 @@ public struct RecordCollectionHostView: View {
         primaryCreateActionTitle: String = "New",
         onCreateDocument: (() -> Document?)? = nil,
         workspaceOverflowMenu: (() -> AnyView)? = nil,
-        onSaveDocument: ((Document) -> Void)? = nil,
+        onSaveDocument: ((Document) throws -> Void)? = nil,
         initialSelectedDocumentID: String? = nil,
         onSelectionChange: ((Document?) -> Void)? = nil,
-        detailHeader: ((Document) -> AnyView)? = nil
+        detailHeader: ((Document) -> AnyView)? = nil,
+        externalCreateTrigger: Binding<Bool>? = nil
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -50,6 +54,7 @@ public struct RecordCollectionHostView: View {
         self.initialSelectedDocumentID = initialSelectedDocumentID
         self.onSelectionChange = onSelectionChange
         self.detailHeader = detailHeader
+        self.externalCreateTrigger = externalCreateTrigger
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
     }
 
@@ -57,9 +62,22 @@ public struct RecordCollectionHostView: View {
         contentPane
         .navigationTitle(workspaceTitle)
         .toolbar(content: workspaceToolbar)
+        .sheet(item: $createSheetDraft) { _ in
+            CreateRecordSheet(
+                docType: docType,
+                draft: Binding(
+                    get: { createSheetDraft ?? emptyDocument(for: docType.id) },
+                    set: { createSheetDraft = $0 }
+                ),
+                onCreate: performCreate(_:)
+            )
+        }
         .onAppear {
             restorePersistedViewMode()
             syncSelection(from: initialSelectedDocumentID)
+            if externalCreateTrigger?.wrappedValue == true {
+                consumeExternalCreateTrigger()
+            }
         }
         .onChange(of: selectedViewMode) { _, mode in
             persistViewMode(mode)
@@ -69,6 +87,9 @@ public struct RecordCollectionHostView: View {
         }
         .onChange(of: initialSelectedDocumentID) { _, selectedId in
             syncSelection(from: selectedId)
+        }
+        .onChange(of: externalCreateTrigger?.wrappedValue ?? false) { _, requested in
+            if requested { consumeExternalCreateTrigger() }
         }
     }
 
@@ -127,12 +148,25 @@ public struct RecordCollectionHostView: View {
                 GenericFormView(docType: docType, document: selectedDocumentBinding)
                     .disabled(!allowsDetailEditing)
 
+                if let detailSaveError {
+                    Text(detailSaveError)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MercantisTheme.danger)
+                        .padding(10)
+                        .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.horizontal)
+                }
+
                 if let onSaveDocument {
                     HStack {
                         Spacer()
                         Button("Save") {
-                            if let selectedDocument {
-                                onSaveDocument(selectedDocument)
+                            guard let selectedDocument else { return }
+                            do {
+                                try onSaveDocument(selectedDocument)
+                                detailSaveError = nil
+                            } catch {
+                                detailSaveError = (error as NSError).localizedDescription
                             }
                         }
                         .buttonStyle(MercantisPrimaryButtonStyle())
@@ -184,13 +218,25 @@ public struct RecordCollectionHostView: View {
     }
 
     private func handleCreateDocument() {
+        // Parents (e.g. `DocTypeListView`) return nil from `onCreateDocument`
+        // when they present their own bespoke sheet (`DocTypeBuilderView`).
+        // In that case, `onCreateDocument` has already triggered the sheet as a
+        // side-effect and we simply short-circuit here.
         guard let draft = onCreateDocument?() else { return }
-        if configuration.supportedViewModes.contains(.detail) {
-            selectedViewMode = .detail
-        } else if configuration.supportedViewModes.contains(.browse) {
-            selectedViewMode = .browse
-        }
-        selectDocument(draft)
+        createSheetDraft = draft
+    }
+
+    private func consumeExternalCreateTrigger() {
+        guard let externalCreateTrigger else { return }
+        handleCreateDocument()
+        externalCreateTrigger.wrappedValue = false
+    }
+
+    private func performCreate(_ draft: Document) throws {
+        try onSaveDocument?(draft)
+        // Queue selection for when the fresh `documents` list re-renders with
+        // the new row; `onChange(of: documentIDs)` will pick it up and syncSelection.
+        selectedDocumentID = draft.id
     }
 
     private func syncSelection(from documentID: String?) {
