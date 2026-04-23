@@ -246,27 +246,22 @@ struct MercantisSectionHeading: View {
     var showsDivider: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if showsDivider {
                 Divider()
             }
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(MercantisTheme.tint(for: tone))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(MercantisTheme.textMuted)
                 }
-                Text(title)
-                    .font(MercantisType.compactLabel)
-                    .foregroundStyle(MercantisTheme.tint(for: tone))
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(MercantisTheme.textMuted)
                     .accessibilityAddTraits(.isHeader)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(MercantisTheme.fillSoft(for: tone).opacity(0.9))
-            )
         }
     }
 }

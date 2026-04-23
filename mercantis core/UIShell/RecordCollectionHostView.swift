@@ -122,8 +122,6 @@ public struct RecordCollectionHostView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let selectedDocument, let detailHeader {
                     detailHeader(selectedDocument)
-                        .padding(.horizontal)
-                        .padding(.top, 12)
                 }
 
                 GenericFormView(docType: docType, document: selectedDocumentBinding)

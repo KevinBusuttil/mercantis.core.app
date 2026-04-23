@@ -462,6 +462,16 @@ public struct DocTypeBuilderView: View {
     @State private var validationError: String?
     @State private var didLoadExisting = false
 
+    @State private var selectedSchemaTab: SchemaTab = .fields
+    @State private var selectedFieldID: UUID?
+    @State private var selectedPermissionID: UUID?
+    @State private var selectedIndexID: UUID?
+
+    private enum SchemaTab: String, CaseIterable {
+        case fields = "Fields"
+        case permissions = "Permissions"
+    }
+
     public init(docType: DocType? = nil, onSave: (() -> Void)? = nil) {
         self.existingDocType = docType
         self.onSave = onSave
@@ -481,263 +491,9 @@ public struct DocTypeBuilderView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                MercantisSectionHeading(title: "Basic Info", tone: .accent, symbol: "doc.text")
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
-                        basicInfoInputRow("DocType ID") {
-                            TextField("DocType ID", text: $docTypeId)
-                                .mercantisInput()
-                        }
-                        basicInfoInputRow("Name") {
-                            TextField("Name", text: $name)
-                                .mercantisInput()
-                        }
-                    }
-                    HStack(alignment: .top, spacing: 14) {
-                        basicInfoInputRow("Module") {
-                            Picker("Module", selection: $module) {
-                                if module.isEmpty || !tooling.moduleNames.contains(module) {
-                                    Text("Select Module").tag("")
-                                }
-                                ForEach(tooling.moduleNames, id: \.self) { moduleName in
-                                    Text(moduleName).tag(moduleName)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                            .mercantisPicker()
-                        }
-                        basicInfoInputRow("Title Field") {
-                            TextField("Title Field", text: $titleField)
-                                .mercantisInput()
-                        }
-                    }
-                    basicInfoInputRow("Search Fields") {
-                        TextField("comma-separated", text: $searchFields)
-                            .mercantisInput()
-                    }
-                    HStack(spacing: 18) {
-                        Toggle("Submittable", isOn: $isSubmittable)
-                        Toggle("Child Table", isOn: $isChildTable)
-                    }
-                    .font(MercantisType.sectionHead)
-                    .foregroundStyle(MercantisTheme.textPrimary)
-                }
-                .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(MercantisTheme.surfaceElevated)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(MercantisTheme.accentBorder.opacity(0.65), lineWidth: 1)
-                )
-
-                MercantisSectionHeading(title: "Fields", tone: .info, symbol: "list.bullet.rectangle")
-                VStack(spacing: 10) {
-                    ForEach($fields) { $field in
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(field.key.isEmpty ? "New Field" : field.key)
-                                    .font(MercantisType.compactLabel)
-                                    .foregroundStyle(MercantisTheme.textMuted)
-                                Spacer()
-                            }
-                            labeledFormRow("Key") {
-                                TextField("field_key", text: $field.key)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Label") {
-                                TextField("Field Label", text: $field.label)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Type") {
-                                Picker("Type", selection: $field.type) {
-                                    ForEach(FieldType.allCases, id: \.self) { type in
-                                        Text(type.rawValue).tag(type)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .labelsHidden()
-                                .mercantisPicker()
-                            }
-                            checkboxRow("Required", isOn: $field.required)
-                            labeledFormRow("Options") {
-                                TextField("comma-separated options", text: $field.optionsText)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Linked DocType") {
-                                TextField("Linked DocType", text: $field.linkedDocType)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Child DocType") {
-                                TextField("Child DocType", text: $field.childDocType)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Visibility") {
-                                TextField("Expression", text: $field.visibilityExpression)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Section") {
-                                TextField("Section", text: $field.section)
-                                    .mercantisInput()
-                            }
-                            labeledFormRow("Column") {
-                                Stepper(value: $field.column, in: 0...4) {
-                                    Text(field.column <= 0 ? "Automatic" : "\(field.column)")
-                                }
-                            }
-                            Button("Remove Field", role: .destructive) {
-                                removeField(with: field.id)
-                            }
-                            .buttonStyle(MercantisDestructiveButtonStyle())
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(MercantisTheme.surfaceMuted)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .stroke(MercantisTheme.border.opacity(0.55), lineWidth: 1)
-                        )
-                    }
-
-                    Button("Add Field") {
-                        fields.append(EditableField())
-                    }
-                    .buttonStyle(MercantisSecondaryButtonStyle())
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(MercantisTheme.surface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
-                )
-
-                MercantisSectionHeading(title: "Permission Rules", tone: .warning, symbol: "person.2.badge.gearshape")
-                VStack(spacing: 10) {
-                    ForEach($permissions) { $permission in
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(permission.role.isEmpty ? "New Role Rule" : permission.role)
-                                    .font(MercantisType.compactLabel)
-                                    .foregroundStyle(MercantisTheme.textMuted)
-                                Spacer()
-                            }
-                            labeledFormRow("Role") {
-                                TextField("Role", text: $permission.role)
-                                    .mercantisInput()
-                            }
-                            checkboxRow("Read", isOn: $permission.canRead)
-                            checkboxRow("Write", isOn: $permission.canWrite)
-                            checkboxRow("Create", isOn: $permission.canCreate)
-                            checkboxRow("Delete", isOn: $permission.canDelete)
-                            checkboxRow("Submit", isOn: $permission.canSubmit)
-                            checkboxRow("Amend", isOn: $permission.canAmend)
-                            Button("Remove Permission", role: .destructive) {
-                                removePermission(with: permission.id)
-                            }
-                            .buttonStyle(MercantisDestructiveButtonStyle())
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(MercantisTheme.surfaceMuted)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .stroke(MercantisTheme.border.opacity(0.55), lineWidth: 1)
-                        )
-                    }
-
-                    Button("Add Permission Rule") {
-                        permissions.append(EditablePermission())
-                    }
-                    .buttonStyle(MercantisSecondaryButtonStyle())
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(MercantisTheme.surface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
-                )
-
-                MercantisSectionHeading(title: "Sync Policy", tone: .muted, symbol: "arrow.triangle.2.circlepath")
-                VStack(spacing: 12) {
-                    labeledFormRow("Conflict Resolution") {
-                        Picker("Conflict Resolution", selection: $conflictResolution) {
-                            ForEach(ConflictResolution.allCases, id: \.self) { value in
-                                Text(value.rawValue).tag(value)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .mercantisPicker()
-                    }
-                    checkboxRow("Immutable After Submit", isOn: $immutableAfterSubmit)
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(MercantisTheme.surfaceMuted)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(MercantisTheme.border.opacity(0.5), lineWidth: 1)
-                )
-
-                MercantisSectionHeading(title: "Indexes", tone: .muted, symbol: "magnifyingglass")
-                VStack(spacing: 10) {
-                    ForEach($indexes) { $index in
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(index.fieldKey.isEmpty ? "New Index" : index.fieldKey)
-                                    .font(MercantisType.compactLabel)
-                                    .foregroundStyle(MercantisTheme.textMuted)
-                                Spacer()
-                            }
-                            labeledFormRow("Field Key") {
-                                TextField("Field Key", text: $index.fieldKey)
-                                    .mercantisInput()
-                            }
-                            checkboxRow("Unique", isOn: $index.unique)
-                            Button("Remove Index", role: .destructive) {
-                                removeIndex(with: index.id)
-                            }
-                            .buttonStyle(MercantisDestructiveButtonStyle())
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(MercantisTheme.surfaceMuted)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .stroke(MercantisTheme.border.opacity(0.5), lineWidth: 1)
-                        )
-                    }
-
-                    Button("Add Index") {
-                        indexes.append(EditableIndex())
-                    }
-                    .buttonStyle(MercantisSecondaryButtonStyle())
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(MercantisTheme.surfaceMuted.opacity(0.7))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(MercantisTheme.border.opacity(0.45), lineWidth: 1)
-                )
+                basicInfoGroup
+                schemaGroup
+                configurationGroup
             }
             .padding(16)
         }
@@ -766,6 +522,496 @@ public struct DocTypeBuilderView: View {
             didLoadExisting = true
         }
     }
+
+    // MARK: - Section groups
+
+    private var basicInfoGroup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MercantisSectionHeading(title: "Basic Info", symbol: "doc.text")
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    basicInfoInputRow("DocType ID") {
+                        TextField("DocType ID", text: $docTypeId)
+                            .mercantisInput()
+                    }
+                    basicInfoInputRow("Name") {
+                        TextField("Name", text: $name)
+                            .mercantisInput()
+                    }
+                }
+                HStack(alignment: .top, spacing: 14) {
+                    basicInfoInputRow("Module") {
+                        Picker("Module", selection: $module) {
+                            if module.isEmpty || !tooling.moduleNames.contains(module) {
+                                Text("Select Module").tag("")
+                            }
+                            ForEach(tooling.moduleNames, id: \.self) { moduleName in
+                                Text(moduleName).tag(moduleName)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .mercantisPicker()
+                    }
+                    basicInfoInputRow("Title Field") {
+                        TextField("Title Field", text: $titleField)
+                            .mercantisInput()
+                    }
+                }
+                basicInfoInputRow("Search Fields") {
+                    TextField("comma-separated", text: $searchFields)
+                        .mercantisInput()
+                }
+                HStack(spacing: 18) {
+                    Toggle("Submittable", isOn: $isSubmittable)
+                    Toggle("Child Table", isOn: $isChildTable)
+                }
+                .font(MercantisType.sectionHead)
+                .foregroundStyle(MercantisTheme.textPrimary)
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(MercantisTheme.surfaceElevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+            )
+        }
+    }
+
+    private var schemaGroup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MercantisSectionHeading(title: "Schema", symbol: "list.bullet.rectangle", showsDivider: true)
+
+            Picker("", selection: $selectedSchemaTab) {
+                ForEach(SchemaTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch selectedSchemaTab {
+            case .fields:
+                fieldsCollection
+            case .permissions:
+                permissionsCollection
+            }
+        }
+    }
+
+    private var configurationGroup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MercantisSectionHeading(title: "Configuration", symbol: "gearshape", showsDivider: true)
+
+            VStack(spacing: 12) {
+                labeledFormRow("Conflict Resolution") {
+                    Picker("Conflict Resolution", selection: $conflictResolution) {
+                        ForEach(ConflictResolution.allCases, id: \.self) { value in
+                            Text(value.rawValue).tag(value)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .mercantisPicker()
+                }
+                checkboxRow("Immutable After Submit", isOn: $immutableAfterSubmit)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(MercantisTheme.surfaceMuted)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(MercantisTheme.border.opacity(0.5), lineWidth: 1)
+            )
+
+            MercantisSectionHeading(title: "Indexes", symbol: "magnifyingglass")
+
+            indexesCollection
+        }
+    }
+
+    // MARK: - Collection: Fields
+
+    private var fieldsCollection: some View {
+        VStack(spacing: 0) {
+            if fields.isEmpty {
+                collectionEmptyState(message: "No fields — add the first one", icon: "list.bullet.rectangle")
+            } else {
+                ForEach($fields) { $field in
+                    let isSelected = selectedFieldID == field.id
+                    VStack(spacing: 0) {
+                        fieldSummaryRow(field: field, isSelected: isSelected) {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedFieldID = isSelected ? nil : field.id
+                            }
+                        }
+                        if isSelected {
+                            fieldEditorBody(for: $field)
+                        }
+                    }
+                    Divider()
+                }
+            }
+
+            Button {
+                let newField = EditableField()
+                fields.append(newField)
+                selectedFieldID = newField.id
+            } label: {
+                Label("Add Field", systemImage: "plus")
+            }
+            .buttonStyle(MercantisSecondaryButtonStyle())
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(MercantisTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private func fieldSummaryRow(field: EditableField, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: fieldIcon(for: field.type))
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                    .foregroundStyle(MercantisTheme.textMuted)
+
+                Text(field.key.isEmpty ? "(no key)" : field.key)
+                    .font(MercantisType.body)
+                    .foregroundStyle(field.key.isEmpty ? MercantisTheme.textMuted : MercantisTheme.textPrimary)
+
+                Text(field.type.rawValue)
+                    .font(MercantisType.meta)
+                    .foregroundStyle(MercantisTheme.textMuted)
+
+                Spacer()
+
+                if field.required {
+                    Text("Required")
+                        .mercantisSemanticBadge(tone: .warning)
+                }
+
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(MercantisTheme.textMuted)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? MercantisTheme.selectionBackground : Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func fieldEditorBody(for field: Binding<EditableField>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            labeledFormRow("Key") {
+                TextField("field_key", text: field.key)
+                    .mercantisInput()
+            }
+            labeledFormRow("Label") {
+                TextField("Field Label", text: field.label)
+                    .mercantisInput()
+            }
+            labeledFormRow("Type") {
+                Picker("Type", selection: field.type) {
+                    ForEach(FieldType.allCases, id: \.self) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .mercantisPicker()
+            }
+            checkboxRow("Required", isOn: field.required)
+            labeledFormRow("Options") {
+                TextField("comma-separated options", text: field.optionsText)
+                    .mercantisInput()
+            }
+            labeledFormRow("Linked DocType") {
+                TextField("Linked DocType", text: field.linkedDocType)
+                    .mercantisInput()
+            }
+            labeledFormRow("Child DocType") {
+                TextField("Child DocType", text: field.childDocType)
+                    .mercantisInput()
+            }
+            labeledFormRow("Visibility") {
+                TextField("Expression", text: field.visibilityExpression)
+                    .mercantisInput()
+            }
+            labeledFormRow("Section") {
+                TextField("Section", text: field.section)
+                    .mercantisInput()
+            }
+            labeledFormRow("Column") {
+                Stepper(value: field.column, in: 0...4) {
+                    Text(field.column.wrappedValue <= 0 ? "Automatic" : "\(field.column.wrappedValue)")
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Remove Field", role: .destructive) {
+                    removeField(with: field.wrappedValue.id)
+                    selectedFieldID = nil
+                }
+                .buttonStyle(MercantisDestructiveButtonStyle())
+            }
+        }
+        .padding(14)
+        .background(MercantisTheme.surfaceMuted)
+    }
+
+    // MARK: - Collection: Permissions
+
+    private var permissionsCollection: some View {
+        VStack(spacing: 0) {
+            if permissions.isEmpty {
+                collectionEmptyState(message: "No permission rules — add the first one", icon: "person.2.badge.gearshape")
+            } else {
+                ForEach($permissions) { $permission in
+                    let isSelected = selectedPermissionID == permission.id
+                    VStack(spacing: 0) {
+                        permissionSummaryRow(permission: permission, isSelected: isSelected) {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedPermissionID = isSelected ? nil : permission.id
+                            }
+                        }
+                        if isSelected {
+                            permissionEditorBody(for: $permission)
+                        }
+                    }
+                    Divider()
+                }
+            }
+
+            Button {
+                let newPermission = EditablePermission()
+                permissions.append(newPermission)
+                selectedPermissionID = newPermission.id
+            } label: {
+                Label("Add Permission Rule", systemImage: "plus")
+            }
+            .buttonStyle(MercantisSecondaryButtonStyle())
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(MercantisTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private func permissionSummaryRow(permission: EditablePermission, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.badge.key")
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                    .foregroundStyle(MercantisTheme.textMuted)
+
+                Text(permission.role.isEmpty ? "(no role)" : permission.role)
+                    .font(MercantisType.body)
+                    .foregroundStyle(permission.role.isEmpty ? MercantisTheme.textMuted : MercantisTheme.textPrimary)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    if permission.canRead    { permBadge("R") }
+                    if permission.canWrite   { permBadge("W") }
+                    if permission.canCreate  { permBadge("C") }
+                    if permission.canDelete  { permBadge("D") }
+                    if permission.canSubmit  { permBadge("S") }
+                    if permission.canAmend   { permBadge("A") }
+                }
+
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(MercantisTheme.textMuted)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? MercantisTheme.selectionBackground : Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func permissionEditorBody(for permission: Binding<EditablePermission>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            labeledFormRow("Role") {
+                TextField("Role", text: permission.role)
+                    .mercantisInput()
+            }
+            checkboxRow("Read",   isOn: permission.canRead)
+            checkboxRow("Write",  isOn: permission.canWrite)
+            checkboxRow("Create", isOn: permission.canCreate)
+            checkboxRow("Delete", isOn: permission.canDelete)
+            checkboxRow("Submit", isOn: permission.canSubmit)
+            checkboxRow("Amend",  isOn: permission.canAmend)
+
+            HStack {
+                Spacer()
+                Button("Remove Permission", role: .destructive) {
+                    removePermission(with: permission.wrappedValue.id)
+                    selectedPermissionID = nil
+                }
+                .buttonStyle(MercantisDestructiveButtonStyle())
+            }
+        }
+        .padding(14)
+        .background(MercantisTheme.surfaceMuted)
+    }
+
+    // MARK: - Collection: Indexes
+
+    private var indexesCollection: some View {
+        VStack(spacing: 0) {
+            if indexes.isEmpty {
+                collectionEmptyState(message: "No indexes defined", icon: "magnifyingglass")
+            } else {
+                ForEach($indexes) { $index in
+                    let isSelected = selectedIndexID == index.id
+                    VStack(spacing: 0) {
+                        indexSummaryRow(index: index, isSelected: isSelected) {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedIndexID = isSelected ? nil : index.id
+                            }
+                        }
+                        if isSelected {
+                            indexEditorBody(for: $index)
+                        }
+                    }
+                    Divider()
+                }
+            }
+
+            Button {
+                let newIndex = EditableIndex()
+                indexes.append(newIndex)
+                selectedIndexID = newIndex.id
+            } label: {
+                Label("Add Index", systemImage: "plus")
+            }
+            .buttonStyle(MercantisSecondaryButtonStyle())
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(MercantisTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(MercantisTheme.border.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private func indexSummaryRow(index: EditableIndex, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                    .foregroundStyle(MercantisTheme.textMuted)
+
+                Text(index.fieldKey.isEmpty ? "(no key)" : index.fieldKey)
+                    .font(MercantisType.body)
+                    .foregroundStyle(index.fieldKey.isEmpty ? MercantisTheme.textMuted : MercantisTheme.textPrimary)
+
+                Spacer()
+
+                if index.unique {
+                    Text("Unique")
+                        .mercantisSemanticBadge(tone: .info)
+                }
+
+                Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(MercantisTheme.textMuted)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? MercantisTheme.selectionBackground : Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func indexEditorBody(for index: Binding<EditableIndex>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            labeledFormRow("Field Key") {
+                TextField("Field Key", text: index.fieldKey)
+                    .mercantisInput()
+            }
+            checkboxRow("Unique", isOn: index.unique)
+
+            HStack {
+                Spacer()
+                Button("Remove Index", role: .destructive) {
+                    removeIndex(with: index.wrappedValue.id)
+                    selectedIndexID = nil
+                }
+                .buttonStyle(MercantisDestructiveButtonStyle())
+            }
+        }
+        .padding(14)
+        .background(MercantisTheme.surfaceMuted)
+    }
+
+    // MARK: - Shared collection helpers
+
+    private func collectionEmptyState(message: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(MercantisTheme.textMuted)
+            Text(message)
+                .font(MercantisType.body)
+                .foregroundStyle(MercantisTheme.textMuted)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func permBadge(_ letter: String) -> some View {
+        Text(letter)
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .foregroundStyle(MercantisTheme.textMuted)
+            .frame(width: 16, height: 16)
+            .background(MercantisTheme.border.opacity(0.4), in: RoundedRectangle(cornerRadius: 3))
+    }
+
+    private func fieldIcon(for type: FieldType) -> String {
+        switch type {
+        case .text, .longText:          return "character.textbox"
+        case .number, .decimal:         return "number"
+        case .currency:                 return "dollarsign"
+        case .boolean:                  return "checkmark.square"
+        case .date:                     return "calendar"
+        case .datetime:                 return "calendar.badge.clock"
+        case .email:                    return "envelope"
+        case .phone:                    return "phone"
+        case .select, .multiselect:     return "list.bullet"
+        case .link:                     return "link"
+        case .table:                    return "tablecells"
+        case .formula:                  return "function"
+        case .attachment:               return "paperclip"
+        case .status:                   return "flag"
+        }
+    }
+
+    // MARK: - Builder header
 
     private var isCreatingDocType: Bool {
         existingDocType == nil
@@ -811,6 +1057,8 @@ public struct DocTypeBuilderView: View {
         )
     }
 
+    // MARK: - Form helpers
+
     private func basicInfoInputRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
@@ -846,6 +1094,8 @@ public struct DocTypeBuilderView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    // MARK: - Mutation helpers
 
     private func removeField(with id: UUID) {
         fields.removeAll { $0.id == id }

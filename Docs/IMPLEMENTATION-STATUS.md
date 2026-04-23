@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-22_
+_Last updated: 2026-04-23_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -153,9 +153,22 @@ The `ValidationPipeline`'s `PermissionStage` calls into `PermissionEngine.canPer
 ### 2.17 UI Shell — §5.1
 
 - **Shipped** — `NavigationShell`, `CommandBarView`, `GenericFormView`, `GenericListView`, `FormBuilderView`, `DocTypeBuilderView`, `DocTypeListView`. Three-pane FormBuilder with dedicated `WindowGroup` works.
-- **Note** — UIShell is by far the largest subsystem (~4,900 lines — `NavigationShell.swift` alone is 925, `DocTypeBuilderView.swift` 905, `FormBuilderView.swift` 786). The core engine (DocumentEngine + SyncEngine + ExpressionEngine) totals ~1,850 lines. The balance of effort is ~60% UI, ~20% engine, ~20% everything else.
+- **Note** — UIShell is by far the largest subsystem. The core engine (DocumentEngine + SyncEngine + ExpressionEngine) totals ~1,850 lines. The balance of effort is ~60% UI, ~20% engine, ~20% everything else.
 - **Partial** — `AppManifest.dashboards: [DashboardDefinition]` decodes into the manifest, but there is no `DashboardView` or dashboard rendering code. The type exists; the runtime does not.
-- **Footgun** — `DocTypeBuilderView.swift:35` does `fatalError` when the metadata DB won't open. Acceptable for a builder surface, but it's the only `fatalError` in the codebase.
+- **Footgun** — `DocTypeBuilderView.swift` does `fatalError` when the metadata DB won't open. Acceptable for a builder surface, but it's the only `fatalError` in the codebase.
+
+#### Metadata workspace UX contract (shipped 2026-04-23)
+
+`Modules`, `DocTypes`, and builder surfaces now share a consistent metadata-workspace UX language:
+
+| Component | Role |
+|---|---|
+| `MercantisSectionHeading` | Structural section headers — uppercase tracking text, no background fill. Clearly non-interactive. |
+| `SelectedRecordHeader` | Workspace entity banner — surface background, bottom divider, title + subtitle + badge row. Used in Module and DocType detail views. |
+| `RecordCollectionHostView` + `RecordWorkspaceToolbarContent` | Shared workspace chrome for all metadata record collections. |
+| `DocTypeBuilderView` | Restructured into three groups: Basic Info / Schema (tabbed: Fields, Permissions) / Configuration (Sync + Indexes). Collections use compact list rows with inline expand-on-select editors. |
+
+Both `Modules` and `DocTypes` route through `RecordCollectionHostView`, so all shared chrome improvements (toolbar, view modes, `SelectedRecordHeader`) apply to both without duplication.
 
 ### 2.18 Reporting — §5.2
 
