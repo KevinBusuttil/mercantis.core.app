@@ -12,6 +12,16 @@
 		0AA63F262F8C4305006B68B5 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 0AA63F252F8C4305006B68B5 /* GRDB */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0AECE99B2F99DF970029DE37 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AA63F0E2F8C4304006B68B5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0AA63F152F8C4305006B68B5;
+			remoteInfo = "mercantis core";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		0A49A64E2F93B67F00371EE1 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -28,6 +38,7 @@
 		0A49A6502F93B67F00371EE1 /* MercantisCLI */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MercantisCLI; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A49A6822F93B75700371EE1 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		0AA63F162F8C4305006B68B5 /* mercantis core.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mercantis core.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0AECE9972F99DF970029DE37 /* mercantis coreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "mercantis coreTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -54,6 +65,11 @@
 			path = "mercantis core";
 			sourceTree = "<group>";
 		};
+		0AECE9982F99DF970029DE37 /* mercantis coreTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "mercantis coreTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +90,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0AECE9942F99DF970029DE37 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -90,6 +113,7 @@
 			children = (
 				0AA63F182F8C4305006B68B5 /* mercantis core */,
 				0A49A6512F93B67F00371EE1 /* MercantisCLI */,
+				0AECE9982F99DF970029DE37 /* mercantis coreTests */,
 				0A49A6812F93B75700371EE1 /* Frameworks */,
 				0AA63F172F8C4305006B68B5 /* Products */,
 			);
@@ -100,6 +124,7 @@
 			children = (
 				0AA63F162F8C4305006B68B5 /* mercantis core.app */,
 				0A49A6502F93B67F00371EE1 /* MercantisCLI */,
+				0AECE9972F99DF970029DE37 /* mercantis coreTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +178,29 @@
 			productReference = 0AA63F162F8C4305006B68B5 /* mercantis core.app */;
 			productType = "com.apple.product-type.application";
 		};
+		0AECE9962F99DF970029DE37 /* mercantis coreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0AECE99F2F99DF970029DE37 /* Build configuration list for PBXNativeTarget "mercantis coreTests" */;
+			buildPhases = (
+				0AECE9932F99DF970029DE37 /* Sources */,
+				0AECE9942F99DF970029DE37 /* Frameworks */,
+				0AECE9952F99DF970029DE37 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0AECE99C2F99DF970029DE37 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0AECE9982F99DF970029DE37 /* mercantis coreTests */,
+			);
+			name = "mercantis coreTests";
+			packageProductDependencies = (
+			);
+			productName = "mercantis coreTests";
+			productReference = 0AECE9972F99DF970029DE37 /* mercantis coreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -168,6 +216,10 @@
 					};
 					0AA63F152F8C4305006B68B5 = {
 						CreatedOnToolsVersion = 26.4;
+					};
+					0AECE9962F99DF970029DE37 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 0AA63F152F8C4305006B68B5;
 					};
 				};
 			};
@@ -191,12 +243,20 @@
 			targets = (
 				0AA63F152F8C4305006B68B5 /* mercantis core */,
 				0A49A64F2F93B67F00371EE1 /* MercantisCLI */,
+				0AECE9962F99DF970029DE37 /* mercantis coreTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		0AA63F142F8C4305006B68B5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0AECE9952F99DF970029DE37 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -220,7 +280,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0AECE9932F99DF970029DE37 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0AECE99C2F99DF970029DE37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0AA63F152F8C4305006B68B5 /* mercantis core */;
+			targetProxy = 0AECE99B2F99DF970029DE37 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0A49A6552F93B67F00371EE1 /* Debug */ = {
@@ -447,6 +522,48 @@
 			};
 			name = Release;
 		};
+		0AECE99D2F99DF970029DE37 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.neuradix.mercantis-coreTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/mercantis core.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/mercantis core";
+			};
+			name = Debug;
+		};
+		0AECE99E2F99DF970029DE37 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.neuradix.mercantis-coreTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/mercantis core.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/mercantis core";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -473,6 +590,15 @@
 			buildConfigurations = (
 				0AA63F222F8C4305006B68B5 /* Debug */,
 				0AA63F232F8C4305006B68B5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0AECE99F2F99DF970029DE37 /* Build configuration list for PBXNativeTarget "mercantis coreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0AECE99D2F99DF970029DE37 /* Debug */,
+				0AECE99E2F99DF970029DE37 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
