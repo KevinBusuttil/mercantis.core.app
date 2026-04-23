@@ -17,6 +17,10 @@ final class UIShellRouter: ObservableObject {
     @Published var selectedSection: NavigationSection? = .home
     @Published var selectedModule: String?
     @Published var selectedItem: WorkspaceSelection?
+    /// Signals "the user has requested to create a new record of this DocType".
+    /// Workspaces observe this and present the shared `CreateRecordSheet`.
+    /// Set by Quick Create / Command Bar; cleared by the workspace that consumes it.
+    @Published var pendingCreate: String?
 
     func openDocTypes() {
         selectedSection = .docTypes
@@ -39,6 +43,24 @@ final class UIShellRouter: ObservableObject {
         selectedSection = .dashboards
         selectedModule = module
         selectedItem = .dashboard(dashboardId)
+    }
+
+    /// Request creation of a new record of `docTypeId`. The workspace responsible for that
+    /// DocType is navigated to first so it renders before consuming the signal.
+    func requestCreate(docTypeId: String, module: String?) {
+        if docTypeId == BuiltInDocTypes.docType.id {
+            openDocTypes()
+        } else {
+            openDocType(docTypeId, module: module)
+        }
+        pendingCreate = docTypeId
+    }
+
+    /// Called by a workspace after it has presented the create sheet for `docTypeId`.
+    func consumePendingCreate(_ docTypeId: String) {
+        if pendingCreate == docTypeId {
+            pendingCreate = nil
+        }
     }
 }
 
@@ -309,8 +331,7 @@ public struct NavigationShell: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], spacing: 8) {
                 ForEach(tooling.navigableDocTypes.prefix(8), id: \.id) { docType in
                     Button("New \(docType.name)") {
-                        router.openDocType(docType.id, module: docType.module)
-                        activeDocument = tooling.createDraftDocument(for: docType)
+                        router.requestCreate(docTypeId: docType.id, module: docType.module)
                         addRecent(.docType(docType.id))
                     }
                     .buttonStyle(MercantisSecondaryButtonStyle())
@@ -372,12 +393,13 @@ public struct NavigationShell: View {
                 configuration: recordCollectionConfiguration(),
                 onCreateDocument: {
                     let draft = tooling.createDraftDocument(for: docType)
-                    activeDocument = draft
                     addRecent(.docType(docType.id))
                     return draft
                 },
                 onSaveDocument: { document in
-                    try? tooling.saveDocument(document)
+                    try tooling.saveDocument(document)
+                    activeDocument = document
+                    addRecent(.record(docTypeId: docType.id, documentId: document.id))
                 },
                 initialSelectedDocumentID: activeDocument?.id,
                 onSelectionChange: { selected in
@@ -388,12 +410,24 @@ public struct NavigationShell: View {
                 },
                 detailHeader: docType.id == BuiltInDocTypes.module.id
                     ? { document in AnyView(moduleSelectedRecordHeader(for: document)) }
-                    : nil
+                    : nil,
+                externalCreateTrigger: createTriggerBinding(for: docType.id)
             )
         } else {
             Text("DocType not found")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// Returns a `Binding<Bool>` that is `true` when the router is requesting a new record
+    /// of `docTypeId` and resets both the binding and the router's signal when consumed.
+    private func createTriggerBinding(for docTypeId: String) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { router.pendingCreate == docTypeId },
+            set: { newValue in
+                if !newValue { router.consumePendingCreate(docTypeId) }
+            }
+        )
     }
 
     @ViewBuilder
@@ -582,8 +616,7 @@ public struct NavigationShell: View {
                 keywords: [docType.name, docType.id],
                 isQuickAction: true
             ) {
-                router.openDocType(docType.id, module: docType.module)
-                activeDocument = tooling.createDraftDocument(for: docType)
+                router.requestCreate(docTypeId: docType.id, module: docType.module)
             }
         }
 

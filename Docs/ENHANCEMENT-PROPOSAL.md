@@ -202,6 +202,29 @@ canAccessRow(document:, userRoles:, rowExpression: String?) -> Bool
 
 **Non-goals respected:** no nav model change, no design-lab promotion, no fake dashboards, no extra color, FormBuilderView left structurally intact.
 
+### P2.0a — Unify record creation as a modal sheet across all entry points [S–M, low risk] — UX ✅ shipped 2026-04-23
+
+**Rationale:** "New" currently does three different things depending on where the user invokes it.
+
+| Entry point | Today | File |
+|---|---|---|
+| DocTypes workspace → New | `.sheet` presents `DocTypeBuilderView` (correct) | `DocTypeListView.swift:31-34, 60-71` |
+| Quick Create → "New Doctype" | `router.openDocType(...)` + pre-loads `activeDocument` in the generic `docTypeDetail` path, bypassing `DocTypeListView` | `NavigationShell.swift:310-317, 364-397` |
+| Command Bar → "New <X>" | Same as Quick Create | `NavigationShell.swift:575-588` |
+| Generic workspace toolbar → New | `RecordCollectionHostView.handleCreateDocument()` switches to `.detail` view mode and inlines `GenericFormView` | `RecordCollectionHostView.swift:186-194` |
+
+So for `Doctype` specifically — and for every other DocType — whether the user sees a proper modal or an inline-draft-in-the-content-pane depends on *which door they walked through*. This is the opposite of the macOS HIG pattern (Contacts, Reminders, Calendar, Things): "+" always presents a sheet; double-clicking an existing row edits inline.
+
+**Implemented:**
+
+- `CreateRecordSheet` — new sheet primitive (`UIShell/CreateRecordSheet.swift`) that hosts `GenericFormView` on a draft document with a macOS-style header (title "New <DocType.name>", module subtitle), inline error surface, and a Cancel (⎋) / Create (⌘↩) footer. Sheet dismisses on success; the draft is selected in the list via `selectedDocumentID`.
+- `RecordCollectionHostView` — `handleCreateDocument` no longer mutates `selectedViewMode`. Instead it sets `createSheetDraft`, which drives a `.sheet(item:)` presenting `CreateRecordSheet`. `onSaveDocument` is now `(Document) throws -> Void` so both the create sheet and the detail-pane Save can surface errors inline (previous code `try?`-swallowed them). A new optional `externalCreateTrigger: Binding<Bool>?` lets the workspace react to router-driven create requests the same way the toolbar "New" does.
+- `UIShellRouter` — new `pendingCreate: String?` published property plus `requestCreate(docTypeId:module:)` / `consumePendingCreate(_:)`. `requestCreate` navigates to the workspace responsible for that DocType *before* setting the signal so the workspace is already rendered when it observes it. The `Doctype` built-in is specifically routed through `openDocTypes()` so `DocTypeListView` — not the generic `docTypeDetail` — handles the request; this closes the gap where Quick Create → "New Doctype" previously went through the generic path.
+- Quick Create (`NavigationShell.swift`) and Command Bar now call `router.requestCreate(...)` instead of `router.openDocType(...)` + `activeDocument = tooling.createDraftDocument(...)`. No more pre-loaded inline drafts — every "New X" produces the same sheet.
+- `DocTypeListView` keeps its bespoke `DocTypeBuilderView` sheet (authoring DocType metadata is not a generic-form task) but now also listens to `router.pendingCreate == BuiltInDocTypes.docType.id` via the same `externalCreateTrigger`. Its `onCreateDocument` continues to return `nil` (short-circuiting the host's generic sheet) and flip `showNewDocTypeSheet = true`, so one trigger path covers both toolbar-invoked and Quick-Create-invoked creation.
+
+**Non-goals respected:** no changes to `FormBuilderView` or the visual-builder window; editing remains inline in detail/browse; no nav model changes beyond the `pendingCreate` signal.
+
 ### P2.1 — Turn the ExpressionEvaluator into a real AST [M, low risk] — ADR-017
 
 `ARCHITECTURE.md` §4.7 already advertises this ("typed AST", static field-reference analysis, constant folding, source positions). Lift the current evaluator to a two-phase design:
