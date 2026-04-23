@@ -94,9 +94,9 @@ The `ValidationPipeline`'s `PermissionStage` calls into `PermissionEngine.canPer
 
 - **Shipped** — Push of pending mutations, pull of remote mutations, per-DocType sync-policy lookup, `ConflictResolver` with LWW / VCM / AO.
 - **Shipped** — `CloudAdapter` protocol + `NoOpCloudAdapter`.
-- **Partial** — `lastServerSequence` is kept in-memory only. A code comment says "a production version would store this in SQLite". Every process restart will re-pull everything the adapter knows about.
-- **Partial** — Remote mutations are stored in `sync_queue` with status `applied`, never pruned. The queue grows without bound.
-- **Partial** — `applyRemoteUpsert` overwrites the local document row without running it through `DocumentEngine.save`, so the `ValidationPipeline`, `DocumentVersion` diff tracking, and submit-immutability guard do **not** fire on sync-received writes. This is a real divergence from ADR-024 ("on every save").
+- **Shipped (P0.2)** — Remote upserts are now routed through `DocumentEngine.applyRemote(_:from:)`, so `ValidationPipeline`, submit-immutability guard, and `DocumentVersion` diff recording all fire on sync-received writes. `UpsertPayload` has been replaced by encoding the full `Document` into the mutation, so push carries a round-trippable payload.
+- **Partial** — `lastServerSequence` is kept in-memory only. A code comment says "a production version would store this in SQLite". Every process restart will re-pull everything the adapter knows about. (P0.3)
+- **Partial** — Remote mutations are stored in `sync_queue` with status `applied`, never pruned. The queue grows without bound. (P0.4)
 - **Partial** — `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)` appends a `resolveConflict` mutation but does not load the chosen version's payload — the document row is left as whatever the last write set it to.
 
 ### 2.7 Expression Engine — §4.7 / ADR-017

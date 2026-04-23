@@ -291,6 +291,148 @@ final class DocumentEngineTests: XCTestCase {
 
     // MARK: - Amend (ADR-013)
 
+    // MARK: - Apply Remote (P0.2 — routes sync-received writes through DocumentEngine)
+
+    private func remoteMutation(for doc: Document, userId: String = "remote-user") throws -> MutationRecord {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return MutationRecord(
+            id: UUID(),
+            type: .upsertDocument,
+            payload: try encoder.encode(doc),
+            deviceId: "remote-device",
+            userId: userId,
+            localTimestamp: Date(),
+            syncVersion: doc.syncVersion,
+            status: .applied
+        )
+    }
+
+    func testApplyRemotePersistsDocumentAndForcesSyncedState() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let doc = TestSupport.makeDocument(
+            id: "r-1",
+            fields: ["title": .string("From remote")],
+            syncVersion: 7
+        )
+        let mutation = try remoteMutation(for: doc)
+
+        try harness.engine.applyRemote(doc, from: mutation)
+
+        let fetched = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "r-1"))
+        XCTAssertEqual(fetched.fields["title"], .string("From remote"))
+        XCTAssertEqual(fetched.syncState, .synced)
+        XCTAssertEqual(fetched.syncVersion, 7)
+    }
+
+    func testApplyRemoteDoesNotAppendToSyncQueue() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let doc = TestSupport.makeDocument(id: "r-2", fields: ["title": .string("x")])
+        let mutation = try remoteMutation(for: doc)
+
+        XCTAssertEqual(try syncQueueCount(), 0)
+        try harness.engine.applyRemote(doc, from: mutation)
+        XCTAssertEqual(try syncQueueCount(), 0,
+                       "applyRemote must not append a new mutation — the received mutation is the record")
+    }
+
+    func testApplyRemoteRecordsDocumentVersion() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        // Seed a local version so the remote apply produces a diff.
+        try harness.engine.save(TestSupport.makeDocument(id: "r-3",
+                                                         fields: ["title": .string("v1")]))
+
+        let remote = TestSupport.makeDocument(id: "r-3",
+                                              fields: ["title": .string("v2")],
+                                              syncVersion: 5)
+        let mutation = try remoteMutation(for: remote)
+        try harness.engine.applyRemote(remote, from: mutation)
+
+        XCTAssertGreaterThanOrEqual(try documentVersionCount(for: "r-3"), 2,
+                                    "one version from save, one from applyRemote")
+    }
+
+    func testApplyRemoteRunsValidationPipelineAndRejectsInvalidRemoteDocuments() throws {
+        let docType = TestSupport.makeDocType(fields: [
+            TestSupport.textField("title", required: true)
+        ])
+        try harness.registry.register(docType)
+
+        // Remote document missing the required `title`.
+        let doc = TestSupport.makeDocument(id: "r-bad", fields: [:])
+        let mutation = try remoteMutation(for: doc)
+
+        XCTAssertThrowsError(try harness.engine.applyRemote(doc, from: mutation)) { error in
+            guard case DocumentEngine.DocumentEngineError.validationFailed = error else {
+                return XCTFail("expected validationFailed, got \(error)")
+            }
+        }
+        XCTAssertNil(try harness.engine.fetch(docType: "Note", id: "r-bad"),
+                     "rejected remote writes must not touch the documents table")
+    }
+
+    func testApplyRemoteEnforcesSubmitImmutabilityOnPeerMutations() throws {
+        let docType = TestSupport.makeDocType(
+            fields: [
+                TestSupport.textField("title", required: true, allowOnSubmit: false),
+                TestSupport.textField("memo", allowOnSubmit: true)
+            ],
+            isSubmittable: true
+        )
+        try harness.registry.register(docType)
+
+        // Save and submit locally.
+        var doc = TestSupport.makeDocument(
+            id: "r-imm",
+            fields: ["title": .string("Final"), "memo": .string("")]
+        )
+        try harness.engine.save(doc)
+        doc = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "r-imm"))
+        try harness.engine.submit(&doc)
+
+        // Craft a remote mutation that mutates a non-allowOnSubmit field.
+        var tampered = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "r-imm"))
+        tampered.fields["title"] = .string("Tampered by peer")
+        let mutation = try remoteMutation(for: tampered)
+
+        XCTAssertThrowsError(try harness.engine.applyRemote(tampered, from: mutation)) { error in
+            guard case DocumentEngine.DocumentEngineError.fieldImmutableAfterSubmit = error else {
+                return XCTFail("expected fieldImmutableAfterSubmit, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - Mutation payload format (regression for UpsertPayload → full Document)
+
+    func testSavedMutationPayloadEncodesFullDocument() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "payload-1",
+            fields: ["title": .string("Round-trip me")]
+        ))
+
+        let payloadString = try XCTUnwrap(harness.database.read { db in
+            try String.fetchOne(db,
+                sql: "SELECT payload FROM sync_queue WHERE type = 'upsertDocument' ORDER BY localTimestamp DESC LIMIT 1"
+            )
+        })
+        let data = try XCTUnwrap(payloadString.data(using: .utf8))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(Document.self, from: data)
+
+        XCTAssertEqual(decoded.id, "payload-1")
+        XCTAssertEqual(decoded.fields["title"], .string("Round-trip me"))
+    }
+
     func testAmendCreatesDraftWithAmendedFromReference() throws {
         let docType = TestSupport.makeDocType(
             fields: [TestSupport.textField("title", required: true)],
