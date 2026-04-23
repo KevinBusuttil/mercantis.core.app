@@ -56,13 +56,27 @@ Coverage in `SyncEngineTests.swift`:
 
 The `sync_state` table is a general-purpose key/value store; P0.4 (queue pruning) is expected to add additional keys (e.g., last prune watermark) here without another migration.
 
-### P0.4 — Prune `sync_queue` on acknowledgement [S, low risk] — follow-up from ARCHITECTURE-CHANGELOG
+### P0.4 — Prune `sync_queue` on acknowledgement [S, low risk] — ADR-028 *(done)*
 
-Both local `.pushed` and remote `.applied` rows accumulate forever. Add a retention policy:
-- Acknowledged local mutations older than N (default 30?) days → delete.
-- Applied remote mutations older than the highest persisted `lastServerSequence` → delete.
+`SyncEngine.pruneSyncQueue(force:)` now deletes acknowledged mutations under a `SyncQueuePruneConfig` policy:
 
-Done transactionally with vacuum budgeting (don't vacuum on every call). This is the "sync queue pruning" ADR candidate listed in ARCHITECTURE-CHANGELOG; promote it to an ADR as part of the changeset.
+- `.pushed` (local, server-acknowledged) rows older than `pushedRetention` (default 30 days) are deleted.
+- `.applied` (remote, locally-applied) rows older than `appliedRetention` (default 30 days) are deleted.
+- `.pending` and `.conflicted` rows are **never** deleted regardless of age.
+
+Throttling: a persisted `"syncQueuePrunedAt"` key in the v4 `sync_state` table skips the run if the previous prune was within `pruneInterval` (default 24 hours). `force: true` bypasses the throttle.
+
+No new timers — `pushPendingMutations()` and `pullAndApplyRemoteMutations()` call `pruneSyncQueue(force: false)` at the end of each successful run, so pruning piggybacks on existing sync activity. No `VACUUM`: the word "vacuum" in this item's original wording referred to scheduling, not the SQLite command.
+
+Decisions are captured in ADR-028. Coverage in `SyncEngineTests.swift`:
+
+- `testPruneRemovesPushedRowsOlderThanRetention`
+- `testPruneRemovesAppliedRowsOlderThanRetention`
+- `testPruneNeverDeletesPendingOrConflictedRows`
+- `testPruneThrottlesWhenCalledWithinInterval`
+- `testForcePruneBypassesThrottle`
+- `testPruneWatermarkIsPersistedToSyncState`
+- `testPushPendingMutationsOpportunisticallyPrunesOldPushedRows`
 
 ### P0.5 — Align the Permissions doc with the code (or the other way around) [S, medium risk] — ADR-011
 
@@ -379,8 +393,8 @@ A 4–6 week plan if one engineer is the target:
 
 | Week | Work |
 |---|---|
-| 1 | P0.1 test target; P0.6 event bus cleanup; P0.7 doc cleanup; P0.9 unary minus. |
-| 2 | P0.2 sync-through-engine; P0.3 persisted sequence; P0.4 queue pruning + ADR. |
+| 1 | P0.1 test target ✅; P0.6 event bus cleanup ✅; P0.7 doc cleanup ✅; P0.9 unary minus ✅. |
+| 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
 | 3 | P0.5A (rewrite permissions doc) or P0.5B (implement chain); P0.8 version reader; P1.5 real validation stages. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
 | 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
