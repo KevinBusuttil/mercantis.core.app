@@ -263,7 +263,7 @@ This item should not be scoped as "add a view that renders some widgets". It sho
 
 Minimum viable capabilities for an ERP module home page and operational dashboard:
 
-- **Number / KPI widget** — a single labelled aggregate (count, sum, latest value) sourced from `ReportEngine.execute` or `DocumentEngine.list`. Supports colour / threshold colouring.
+- **Number / KPI widget** — a single labelled aggregate (count, sum, latest value) sourced from `ReportEngine.execute` or `DocumentEngine.list`. Supports configurable threshold colouring.
 - **List widget** — compact recent-records or pending-tasks surface with a configurable DocType, filter set, and column list. Navigates into the relevant workspace row on tap.
 - **Chart-ready extensibility** — a widget protocol slot that accepts an external chart data provider. The runtime does not need to bundle a charting library, but it must expose a stable protocol so Hub or a third-party module can satisfy it without forking the dashboard layer.
 - **Drilldown / navigation hooks** — tapping a KPI or a list row calls into `UIShellRouter` to open a filtered `GenericListView` or a specific document. This requires `UIShellRouter` integration at the widget protocol level.
@@ -313,7 +313,67 @@ The subsystems explicitly recorded as missing in `IMPLEMENTATION-STATUS.md` are 
 
 The conclusion is: **start Hub, extend Core as you hit walls, and treat the gap table above as the real completion criteria for ADR-007 — not a reason to delay starting**.
 
-### Proposed sequencing
+### P2.8 — Richer field/control model for ERP-grade UI [M, medium risk] — ADR-003 / §4.1
+
+`GenericFormView` renders metadata-driven forms today from the `FieldType` taxonomy in `FieldDefinition.swift`. The current set — `text`, `longText`, `number`, `decimal`, `currency`, `boolean`, `date`, `datetime`, `email`, `phone`, `select`, `multiselect`, `link`, `table`, `attachment`, `status`, `formula` — is a solid CRUD baseline. It is not sufficient for an ambitious ERP or a good POS.
+
+`FieldValue` is even narrower: `.string`, `.int`, `.double`, `.bool`, `.null`. Date, binary, and array values are not representable without encoding them as strings — which is fragile and defeats type safety downstream (expression evaluation, validation rules, FieldValue expansion in P1.6).
+
+The gap does not need to be closed all at once. Tackle it field-type by field-type as Hub surfaces concrete UI needs. Candidates for near-term addition:
+
+- **Rich text / HTML content** — `longText` renders as a plain `TextEditor`. Structured long-form content (terms, notes, descriptions) benefits from a richer input surface.
+- **Image / media fields** — distinct from `attachment`; a field type that explicitly expects an image and renders a preview inline rather than a file-name label.
+- **Better child-table editing UX** — `table` currently maps to `FieldType.table` with a `childDocType`. `GenericFormView`'s handling of child rows is functional but minimal. A proper inline child-table editor (add/remove/reorder rows, inline cell editing) is essential for order lines, BOM rows, and similar ERP structures.
+- **Better link / search picker** — `link` fields currently rely on whatever `GenericFormView` provides for picking a linked document. For high-volume lists (Items, Customers, Suppliers), a type-ahead search picker with configurable display fields is needed.
+- **Barcode / QR input** — a field type or input modifier that triggers a barcode scan flow. Essential for stock movements and POS item lookup; closely related to P3.6.
+- **Stronger typed `FieldValue`** — blocked on P1.6, but completing P1.6 unlocks proper typed round-trips for `date`, `dateTime`, and `data` values through `DocumentEngine`, `ExpressionEvaluator`, and validation rules.
+
+Do not pre-design the full control taxonomy speculatively. Add types as Hub hits real walls. Each new `FieldType` case requires: type definition, `GenericFormView` rendering branch, `ValidationPipeline` coercion, and test coverage.
+
+---
+
+## P3 — Nice-to-haves & ecosystem
+
+### P3.1 — File/Attachment subsystem [L, medium risk] — §4.18
+
+Only interesting once there's a cloud adapter to sync blobs. Keep as "planned".
+
+### P3.2 — Print & PDF [L, medium risk] — §4.17
+
+Platform-specific (UIKit / AppKit PDF renderers). Keep as "planned".
+
+### P3.3 — CSV/JSON Import / Export [M, low risk] — §4.20
+
+Less risky than it sounds: the import path is just `DocumentEngine.save(_:)` in a loop with a DocType-aware column mapper. Good contribution opportunity; no deep design work.
+
+### P3.4 — `CacheManager` as a real subsystem [M, medium risk] — §4.14
+
+Only if measurable hot paths are found. Premature today — `MetaComposer`'s internal cache is sufficient, and GRDB's prepared statements cover most query cost. Defer until a profiling pass.
+
+### P3.5 — Audit-log reader + writer [S, low risk]
+
+The `audit_log` table exists and nothing writes it. Either repurpose it (the sync queue is already acting as the audit log) and drop the table in a v5 migration, or start writing structured `AuditEntry` rows on every `DocumentEngine` mutation. Decide before the table accumulates implicit meaning.
+
+### P3.6 — POS platform capabilities [L, high risk] — future platform
+
+POS is not a skin over `GenericFormView`. A serious point-of-sale surface has fundamentally different interaction requirements from a back-office ERP form, and several of them require dedicated Core platform work that does not exist yet.
+
+This item should not be started until P1.1 (Naming), P3.2 (Printing), P2.8 (richer field/control model), and P1.2/P1.3 (Automation runtime) are substantially in place. Starting earlier produces a prototype that cannot be deployed.
+
+Capabilities a serious POS requires that Core does not currently support:
+
+- **Fast editable line / cart surface** — a POS transaction is built around rapid row entry (item lookup → quantity → price → running total). `GenericFormView`'s child-table UX is not optimised for this; a dedicated cart component or a substantially enhanced `table`-field editor is needed.
+- **Barcode-driven workflows** — scan a barcode, resolve it to an Item via `DocumentEngine.list`, add a line. Requires P2.8 barcode field type, fast `DocumentEngine` lookup (P2.5 filter improvements), and probably a scan-result event pathway through `EventEmitter`.
+- **Payment / tender UI** — selecting payment method, splitting tenders, recording change — none of this maps to existing `FieldType` cases. This is a purpose-built UI surface, likely a dedicated `DocType` (e.g. `Payment Entry`) with a custom form layout that `GenericFormView` cannot reasonably drive alone.
+- **Receipt / printing path** — requires P3.2 (Printing). A POS receipt is structurally a `PrintFormat` render of a submitted transaction; the print subsystem must exist before POS can close a sale.
+- **Touch-friendly interaction patterns** — the current UIShell is designed for macOS pointer input. A POS likely targets iPadOS with touch-primary interaction. That is a different layout density, tap target sizing, and navigation model from what `NavigationShell` currently provides.
+- **Offline-first transaction handling** — `SyncEngine` already has an offline-capable mutation queue, but POS demands stronger guarantees: local numbering (Naming, P1.1), local stock reservation, and conflict resolution rules suited to concurrent terminal use. The current `ConflictResolver` (LWW / VCM / AO) is a good starting point but may need POS-specific policies.
+
+Rate this L effort, high risk. Not because it is architecturally impossible on Core, but because it requires the most total platform surface to be in place first, and rushing it produces a demo rather than a deployable feature.
+
+---
+
+## Proposed sequencing
 
 A 4–6 week plan if one engineer is the target:
 
@@ -323,13 +383,40 @@ A 4–6 week plan if one engineer is the target:
 | 2 | P0.2 sync-through-engine; P0.3 persisted sequence; P0.4 queue pruning + ADR. |
 | 3 | P0.5A (rewrite permissions doc) or P0.5B (implement chain); P0.8 version reader; P1.5 real validation stages. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
-| 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution.
+| 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
 
 P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
 
-P2.6 (Core library productization) and P2.7 (Hub readiness gap analysis) are relatively lightweight but structurally important; P2.6 in particular should happen before Hub development begins in earnest, not after. Both can run in parallel with late-P1 work. P2.8 (richer field/control model) is incremental and should be tackled field-type by field-type as Hub surfaces concrete UI needs — do not pre-design the full control taxonomy in a vacuum. P3.6 (POS platform) should not begin until P1.1 (Naming), P3.2 (Printing), P2.8 (field controls), and P1.2/P1.3 (Automation) are substantially in place; starting earlier will produce a prototype that cannot be deployed.
+P2.6 (Core library productization) should happen before Hub development begins in earnest — it is not large work but it is a prerequisite for the Core/Hub boundary being real. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
+
+P3.6 (POS platform) should not begin until P1.1, P3.2, P2.8, and P1.2/P1.3 are substantially complete. The sequencing dependency is real: a POS without naming, printing, richer controls, and automation is not a POS.
 
 The order matters: testing before refactoring, drift closure before new subsystems, mutation-log soundness before automation that depends on it, Core package boundary before Hub, engine completeness before POS glamour work.
 
 ---
 
+## What _not_ to build right now
+
+- **Print & PDF, Files, Cache** — defer. Premature for a platform still closing core loops.
+- **WebSocket RealtimeAdapter** — defer until CloudAdapter has a real implementation.
+- **More ADRs for existing aspirational features** — the current ADR set already over-describes reality in a few places. Write ADRs when you actually implement (like ADR-023/024 did, which closed real gaps).
+- **POS UI** — defer until Naming, Printing, richer field controls, and Automation runtime are in place. Building POS on incomplete foundations produces a demo, not a product.
+
+---
+
+## What is ready vs. what is not yet ready
+
+This is not pessimism. It is roadmap clarity.
+
+**Ready / nearly ready now:**
+- Back-office document foundations — save, validate, submit, cancel, amend, sync.
+- Metadata-driven admin and setup surfaces — `DocTypeBuilderView`, `FormBuilderView`, module workspace.
+- First-party Hub prototype on Core — sufficient engine to start Hub and begin discovering real API gaps.
+- Document lifecycle / workflow / permission / report foundations — all partially to fully implemented.
+- Conflict-resolved offline sync with a pluggable cloud adapter.
+
+**Not yet platform-ready:**
+- **Rich dashboards** — `DashboardDefinition` decodes; nothing renders. Module home pages fall back to flat lists.
+- **POS** — requires Naming, Printing, richer field/control model, Automation runtime, and likely a purpose-built cart surface. None of these are done.
+- **Polished ERP-grade control richness** — `FieldType` covers CRUD adequately; it does not cover child-table editing UX, barcode input, image fields, or link search pickers at the level an ERP demands.
+- **Fully proven Core → Hub public API sufficiency** — Core is strong enough to start Hub. It is not yet strong enough to claim that all subsystems a production ERP needs are in place and accessible through the public API. That claim becomes true as the missing subsystems in P2.7's gap table are closed.
