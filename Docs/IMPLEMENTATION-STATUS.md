@@ -31,7 +31,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 | `Metadata/` | Yes | Matches §4.1. |
 | `Naming/` | **No** | §4.11 / ADR-014 describe `NamingStrategy`, `UUIDv7Strategy`, `NamingSeriesStrategy`, `FieldDerivedStrategy`, `PromptStrategy`, `FormatStrategy`, `NamingService`, `DocumentNamingRule`. None exist. `DocType.autoname: String?` is the only breadcrumb, and it is unused in save flow. |
 | `Notifications/` | Yes | Has **both** `EventBus.swift` (ADR-012, superseded) and `EventEmitter.swift` (ADR-020). `DocumentEngine` still requires an `EventBus` in its initializer, so the old path has not been retired. |
-| `Permissions/` | Yes (shape doesn't match) | Only `PermissionEngine.swift`. Missing `PermissionContext.swift`, `PermissionEvaluators.swift`. See §4.4 deviation below. |
+| `Permissions/` | Yes | `PermissionEngine.swift` is the only file and matches the revised §4.4 / ADR-011 (flat surface — see P0.5). `PermissionContext.swift` and `PermissionEvaluators.swift` were documented by earlier revisions but are no longer part of the target shape. |
 | `Printing/` | **No** | `LetterHead.swift`, `PDFGenerator.swift`, `PrintFormat.swift` absent. (Docs correctly mark §4.17 _planned_, but §7's tree still lists them.) |
 | `Reporting/` | Yes | `ReportEngine.swift` only. |
 | `Scheduling/` | **No** | §4.13 describes `SchedulerService.swift`, `ScheduledTask.swift`. Neither exists. |
@@ -71,19 +71,12 @@ The goal is not to assign blame; it's to give future contributors an honest star
 - **Partial** — Migrations are forward-only (as intended) but there is no test suite asserting schema shape.
 - **Partial** — `audit_log` has neither a writer nor a reader API. Created, never used.
 
-### 2.4 Permissions Engine — §4.4 (documentation gap)
+### 2.4 Permissions Engine — §4.4
 
-**The documentation and ADR-011 describe something the code doesn't implement.**
-
-| Docs say | Code has |
-|---|---|
-| `PermissionEvaluator` protocol + `PermissionDecision` enum | Neither exists. |
-| Evaluator chain (`AppLevel`, `DocTypeLevel`, `FieldLevel`, `RowLevel`, `WorkflowLevel`) | A flat class `PermissionEngine` with three hard-coded methods. |
-| Row-level arbitrary condition filter | `canAccessRow(document:userRoles:rowFilter:)` only does equality match on a `[String: FieldValue]` dict. No expression support. |
-| AppLevel evaluator | Not implemented. Nothing checks "is the user's role allowed to use this module/app at all?". |
-| WorkflowLevel evaluator | Workflow role checks happen inside `WorkflowEngine.availableTransitions`, not via an evaluator. |
-
-The `ValidationPipeline`'s `PermissionStage` calls into `PermissionEngine.canPerform`, so the pipeline does integrate — but the overall model in the doc is aspirational. **Either implement the chain or rewrite §4.4 + ADR-011 to describe what is actually there.**
+- **Shipped** — `PermissionEngine` exposes `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, and `canAccessRow(document:userRoles:rowFilter:)`. `ValidationPipeline`'s `PermissionStage` calls into `canPerform`.
+- **Aligned (P0.5 — 2026-04-23)** — §4.4 and ADR-011 now describe the flat method surface that actually ships. The earlier `PermissionEvaluator` / `PermissionDecision` evaluator-chain wording was removed from §4.4, ADR-011, ADR-025, and ADR-026.
+- **Partial vs. original intent** — `canAccessRow` is still an equality-only dictionary filter, not an expression predicate (expression-backed row filters are tracked as `Docs/ENHANCEMENT-PROPOSAL.md` P1.7).
+- **Not implemented** — There is no app-/module-level gate (nothing checks "is this role allowed to use this module at all?"). Workflow transition role checks live inside `WorkflowEngine.availableTransitions` and are not routed through `PermissionEngine`.
 
 ### 2.5 Workflow Engine — §4.5
 
@@ -207,7 +200,7 @@ This is a useful parallel tool but also a **duplicate installer code path**. The
 If you open the repo today expecting to find everything ARCHITECTURE.md §7 advertises, here is the short list of what _to stop looking for_:
 
 - `Automation/`, `Cache/`, `Files/`, `ImportExport/`, `Naming/`, `Printing/`, `Scheduling/` — do not exist.
-- `PermissionEvaluator` chain — does not exist; `PermissionEngine` is a flat class.
+- A chain-style `PermissionEvaluator` protocol — does not exist; `PermissionEngine` is a flat class, and §4.4 / ADR-011 now describe it as such (P0.5).
 - AST in `ExpressionEvaluator` — does not exist; direct-eval recursive descent.
 - Role-filtered `availableReports` — does not exist; returns all.
 - Any XCTest target — does not exist.

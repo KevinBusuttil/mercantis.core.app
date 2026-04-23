@@ -1,5 +1,31 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-23 (Permissions doc alignment — P0.5 option A)
+
+This revision realigns the Permissions documentation with the shipped `PermissionEngine` code. The 2026-04-14 revision introduced an evaluator-chain design (`PermissionEvaluator` protocol, `PermissionDecision` enum, five concrete evaluators) that was never implemented; the code has always been a flat class with three public methods. `Docs/ENHANCEMENT-PROPOSAL.md` P0.5 picked option A (fix the doc) over option B (implement the chain) as the near-term resolution. The chain remains a candidate direction for a future revision alongside P1.7 (row-level expressions) and a yet-to-be-defined app-/module-level gate.
+
+### Updated Files
+
+| Section | Summary of Change |
+|---|---|
+| `ARCHITECTURE.md` §3 Architecture Diagram | Renamed the "Permission Evaluator Chain" block to "Permission Engine (flat API)". |
+| `ARCHITECTURE.md` §4.2 Document Engine | `PermissionStage` now described as calling `PermissionEngine.canPerform`, not an evaluator chain. |
+| `ARCHITECTURE.md` §4.4 Permissions Engine | Rewritten to describe the three shipped methods (`canPerform`, `canAccessField`, `canAccessRow`) and what is explicitly out of scope (app/module gate, workflow-level evaluator, row-level expression predicates). |
+| `ARCHITECTURE.md` §4.12 Extension Points | Removed `PermissionEvaluator` from the Layer 3 list. Added a brief note that the chain is not shipped. |
+| `ARCHITECTURE.md` §4.15 Public API Surface | Removed the "evaluator chain is not yet implemented" caveat on `PermissionEngine`. |
+| `ARCHITECTURE.md` §7 Directory Structure | Removed the "flat; evaluator chain is planned" qualifier on `PermissionEngine.swift`. |
+| `Docs/ADR/ADR-011-multi-level-permission-model.md` | Rewritten to describe the shipped flat surface. Kept the context/positioning; removed the `PermissionEvaluator` protocol / `PermissionDecision` enum / five-evaluator chain definitions. Added explicit out-of-scope notes and a forward pointer to the chain as a possible future direction. |
+| `Docs/ADR/ADR-025-automation-action-registry.md` | Reframed the "consistent with `PermissionEvaluator`" line — the registry pattern is consistent with `NamingStrategy`; `PermissionEvaluator` is not shipped. |
+| `Docs/ADR/ADR-026-three-layer-extensibility-model.md` | Removed `PermissionEvaluator` from the Layer 3 protocol list with a note that reintroducing it requires a chain implementation first. |
+| `Docs/IMPLEMENTATION-STATUS.md` §1, §2.4, §5 | `Permissions/` row is no longer "shape doesn't match"; §2.4 now grades `PermissionEngine` against the revised doc (Shipped / Partial / out-of-scope) rather than describing a documentation gap; §5 entry updated to note P0.5 closed the drift. |
+| `Docs/ENHANCEMENT-PROPOSAL.md` P0.5 | Marked done (option A). Sequencing table updated. |
+
+### Not changed
+
+No Swift source files were modified; this is purely a documentation change. `PermissionEngine.swift` and the `PermissionStage` integration already matched the new description.
+
+---
+
 ## Revision: 2026-04-14
 
 This revision reflects an architecture assessment comparing Mercantis Core against Frappe v16. The goal was to identify areas where the architecture documentation needed to be made more explicit and to ensure the ADR set accurately reflects the intended foundation. Mercantis's original direction (offline-first, pure client-side, declarative-only plugins, metadata-driven) is preserved.

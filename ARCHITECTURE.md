@@ -45,8 +45,8 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │         │           │          │           │            │                   │
 │   ┌─────▼──────┐  ┌─▼──────────▼──┐  ┌────▼──────┐  ┌─▼──────────────┐   │
 │   │ Permission │  │ WorkflowEngine │  │  Typed    │  │  NamingService │   │
-│   │ Evaluator  │  │ (state machine)│  │ EventBus  │  │SchedulerService│   │
-│   │ Chain      │  └───────┬────────┘  └───────────┘  └────────────────┘   │
+│   │ Engine     │  │ (state machine)│  │ EventBus  │  │SchedulerService│   │
+│   │ (flat API) │  └───────┬────────┘  └───────────┘  └────────────────┘   │
 │   └─────┬──────┘          │                                                 │
 │         │                 │                                                 │
 │   ┌─────▼─────────────────▼──────────────────────────────────────────┐     │
@@ -123,7 +123,7 @@ Key responsibilities:
 4. `UniqueConstraintStage` — unique fields/indexes have no collisions.
 5. `ValidationRuleStage` — `ValidationRule` expressions evaluate to true.
 6. `WorkflowGuardStage` — workflow transition is allowed.
-7. `PermissionStage` — permission evaluator chain passes.
+7. `PermissionStage` — `PermissionEngine.canPerform` grants the operation.
 
 Validation failures produce structured errors with stage, field, and message. See [ADR-022](Docs/ADR/ADR-022-document-validation-pipeline.md).
 
@@ -168,23 +168,30 @@ See [ADR-002](Docs/ADR/ADR-002-sqlite-local-source-of-truth.md).
 
 **Location:** `mercantis core/Permissions/`
 
-The Permissions Engine evaluates multi-level access rules before any document operation proceeds. It is implemented as an **evaluator chain** — each permission level is a `PermissionEvaluator` protocol conformance:
+`PermissionEngine` is a small, flat class with three public methods — one per permission scope. Callers (DocumentEngine, WorkflowEngine, UI shell, the `PermissionStage` of the `ValidationPipeline`) invoke the method that matches the check they need.
 
 ```swift
-protocol PermissionEvaluator {
-    func evaluate(context: PermissionContext) -> PermissionDecision
+public final class PermissionEngine {
+    public init()
+
+    func canPerform(operation: DocumentOperation, on: DocType,
+                    userRoles: Set<String>) -> Bool
+    func canAccessField(fieldKey: String, on: DocType,
+                        userRoles: Set<String>, operation: FieldOperation) -> Bool
+    func canAccessRow(document: Document, userRoles: Set<String>,
+                      rowFilter: [String: FieldValue]?) -> Bool
 }
-enum PermissionDecision { case allowed, denied(reason: String), abstain }
 ```
 
-Chain (evaluated in order):
-1. **`AppLevelEvaluator`** — Is the user's role allowed to use this module/app at all?
-2. **`DocTypeLevelEvaluator`** — `PermissionRule` per role: read, write, create, delete, submit, amend.
-3. **`FieldLevelEvaluator`** — `FieldPermission.readRoles` / `writeRoles` per field.
-4. **`RowLevelEvaluator`** — Arbitrary condition filter (e.g. user can only see documents for their warehouse).
-5. **`WorkflowLevelEvaluator`** — `WorkflowTransition.allowedRoles` guards each transition.
+- **DocType-level** (`canPerform`) — walks `DocType.permissions` (`[PermissionRule]`), keeps rules whose role is in `userRoles`, and returns `true` on the first rule that grants the requested `DocumentOperation` (`.read` / `.write` / `.create` / `.delete` / `.submit` / `.amend`).
+- **Field-level** (`canAccessField`) — consults `FieldDefinition.permissions` (`FieldPermission?`). A field with no `permissions` block is reachable by anyone who already passed the DocType check. If the block is present, membership of `readRoles` or `writeRoles` (per `FieldOperation`) decides.
+- **Row-level** (`canAccessRow`) — `rowFilter` is a `[String: FieldValue]` dictionary of required values; the user can see the document only if every entry equals the document's value for that key. A `nil` or empty filter grants access. Row-level filters are equality-only; expression-backed filters are tracked in `Docs/ENHANCEMENT-PROPOSAL.md` P1.7.
 
-All evaluators must return `.allowed` or `.abstain`. Evaluation short-circuits on the first `.denied`. Each evaluator is independently testable. New evaluators can be appended to the chain without modifying existing ones.
+**Out of scope for `PermissionEngine` today:**
+- App / module gating — nothing in Core asks "is this role allowed to use this module at all?" A future evaluator (tracked as a P1 enhancement) may be added.
+- Workflow transition role gates — these are enforced inside `WorkflowEngine.availableTransitions` via `WorkflowTransition.allowedRoles`, not through `PermissionEngine`.
+
+ADR-011 previously described an evaluator-chain design (a `PermissionEvaluator` protocol with concrete `AppLevel` / `DocTypeLevel` / `FieldLevel` / `RowLevel` / `WorkflowLevel` evaluators, short-circuiting on the first `.denied`). That design is a future candidate, not the shipped engine. See the revised ADR-011 for why the flat surface is the current contract.
 
 See [ADR-011](Docs/ADR/ADR-011-multi-level-permission-model.md).
 
@@ -352,7 +359,7 @@ Apps declare extension points in their manifest under `extensionPoints`:
 Compiled-in code subscribes to typed events via the `EventEmitter`. Type-safe, lifecycle-managed via `SubscriptionToken`. Not available to downloaded apps.
 
 **Layer 3 — Compiled-in extension protocols:**
-First-party code provides custom `NamingStrategy`, `AutomationActionHandler`, or `PermissionEvaluator` conformances compiled into Core. Not available to downloaded apps.
+First-party code provides custom `NamingStrategy` or `AutomationActionHandler` conformances compiled into Core. Not available to downloaded apps. (A `PermissionEvaluator` protocol was proposed in earlier revisions of ADR-011 but is not shipped; the current `PermissionEngine` exposes three flat methods rather than a pluggable protocol.)
 
 At install time, `AppInstaller` resolves Layer 1 declarations into typed event subscriptions or `SchedulerService` registrations.
 
@@ -402,7 +409,7 @@ Key API points:
 - `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)` *(sort/limit on `list` are planned — see `Docs/ENHANCEMENT-PROPOSAL.md` P2.5)*
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
 - `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
-- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)` *(evaluator chain described in ADR-011 is not yet implemented — see `Docs/IMPLEMENTATION-STATUS.md` §2.4)*
+- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)`
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
 - `SyncEngine` — `pushPendingMutations()`, `pullAndApplyRemoteMutations()`, `applyRemoteMutations(_:)`, `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)`
 - `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`
@@ -561,7 +568,7 @@ mercantis core/
 ├── Notifications/
 │   └── EventEmitter.swift        # Typed event bus: subscribe<E>(_:handler:) → SubscriptionToken
 ├── Permissions/
-│   └── PermissionEngine.swift    # canPerform / canAccessField / canAccessRow (flat; evaluator chain is planned, see ADR-011)
+│   └── PermissionEngine.swift    # canPerform / canAccessField / canAccessRow
 ├── Reporting/
 │   └── ReportEngine.swift        # ReportEngine, ReportResult
 ├── Storage/

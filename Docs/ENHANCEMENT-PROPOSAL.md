@@ -78,13 +78,21 @@ Decisions are captured in ADR-028. Coverage in `SyncEngineTests.swift`:
 - `testPruneWatermarkIsPersistedToSyncState`
 - `testPushPendingMutationsOpportunisticallyPrunesOldPushedRows`
 
-### P0.5 — Align the Permissions doc with the code (or the other way around) [S, medium risk] — ADR-011
+### P0.5 — Align the Permissions doc with the code [S, medium risk] — ADR-011 *(done — option A, 2026-04-23)*
 
-Either:
-- **A. Fix the doc.** Rewrite §4.4 and ADR-011 to describe the flat `canPerform` / `canAccessField` / `canAccessRow` that actually exists, and remove references to `PermissionEvaluator`, `PermissionDecision`, and the evaluator chain.
-- **B. Implement the chain.** Introduce the `PermissionEvaluator` protocol, five concrete evaluators, and a chain runner. Replace `PermissionStage` in the pipeline to call the chain.
+Option A shipped: §4.4 and ADR-011 now describe the flat `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)` — that actually exists, and references to `PermissionEvaluator`, `PermissionDecision`, and the evaluator chain have been removed (or reframed as "not shipped" historical notes) from:
 
-B is the stated direction (and matches how `ValidationPipeline` is already structured), but it's a larger change. A unblocks P0.2 and P0.8 immediately. **Recommendation: do A now, schedule B.**
+- `ARCHITECTURE.md` §3 (architecture diagram), §4.2 (ValidationPipeline `PermissionStage`), §4.4 (Permissions Engine — fully rewritten), §4.12 (Layer 3 extension protocols), §4.15 (Public API Surface), §7 (directory tree).
+- `Docs/ADR/ADR-011-multi-level-permission-model.md` — rewritten to describe the shipped flat surface and its out-of-scope checks (app / module gating; workflow-level role checks remain inside `WorkflowEngine`).
+- `Docs/ADR/ADR-025-automation-action-registry.md` — the "consistent with `PermissionEvaluator`" line reframed.
+- `Docs/ADR/ADR-026-three-layer-extensibility-model.md` — removed `PermissionEvaluator` from the Layer 3 list; added a note that reintroducing it requires implementing the chain first.
+- `Docs/IMPLEMENTATION-STATUS.md` §1, §2.4, §5 — removed "shape doesn't match" entries; §2.4 now reads as a regular Shipped / Partial breakdown.
+
+Option B (implement the chain — introduce a `PermissionEvaluator` protocol, five concrete evaluators, and a chain runner; replace `PermissionStage` to call the chain) remains the stated long-term direction, scheduled alongside:
+- **P1.7** — row-level expression support (`canAccessRow` predicate via `ExpressionEvaluator`).
+- **App-/module-level gating** — not yet in the engine; a future ADR.
+
+Until then, §4.4 / ADR-011 accurately document what ships.
 
 ### P0.6 — Resolve `EventBus` / `EventEmitter` duality [S, low risk] — ADR-020
 
@@ -395,7 +403,7 @@ A 4–6 week plan if one engineer is the target:
 |---|---|
 | 1 | P0.1 test target ✅; P0.6 event bus cleanup ✅; P0.7 doc cleanup ✅; P0.9 unary minus ✅. |
 | 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
-| 3 | P0.5A (rewrite permissions doc) or P0.5B (implement chain); P0.8 version reader; P1.5 real validation stages. |
+| 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader; P1.5 real validation stages. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
 | 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
 

@@ -51,7 +51,8 @@ The deepest layer. First-party code compiled into Core can provide custom confor
 - `NamingStrategy` — Custom document naming logic (ADR-014).
 - `AutomationActionHandler` — Custom automation action types (ADR-025).
 - `ConflictResolutionPolicy` — Custom sync conflict resolution strategies (ADR-006).
-- `PermissionEvaluator` — Additional permission levels (ADR-011).
+
+An earlier revision of this document also listed a `PermissionEvaluator` protocol as a Layer 3 extension point. That protocol is not shipped — `PermissionEngine` is a flat class today (see revised ADR-011). Reopening Layer 3 to permission evaluators would require a real chain implementation first.
 
 These conformances are registered at startup and are indistinguishable from built-in implementations at runtime. They are not available to downloaded apps.
 

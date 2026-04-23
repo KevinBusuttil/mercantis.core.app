@@ -1,7 +1,7 @@
-# ADR-011 — Multi-Level Permission Evaluation Model
+# ADR-011 — Multi-Level Permission Model
 
-**Status:** Accepted  
-**Date:** 2026-04-14
+**Status:** Accepted (revised 2026-04-23 to match shipped code; see §P0.5 in `Docs/ENHANCEMENT-PROPOSAL.md`)
+**Date:** 2026-04-14 · revised 2026-04-23
 
 ---
 
@@ -11,50 +11,73 @@ Frappe implements a 5+ level permission system: DocPerm (role-based CRUD per Doc
 
 Mercantis Core needs an equivalent permission model that runs entirely on-device and integrates cleanly with the offline-first document lifecycle.
 
+An earlier revision of this ADR described an **evaluator chain** (a `PermissionEvaluator` protocol, a `PermissionDecision` enum, and five concrete evaluators) modelled on the `ValidationPipeline` in ADR-022. That design remains the intended long-term direction. It has not been implemented. The shipped code is a flat `PermissionEngine` class with three direct methods, and this ADR has been rewritten so the document matches the code.
+
 ## Decision
 
-Mercantis Core implements permission evaluation as an **evaluator chain**. Each permission level is a `PermissionEvaluator` protocol conformance:
+Mercantis Core evaluates permissions through a single `PermissionEngine` class (`mercantis core/Permissions/PermissionEngine.swift`) with three public methods — one per permission scope:
 
 ```swift
-protocol PermissionEvaluator {
-    func evaluate(context: PermissionContext) -> PermissionDecision
-}
+public final class PermissionEngine {
+    public init()
 
-enum PermissionDecision {
-    case allowed
-    case denied(reason: String)
-    case abstain
+    // DocType-level: does any of the user's roles grant this operation?
+    public func canPerform(
+        operation: DocumentOperation,          // .read / .write / .create / .delete / .submit / .amend
+        on docType: DocType,
+        userRoles: Set<String>
+    ) -> Bool
+
+    // Field-level: per-field read/write gates via `FieldDefinition.permissions`.
+    public func canAccessField(
+        fieldKey: String,
+        on docType: DocType,
+        userRoles: Set<String>,
+        operation: FieldOperation              // .read / .write
+    ) -> Bool
+
+    // Row-level: equality filter over a `[String: FieldValue]` dictionary.
+    public func canAccessRow(
+        document: Document,
+        userRoles: Set<String>,
+        rowFilter: [String: FieldValue]?
+    ) -> Bool
 }
 ```
 
-The chain consists of five evaluators executed in order:
+### Scope-by-scope behaviour
 
-1. **`AppLevelEvaluator`** — Is the user's role allowed to use this module/app at all?
-2. **`DocTypeLevelEvaluator`** — `PermissionRule` per role: read, write, create, delete, submit, amend.
-3. **`FieldLevelEvaluator`** — `readRoles` / `writeRoles` per field definition.
-4. **`RowLevelEvaluator`** — A condition expression filter evaluated by `ExpressionEngine` (e.g. `warehouse == userDefaults.warehouse`).
-5. **`WorkflowLevelEvaluator`** — `allowedRoles` on each workflow transition.
+- **DocType-level (`canPerform`)** — Iterates `docType.permissions` (`[PermissionRule]`), keeps rules whose `role` is in `userRoles`, and returns `true` on the first matching rule whose CRUD/lifecycle flag is set for the requested `DocumentOperation`. Returns `false` if no matching rule grants the operation.
+- **Field-level (`canAccessField`)** — Looks up the field by key. If the field has no `permissions: FieldPermission?` block, access is granted (DocType-level already gated the operation). If it does, membership of `readRoles` or `writeRoles` — depending on `FieldOperation` — decides.
+- **Row-level (`canAccessRow`)** — `rowFilter` is a `[String: FieldValue]` dictionary of required field values. Access is granted when every entry equals the document's value for the same key. A `nil` or empty `rowFilter` grants access. There is no expression support at this layer today.
 
-All evaluators must return `.allowed` or `.abstain` for an operation to proceed. Evaluation short-circuits on the first `.denied` result. An evaluator that returns `.abstain` defers to the next in the chain.
+### What is **not** in the shipped engine
 
-Each evaluator is independently testable. New evaluators can be appended to the chain without modifying existing ones.
+- No `PermissionEvaluator` protocol and no `PermissionDecision` enum. The earlier revision introduced both; neither exists in code.
+- No app-level / module-level check. Nothing today asks "is the user's role allowed to use this module at all?" — the engine has no opinion on it, and callers do not consult one.
+- No workflow-level evaluator. Workflow transition role gates live inside `WorkflowEngine.availableTransitions`, not behind `PermissionEngine`. That remains appropriate — they consult `WorkflowTransition.allowedRoles` directly.
+- No row-level expression support. `canAccessRow` compares literal `FieldValue`s; it does not evaluate a predicate via `ExpressionEvaluator`. Moving to an expression-backed row filter is tracked in `Docs/ENHANCEMENT-PROPOSAL.md` P1.7.
+
+### Integration
+
+- `ValidationPipeline`'s `PermissionStage` (ADR-022) calls `PermissionEngine.canPerform` before a save proceeds. Today `PermissionStage` is narrower than that — see P1.5 for its final shape — but the integration point is the flat `canPerform` method on this engine, not a chain.
+- `DocumentEngine`, `WorkflowEngine`, and the UI shell all call into `PermissionEngine` directly. The method surface above is the complete public contract.
 
 ## Consequences
 
 **Positive:**
-- Predictable, ordered evaluation: every denial has a clear level and reason.
-- Fine-grained access control down to individual fields prevents data leakage in shared DocTypes.
-- Consistent enforcement — the same `PermissionEngine` chain is called by DocumentEngine, WorkflowEngine, and the UI Shell.
-- Each evaluator is independently testable in isolation.
+- The public API is small, synchronous, and free of side effects — easy to call from the `ValidationPipeline`, from `WorkflowEngine`, and from the UI shell.
+- Each method covers one concern (DocType / field / row), so callers pick the check they need without building a context object.
+- Rules are data, not code: `DocType.permissions` and `FieldDefinition.permissions` live on the metadata, so `MetaComposer` / `ResolvedMeta` (ADR-021) already carry everything the engine needs.
 
 **Negative:**
-- 5-level evaluation adds overhead to every document operation.
-- Complex permission configurations are difficult to debug.
-- No "sharing" mechanism (planned for a future ADR).
+- App/module-level gating and workflow-level gating are not part of this engine. Callers that need those checks must go elsewhere (workflow role checks are in `WorkflowEngine`; module gating is not enforced today).
+- Row-level filters are equality-only. Expression-based row filters are a P1 enhancement (`Docs/ENHANCEMENT-PROPOSAL.md` P1.7), not shipped.
+- The three methods are separate entry points rather than a single `evaluate(context:)` call, so a future migration to a chain-style evaluator (see below) is an API-surface change, not a purely internal refactor.
 
 **Neutral:**
-- The chain is extensible — new evaluators can be inserted without breaking existing ones.
+- A chain-style design (a `PermissionEvaluator` protocol with an ordered list of concrete evaluators, short-circuiting on the first denial) is still on the table for a future ADR. It is appropriate when app-level and row-expression evaluators land and the number of concerns outgrows three hand-written methods. Until then, the flat surface matches what callers actually need.
 
 ---
 
-*See also: [ADR-003 — Metadata-Defined DocTypes](ADR-003-metadata-defined-doctypes.md)*
+*See also: [ADR-003 — Metadata-Defined DocTypes](ADR-003-metadata-defined-doctypes.md), [ADR-022 — Document Validation Pipeline](ADR-022-document-validation-pipeline.md)*
