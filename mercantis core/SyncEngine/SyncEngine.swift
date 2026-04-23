@@ -223,23 +223,23 @@ public final class SyncEngine {
     }
 
     private func applyRemoteUpsert(_ mutation: MutationRecord) throws {
-        // Decode the payload to determine the document's DocType and fields.
-        guard let payloadDict = try? JSONSerialization.jsonObject(with: mutation.payload) as? [String: Any],
-              let docTypeName = payloadDict["docType"] as? String,
-              let documentId = payloadDict["id"] as? String else {
+        // The mutation payload is a JSON-encoded Document.
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let remoteDoc = try? decoder.decode(Document.self, from: mutation.payload) else {
             try storeMutationAsApplied(mutation)
             return
         }
 
         // Look up the DocType's sync policy.
-        let syncPolicy = registry.get(docTypeName)?.syncPolicy ?? SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false)
+        let syncPolicy = registry.get(remoteDoc.docType)?.syncPolicy
+            ?? SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false)
 
         // Determine the local document's sync version (0 if not found = new document).
         let localSyncVersion: Int64 = (try? database.read { db in
-            try Row.fetchOne(db, sql: "SELECT syncVersion FROM documents WHERE id = ?", arguments: [documentId])
+            try Row.fetchOne(db, sql: "SELECT syncVersion FROM documents WHERE id = ?", arguments: [remoteDoc.id])
         })?["syncVersion"] ?? 0
 
-        // Apply conflict resolution.
         let resolution = conflictResolver.resolve(
             remoteMutation: mutation,
             localSyncVersion: localSyncVersion,
@@ -248,59 +248,17 @@ public final class SyncEngine {
 
         switch resolution {
         case .accepted:
-            // Apply the remote mutation: update all document columns and mark synced.
-            let company = payloadDict["company"] as? String ?? ""
-            let status = payloadDict["status"] as? String ?? ""
-            let createdAt = payloadDict["createdAt"] as? String ?? ISO8601DateFormatter().string(from: mutation.localTimestamp)
-            let updatedAt = payloadDict["updatedAt"] as? String ?? ISO8601DateFormatter().string(from: Date())
-            let docStatus = payloadDict["docStatus"] as? Int ?? 0
-            let amendedFrom = payloadDict["amendedFrom"] as? String
-            let payloadJSON: String
-            if let fieldsObj = payloadDict["fields"] {
-                payloadJSON = (try? String(data: JSONSerialization.data(withJSONObject: fieldsObj), encoding: .utf8)) ?? "{}"
-            } else {
-                payloadJSON = "{}"
-            }
-
-            try database.write { db in
-                try db.execute(
-                    sql: """
-                        INSERT INTO documents
-                            (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(id) DO UPDATE SET
-                            company     = excluded.company,
-                            status      = excluded.status,
-                            updatedAt   = excluded.updatedAt,
-                            syncVersion = excluded.syncVersion,
-                            syncState   = excluded.syncState,
-                            docStatus   = excluded.docStatus,
-                            amendedFrom = excluded.amendedFrom,
-                            payload     = excluded.payload
-                        """,
-                    arguments: [
-                        documentId,
-                        docTypeName,
-                        company,
-                        status,
-                        createdAt,
-                        updatedAt,
-                        mutation.syncVersion,
-                        SyncState.synced.rawValue,
-                        docStatus,
-                        amendedFrom,
-                        payloadJSON
-                    ]
-                )
-            }
+            // Route through DocumentEngine so the ValidationPipeline (ADR-022),
+            // submit-immutability guard (ADR-013), and DocumentVersion diff
+            // recording (ADR-024) all fire for remote writes. (P0.2)
+            try documentEngine.applyRemote(remoteDoc, from: mutation)
             try storeMutationAsApplied(mutation)
 
-        case .conflicted(_, _):
-            // Mark the document as conflicted.
+        case .conflicted:
             try database.write { db in
                 try db.execute(
                     sql: "UPDATE documents SET syncState = ? WHERE id = ?",
-                    arguments: [SyncState.conflicted.rawValue, documentId]
+                    arguments: [SyncState.conflicted.rawValue, remoteDoc.id]
                 )
                 try db.execute(
                     sql: "UPDATE sync_queue SET status = ? WHERE id = ?",
@@ -310,6 +268,7 @@ public final class SyncEngine {
 
         case .appendedAsNew:
             // Append-Only: always insert as a new record.
+            try documentEngine.applyRemote(remoteDoc, from: mutation)
             try storeMutationAsApplied(mutation)
         }
     }

@@ -46,31 +46,9 @@ public final class DocumentEngine {
     /// If the document belongs to a submittable DocType and has `docStatus == 1` (Submitted),
     /// only fields marked `allowOnSubmit: true` can be changed. (ADR-013)
     public func save(_ document: Document) throws {
-        // Validate the document's DocType if it is registered.
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
-
-            // ADR-022: Run the structured validation pipeline.
-            let validationContext = ValidationContext(
-                docType: docType,
-                userId: userId,
-                expressionEvaluator: ExpressionEvaluator(),
-                documentExists: { [weak self] linkedDocType, linkedId in
-                    guard let self else { return true }
-                    return (try? self.fetch(docType: linkedDocType, id: linkedId)) != nil
-                },
-                uniqueConflictExists: { [weak self] docTypeName, fieldKey, value, excludeId in
-                    guard let self else { return false }
-                    let docs = (try? self.list(docType: docTypeName)) ?? []
-                    return docs.contains { doc in
-                        doc.id != excludeId && doc.fields[fieldKey] == value
-                    }
-                }
-            )
-            let pipelineErrors = validationPipeline.validate(document: document, context: validationContext)
-            if !pipelineErrors.isEmpty {
-                throw DocumentEngineError.validationFailed(errors: pipelineErrors)
-            }
+            try runValidationPipeline(on: document, docType: docType)
 
             // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
@@ -81,189 +59,120 @@ public final class DocumentEngine {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
 
-        // Encode field values as the payload JSON.
         let payloadData = try encoder.encode(document.fields)
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
 
-        // ADR-023: Optimistic concurrency check via modifiedAt (updatedAt) timestamp.
-        // ADR-024: Load the existing document for diff computation.
-        // If the document already exists, compare its stored updatedAt against the
-        // in-memory value. If they differ, another save occurred between load and save.
-        let existingRow = try database.read { db in
-            try Row.fetchOne(
-                db,
-                sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
-                arguments: [document.id, document.docType]
-            )
-        }
-        if let row = existingRow {
-            let storedTimestamp: String? = row["updatedAt"]
+        // ADR-023: Optimistic concurrency check via updatedAt.
+        // ADR-024: Load existing fields for diff computation.
+        let existing = try loadExistingState(docType: document.docType, id: document.id)
+        if let stored = existing?.updatedAt {
             let inMemoryTimestamp = ISO8601DateFormatter().string(from: document.updatedAt)
-            if let storedTimestamp, storedTimestamp != inMemoryTimestamp {
+            if stored != inMemoryTimestamp {
                 throw DocumentEngineError.concurrencyConflict(documentId: document.id)
             }
         }
+        let oldFields = existing?.fields ?? [:]
 
-        // ADR-024: Compute field-level diff for version tracking.
-        var oldFields: [String: FieldValue] = [:]
-        if let row = existingRow {
-            let existingPayloadString: String = row["payload"] ?? "{}"
-            if let existingPayloadData = existingPayloadString.data(using: .utf8) {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                oldFields = (try? decoder.decode([String: FieldValue].self, from: existingPayloadData)) ?? [:]
-            }
-        }
-        let fieldDiffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
-
-        // Build the mutation record.
         let mutation = MutationRecord(
             id: UUID(),
             type: .upsertDocument,
-            payload: try encoder.encode(UpsertPayload(document: document)),
+            payload: try encoder.encode(document),
             deviceId: deviceId,
             userId: userId,
             localTimestamp: Date(),
             syncVersion: document.syncVersion,
             status: .pending
         )
-        let mutationPayloadString = String(data: mutation.payload, encoding: .utf8) ?? "{}"
-        let mutationTimestamp = ISO8601DateFormatter().string(from: mutation.localTimestamp)
         let createdAtString = ISO8601DateFormatter().string(from: document.createdAt)
-        // ADR-023: Set updatedAt to the current time on every successful save.
         let saveTimestamp = Date()
         let updatedAtString = ISO8601DateFormatter().string(from: saveTimestamp)
 
         try database.write { db in
-            // Upsert the document row.
-            try db.execute(
-                sql: """
-                    INSERT INTO documents
-                        (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        company     = excluded.company,
-                        status      = excluded.status,
-                        updatedAt   = excluded.updatedAt,
-                        syncVersion = excluded.syncVersion,
-                        syncState   = excluded.syncState,
-                        docStatus   = excluded.docStatus,
-                        amendedFrom = excluded.amendedFrom,
-                        payload     = excluded.payload
-                    """,
-                arguments: [
-                    document.id,
-                    document.docType,
-                    document.company,
-                    document.status,
-                    createdAtString,
-                    updatedAtString,
-                    document.syncVersion,
-                    document.syncState.rawValue,
-                    document.docStatus,
-                    document.amendedFrom,
-                    payloadString
-                ]
+            try upsertDocumentRow(
+                db, document: document,
+                createdAt: createdAtString,
+                updatedAt: updatedAtString,
+                syncState: document.syncState,
+                payloadString: payloadString
             )
-
-            // Remove stale child rows that are no longer present.
-            let currentChildIds = document.children.values.flatMap { $0 }.map { $0.id }
-            if currentChildIds.isEmpty {
-                try db.execute(
-                    sql: "DELETE FROM document_children WHERE parentId = ?",
-                    arguments: [document.id]
-                )
-            } else {
-                let placeholders = currentChildIds.map { _ in "?" }.joined(separator: ",")
-                var args: [any DatabaseValueConvertible] = [document.id]
-                args.append(contentsOf: currentChildIds)
-                try db.execute(
-                    sql: "DELETE FROM document_children WHERE parentId = ? AND id NOT IN (\(placeholders))",
-                    arguments: StatementArguments(args)
-                )
-            }
-
-            // Upsert child rows.
-            for (tableName, rows) in document.children {
-                for row in rows {
-                    let rowPayload = (try? encoder.encode(row.fields))
-                        .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                    try db.execute(
-                        sql: """
-                            INSERT INTO document_children
-                                (id, parentId, parentDocType, tableName, rowIndex, payload)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(id) DO UPDATE SET
-                                rowIndex = excluded.rowIndex,
-                                payload  = excluded.payload
-                            """,
-                        arguments: [
-                            row.id,
-                            document.id,
-                            document.docType,
-                            tableName,
-                            row.rowIndex,
-                            rowPayload
-                        ]
-                    )
-                }
-            }
-
-            // Atomically append the mutation record to the sync queue.
-            try db.execute(
-                sql: """
-                    INSERT INTO sync_queue
-                        (id, type, payload, deviceId, userId, localTimestamp, syncVersion, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                arguments: [
-                    mutation.id.uuidString,
-                    mutation.type.rawValue,
-                    mutationPayloadString,
-                    mutation.deviceId,
-                    mutation.userId,
-                    mutationTimestamp,
-                    mutation.syncVersion,
-                    mutation.status.rawValue
-                ]
+            try syncChildRows(db, document: document, encoder: encoder)
+            try appendMutation(db, mutation: mutation)
+            try recordDocumentVersion(
+                db, document: document,
+                savedAt: saveTimestamp,
+                savedBy: userId,
+                oldFields: oldFields
             )
-
-            // ADR-024: Store the document version (field-level diff) if any fields changed.
-            if !fieldDiffs.isEmpty {
-                let version = DocumentVersion(
-                    documentId: document.id,
-                    docType: document.docType,
-                    savedAt: saveTimestamp,
-                    savedBy: userId,
-                    fieldDiffs: fieldDiffs
-                )
-                let versionEncoder = JSONEncoder()
-                versionEncoder.dateEncodingStrategy = .iso8601
-                let diffsData = try versionEncoder.encode(version.fieldDiffs)
-                let diffsString = String(data: diffsData, encoding: .utf8) ?? "[]"
-                let versionSavedAt = ISO8601DateFormatter().string(from: version.savedAt)
-
-                try db.execute(
-                    sql: """
-                        INSERT INTO document_versions
-                            (id, documentId, docType, savedAt, savedBy, fieldDiffs)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                    arguments: [
-                        version.id,
-                        version.documentId,
-                        version.docType,
-                        versionSavedAt,
-                        version.savedBy,
-                        diffsString
-                    ]
-                )
-            }
         }
 
         eventEmitter.publish(DocumentSavedEvent(
             document: document,
             docType: document.docType
+        ))
+    }
+
+    // MARK: - Apply Remote (ADR-005, P0.2)
+
+    /// Apply a remote upsert received via the sync engine. (ADR-005)
+    ///
+    /// Unlike `save(_:)`:
+    /// - **No new `MutationRecord` is appended** to `sync_queue` — the remote
+    ///   mutation is the record; the `SyncEngine` marks it applied separately.
+    /// - **No optimistic-concurrency check** — conflict detection is the
+    ///   `SyncEngine`'s responsibility via `ConflictResolver` (ADR-006).
+    /// - `syncState` is forced to `.synced` and `syncVersion` is taken from
+    ///   the remote mutation.
+    ///
+    /// The `ValidationPipeline` (ADR-022), submit-immutability guard (ADR-013),
+    /// and `DocumentVersion` diff recording (ADR-024) all fire as they do for
+    /// local saves. A `DocumentSavedEvent` is emitted on completion so UI
+    /// observers refresh.
+    public func applyRemote(_ document: Document, from mutation: MutationRecord) throws {
+        var doc = document
+        doc.syncVersion = mutation.syncVersion
+        doc.syncState = .synced
+
+        if let docType = registry.get(doc.docType) {
+            try validator.validate(docType)
+            try runValidationPipeline(on: doc, docType: docType)
+            if doc.docStatus == 1 && docType.isSubmittable {
+                try enforceSubmitImmutability(document: doc, docType: docType)
+            }
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let payloadData = try encoder.encode(doc.fields)
+        let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
+
+        let existing = try loadExistingState(docType: doc.docType, id: doc.id)
+        let oldFields = existing?.fields ?? [:]
+
+        let createdAtString = ISO8601DateFormatter().string(from: doc.createdAt)
+        let updatedAtString = ISO8601DateFormatter().string(from: doc.updatedAt)
+        let savedAt = Date()
+        let savedBy = mutation.userId.isEmpty ? userId : mutation.userId
+
+        try database.write { db in
+            try upsertDocumentRow(
+                db, document: doc,
+                createdAt: createdAtString,
+                updatedAt: updatedAtString,
+                syncState: .synced,
+                payloadString: payloadString
+            )
+            try syncChildRows(db, document: doc, encoder: encoder)
+            try recordDocumentVersion(
+                db, document: doc,
+                savedAt: savedAt,
+                savedBy: savedBy,
+                oldFields: oldFields
+            )
+        }
+
+        eventEmitter.publish(DocumentSavedEvent(
+            document: doc,
+            docType: doc.docType
         ))
     }
 
@@ -513,6 +422,204 @@ public final class DocumentEngine {
 
     // MARK: - Private Helpers
 
+    /// Run the full ValidationPipeline for a document under its DocType. (ADR-022)
+    private func runValidationPipeline(on document: Document, docType: DocType) throws {
+        let ctx = ValidationContext(
+            docType: docType,
+            userId: userId,
+            expressionEvaluator: ExpressionEvaluator(),
+            documentExists: { [weak self] linkedDocType, linkedId in
+                guard let self else { return true }
+                return (try? self.fetch(docType: linkedDocType, id: linkedId)) != nil
+            },
+            uniqueConflictExists: { [weak self] docTypeName, fieldKey, value, excludeId in
+                guard let self else { return false }
+                let docs = (try? self.list(docType: docTypeName)) ?? []
+                return docs.contains { doc in
+                    doc.id != excludeId && doc.fields[fieldKey] == value
+                }
+            }
+        )
+        let errors = validationPipeline.validate(document: document, context: ctx)
+        if !errors.isEmpty {
+            throw DocumentEngineError.validationFailed(errors: errors)
+        }
+    }
+
+    /// Read the currently-stored `updatedAt` string and field payload for a document, if any.
+    /// Used by `save(_:)` for the optimistic-concurrency check and by both save paths for
+    /// computing `DocumentVersion` diffs.
+    private func loadExistingState(
+        docType: String,
+        id: String
+    ) throws -> (updatedAt: String?, fields: [String: FieldValue])? {
+        let row = try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
+                arguments: [id, docType]
+            )
+        }
+        guard let row = row else { return nil }
+        let updatedAt: String? = row["updatedAt"]
+        var fields: [String: FieldValue] = [:]
+        let payloadString: String = row["payload"] ?? "{}"
+        if let data = payloadString.data(using: .utf8) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            fields = (try? decoder.decode([String: FieldValue].self, from: data)) ?? [:]
+        }
+        return (updatedAt, fields)
+    }
+
+    private func upsertDocumentRow(
+        _ db: Database,
+        document: Document,
+        createdAt: String,
+        updatedAt: String,
+        syncState: SyncState,
+        payloadString: String
+    ) throws {
+        try db.execute(
+            sql: """
+                INSERT INTO documents
+                    (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    company     = excluded.company,
+                    status      = excluded.status,
+                    updatedAt   = excluded.updatedAt,
+                    syncVersion = excluded.syncVersion,
+                    syncState   = excluded.syncState,
+                    docStatus   = excluded.docStatus,
+                    amendedFrom = excluded.amendedFrom,
+                    payload     = excluded.payload
+                """,
+            arguments: [
+                document.id,
+                document.docType,
+                document.company,
+                document.status,
+                createdAt,
+                updatedAt,
+                document.syncVersion,
+                syncState.rawValue,
+                document.docStatus,
+                document.amendedFrom,
+                payloadString
+            ]
+        )
+    }
+
+    private func syncChildRows(
+        _ db: Database,
+        document: Document,
+        encoder: JSONEncoder
+    ) throws {
+        let currentChildIds = document.children.values.flatMap { $0 }.map { $0.id }
+        if currentChildIds.isEmpty {
+            try db.execute(
+                sql: "DELETE FROM document_children WHERE parentId = ?",
+                arguments: [document.id]
+            )
+        } else {
+            let placeholders = currentChildIds.map { _ in "?" }.joined(separator: ",")
+            var args: [any DatabaseValueConvertible] = [document.id]
+            args.append(contentsOf: currentChildIds)
+            try db.execute(
+                sql: "DELETE FROM document_children WHERE parentId = ? AND id NOT IN (\(placeholders))",
+                arguments: StatementArguments(args)
+            )
+        }
+        for (tableName, rows) in document.children {
+            for row in rows {
+                let rowPayload = (try? encoder.encode(row.fields))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                try db.execute(
+                    sql: """
+                        INSERT INTO document_children
+                            (id, parentId, parentDocType, tableName, rowIndex, payload)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            rowIndex = excluded.rowIndex,
+                            payload  = excluded.payload
+                        """,
+                    arguments: [
+                        row.id,
+                        document.id,
+                        document.docType,
+                        tableName,
+                        row.rowIndex,
+                        rowPayload
+                    ]
+                )
+            }
+        }
+    }
+
+    private func appendMutation(_ db: Database, mutation: MutationRecord) throws {
+        let payloadString = String(data: mutation.payload, encoding: .utf8) ?? "{}"
+        let ts = ISO8601DateFormatter().string(from: mutation.localTimestamp)
+        try db.execute(
+            sql: """
+                INSERT INTO sync_queue
+                    (id, type, payload, deviceId, userId, localTimestamp, syncVersion, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            arguments: [
+                mutation.id.uuidString,
+                mutation.type.rawValue,
+                payloadString,
+                mutation.deviceId,
+                mutation.userId,
+                ts,
+                mutation.syncVersion,
+                mutation.status.rawValue
+            ]
+        )
+    }
+
+    /// Compute field-level diffs and insert a `DocumentVersion` row when fields changed. (ADR-024)
+    private func recordDocumentVersion(
+        _ db: Database,
+        document: Document,
+        savedAt: Date,
+        savedBy: String,
+        oldFields: [String: FieldValue]
+    ) throws {
+        let diffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
+        guard !diffs.isEmpty else { return }
+
+        let version = DocumentVersion(
+            documentId: document.id,
+            docType: document.docType,
+            savedAt: savedAt,
+            savedBy: savedBy,
+            fieldDiffs: diffs
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let diffsData = try encoder.encode(version.fieldDiffs)
+        let diffsString = String(data: diffsData, encoding: .utf8) ?? "[]"
+        let savedAtStr = ISO8601DateFormatter().string(from: version.savedAt)
+
+        try db.execute(
+            sql: """
+                INSERT INTO document_versions
+                    (id, documentId, docType, savedAt, savedBy, fieldDiffs)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+            arguments: [
+                version.id,
+                version.documentId,
+                version.docType,
+                savedAtStr,
+                version.savedBy,
+                diffsString
+            ]
+        )
+    }
+
     /// ADR-013: Check that only `allowOnSubmit` fields have been modified on a submitted document.
     private func enforceSubmitImmutability(document: Document, docType: DocType) throws {
         guard let existing = try fetch(docType: document.docType, id: document.id) else {
@@ -673,19 +780,4 @@ public final class DocumentEngine {
         case concurrencyConflict(documentId: String)
     }
 
-    // MARK: - Private Types
-
-    private struct UpsertPayload: Encodable {
-        let id: String
-        let docType: String
-        let company: String
-        let status: String
-
-        init(document: Document) {
-            self.id = document.id
-            self.docType = document.docType
-            self.company = document.company
-            self.status = document.status
-        }
-    }
 }

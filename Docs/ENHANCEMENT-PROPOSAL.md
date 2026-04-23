@@ -32,14 +32,15 @@ Test source is now in `mercantis coreTests/`:
 
 Why this was first: every enhancement below lands more safely on top of a test target. The validation pipeline in particular was built for independent stage testing (ADR-022) — shipping it without tests defeats the design.
 
-### P0.2 — Run sync-received writes through `DocumentEngine` [M, medium risk] — ADR-005/022/024
+### P0.2 — Run sync-received writes through `DocumentEngine` [M, medium risk] — ADR-005/022/024 *(done)*
 
-Today, `SyncEngine.applyRemoteUpsert` writes straight to the `documents` table, bypassing:
-- `ValidationPipeline` (ADR-022) — remote data enters without type coercion / link / unique checks.
-- `DocumentVersion` diff recording (ADR-024) — sync-received writes leave no version trail, so audit history is incomplete.
-- The submit-immutability guard — a misbehaving peer could mutate a submitted document without local refusal.
+`DocumentEngine.applyRemote(_:from:)` now owns the persistence of sync-received upserts. It runs the same `ValidationPipeline` (ADR-022), submit-immutability guard (ADR-013), and `DocumentVersion` diff recording (ADR-024) that `save(_:)` runs for local writes, while skipping the mutation-log append (the remote mutation is the record) and the optimistic-concurrency check (conflict detection is `ConflictResolver`'s job). `syncState` is forced to `.synced`.
 
-Fix: have `applyRemoteUpsert` construct a `Document` and call a new `DocumentEngine.applyRemote(_:source:)` that runs the pipeline with a "remote" flag (to skip the mutation-log append, since the record is already the mutation). This also lets `DocumentSavedEvent` fire for UI refresh without the ad-hoc `storeMutationAsApplied` shortcut.
+Also fixed an adjacent latent bug: `UpsertPayload` was a 4-field projection that dropped the document's fields on push. Both local saves and remote applies now encode/decode the full `Document` into the mutation payload.
+
+`SyncEngine.applyRemoteUpsert` is now a thin dispatcher: decode → `ConflictResolver` → `.accepted` / `.appendedAsNew` delegate to `applyRemote`; `.conflicted` marks the local row. Coverage landed in `DocumentEngineTests.swift` (`testApplyRemote*`, `testSavedMutationPayloadEncodesFullDocument`) and the new `SyncEngineTests.swift` (StubCloudAdapter, push-payload round-trip, rejected invalid remotes, conflicted-without-overwrite).
+
+**Known follow-up:** `LinkValidationStage` runs on remote writes too, which means out-of-order arrivals (child-before-parent) will be rejected rather than buffered. Assumes the CloudAdapter preserves commit order. When a real adapter lands, either require ordered delivery in the adapter contract or add a buffered-retry layer. Tracked as a candidate ADR.
 
 ### P0.3 — Persist `lastServerSequence` [S, low risk] — ADR-005
 
