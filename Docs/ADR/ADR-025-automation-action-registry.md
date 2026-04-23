@@ -49,7 +49,7 @@ New action types are added by registering a new `AutomationActionHandler` confor
 - Registry must be initialised before any automation executes; startup order matters.
 
 **Neutral:**
-- The registry pattern is consistent with `NamingStrategy` (ADR-014) and `PermissionEvaluator` (ADR-011).
+- The registry pattern is consistent with `NamingStrategy` (ADR-014). (An analogous `PermissionEvaluator` pattern was proposed for ADR-011 but is not shipped; `PermissionEngine` is currently a flat class, not a registry of protocol conformances.)
 
 ---
 
