@@ -20,10 +20,13 @@ public final class SyncEngine {
     private let conflictResolver: ConflictResolver
     private let cloudAdapter: CloudAdapter
 
-    /// The last known server sequence we have received. Persisted in-memory for
-    /// simplicity; a production version would store this in SQLite.
+    /// The last known server sequence we have received. Loaded from the
+    /// `sync_state` table at init and rewritten there on every advance (P0.3).
     private var lastServerSequence: Int64 = 0
     private let sequenceLock = NSLock()
+
+    /// Key used in the `sync_state` table to persist `lastServerSequence`.
+    private static let lastServerSequenceKey = "lastServerSequence"
 
     public init(
         database: MercantisDatabase,
@@ -36,6 +39,7 @@ public final class SyncEngine {
         self.registry = registry
         self.conflictResolver = ConflictResolver()
         self.cloudAdapter = cloudAdapter
+        self.lastServerSequence = Self.loadPersistedLastServerSequence(from: database)
     }
 
     // MARK: - Push
@@ -215,10 +219,49 @@ public final class SyncEngine {
     }
 
     private func updateLastServerSequence(toAtLeast value: Int64) {
-        sequenceLock.lock()
-        defer { sequenceLock.unlock() }
-        if value > lastServerSequence {
+        let shouldPersist: Bool = {
+            sequenceLock.lock()
+            defer { sequenceLock.unlock() }
+            guard value > lastServerSequence else { return false }
             lastServerSequence = value
+            return true
+        }()
+
+        guard shouldPersist else { return }
+
+        do {
+            try database.write { db in
+                try db.execute(
+                    sql: """
+                        INSERT INTO sync_state (key, value) VALUES (?, ?)
+                        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                        """,
+                    arguments: [Self.lastServerSequenceKey, String(value)]
+                )
+            }
+        } catch {
+            // Persistence failure is non-fatal: the in-memory value is still
+            // advanced so the current process won't re-pull already-applied
+            // remote mutations. On next successful advance the bookmark will
+            // be rewritten. Surfacing via EventEmitter is a future concern.
+        }
+    }
+
+    private static func loadPersistedLastServerSequence(from database: MercantisDatabase) -> Int64 {
+        do {
+            return try database.read { db in
+                let row = try Row.fetchOne(
+                    db,
+                    sql: "SELECT value FROM sync_state WHERE key = ?",
+                    arguments: [lastServerSequenceKey]
+                )
+                guard let value: String = row?["value"], let parsed = Int64(value) else {
+                    return 0
+                }
+                return parsed
+            }
+        } catch {
+            return 0
         }
     }
 

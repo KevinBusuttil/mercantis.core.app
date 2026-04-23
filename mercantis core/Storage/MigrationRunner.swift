@@ -79,6 +79,7 @@ public struct MigrationRunner {
         runner.register(version: 1, name: "initial_schema", sql: MigrationRunner.v1SQL)
         runner.register(version: 2, name: "add_doc_status_columns", sql: MigrationRunner.v2SQL)
         runner.register(version: 3, name: "add_document_versions", sql: MigrationRunner.v3SQL)
+        runner.register(version: 4, name: "add_sync_state", sql: MigrationRunner.v4SQL)
     }
 
     // MARK: - v1 Schema
@@ -202,5 +203,17 @@ public struct MigrationRunner {
 
         CREATE INDEX IF NOT EXISTS idx_document_versions_document ON document_versions(documentId);
         CREATE INDEX IF NOT EXISTS idx_document_versions_doctype  ON document_versions(docType);
+        """
+
+    // MARK: - v4 Schema — sync_state (ADR-005 / P0.3)
+
+    private static let v4SQL = """
+        -- Single-row key/value store for SyncEngine bookmarks that must survive
+        -- process restarts. First consumer is `lastServerSequence` (P0.3); later
+        -- consumers may add their own keys without another migration.
+        CREATE TABLE IF NOT EXISTS sync_state (
+            key     TEXT    PRIMARY KEY NOT NULL,
+            value   TEXT    NOT NULL
+        );
         """
 }

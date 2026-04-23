@@ -130,6 +130,92 @@ final class SyncEngineTests: XCTestCase {
                      "rejected remote writes must not land in the documents table")
     }
 
+    // MARK: - lastServerSequence persistence (P0.3)
+
+    func testPullAdvancesAndPersistsLastServerSequence() async throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let remoteDoc = TestSupport.makeDocument(
+            id: "remote-1",
+            fields: ["title": .string("From peer")],
+            syncVersion: 3
+        )
+        let mutation = MutationRecord(
+            id: UUID(),
+            type: .upsertDocument,
+            payload: try encoder.encode(remoteDoc),
+            deviceId: "peer",
+            userId: "peer-user",
+            localTimestamp: Date(),
+            syncVersion: 3,
+            status: .applied
+        )
+        adapter.enqueueRemote([RemoteMutation(record: mutation, serverSequence: 42)])
+
+        try await sync.pullAndApplyRemoteMutations()
+
+        let persisted: String? = try harness.database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT value FROM sync_state WHERE key = ?",
+                arguments: ["lastServerSequence"]
+            )?["value"]
+        }
+        XCTAssertEqual(persisted, "42", "lastServerSequence must be written to sync_state after a successful pull")
+    }
+
+    func testLastServerSequenceSurvivesSyncEngineRestart() async throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let remoteDoc = TestSupport.makeDocument(
+            id: "remote-1",
+            fields: ["title": .string("From peer")],
+            syncVersion: 3
+        )
+        let mutation = MutationRecord(
+            id: UUID(),
+            type: .upsertDocument,
+            payload: try encoder.encode(remoteDoc),
+            deviceId: "peer",
+            userId: "peer-user",
+            localTimestamp: Date(),
+            syncVersion: 3,
+            status: .applied
+        )
+        adapter.enqueueRemote([RemoteMutation(record: mutation, serverSequence: 42)])
+
+        try await sync.pullAndApplyRemoteMutations()
+
+        // Simulate a process restart: new adapter, new SyncEngine pointing at the
+        // same database. The bookmark must be loaded from `sync_state` so the
+        // adapter is asked for mutations strictly after sequence 42.
+        let restartedAdapter = StubCloudAdapter()
+        let restartedSync = SyncEngine(
+            database: harness.database,
+            documentEngine: harness.engine,
+            registry: harness.registry,
+            cloudAdapter: restartedAdapter
+        )
+        try await restartedSync.pullAndApplyRemoteMutations()
+
+        XCTAssertEqual(restartedAdapter.lastSincePulled, 42,
+                       "restarted SyncEngine must load the persisted bookmark, not default to 0")
+    }
+
+    func testLastServerSequenceDefaultsToZeroOnFreshDatabase() async throws {
+        // A brand-new database has no sync_state row: first pull must request from 0.
+        try await sync.pullAndApplyRemoteMutations()
+        XCTAssertEqual(adapter.lastSincePulled, 0)
+    }
+
     func testConflictedRemoteMarksLocalDocumentConflictedWithoutOverwriting() async throws {
         let docType = TestSupport.makeDocType(syncPolicy: SyncPolicy(
             conflictResolution: .versionChecked,
@@ -182,10 +268,18 @@ final class StubCloudAdapter: CloudAdapter, @unchecked Sendable {
     private let lock = NSLock()
     private var _pushed: [MutationRecord] = []
     private var _remote: [RemoteMutation] = []
+    private var _lastSincePulled: Int64?
 
     var pushed: [MutationRecord] {
         lock.lock(); defer { lock.unlock() }
         return _pushed
+    }
+
+    /// The `serverSequence` argument from the most recent `pullMutations(since:)` call,
+    /// or `nil` if the adapter hasn't been pulled from yet.
+    var lastSincePulled: Int64? {
+        lock.lock(); defer { lock.unlock() }
+        return _lastSincePulled
     }
 
     func enqueueRemote(_ mutations: [RemoteMutation]) {
@@ -203,6 +297,7 @@ final class StubCloudAdapter: CloudAdapter, @unchecked Sendable {
 
     func pullMutations(since version: SyncVersion) async throws -> [RemoteMutation] {
         lock.lock(); defer { lock.unlock() }
+        _lastSincePulled = version.serverSequence
         return _remote.filter { $0.serverSequence > version.serverSequence }
     }
 }

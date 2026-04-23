@@ -67,7 +67,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.3 Storage — §4.3
 
-- **Shipped** — `MercantisDatabase`, `MigrationRunner`. Three versioned migrations: **v1** creates the advertised tables (`doctypes`, `fields`, `documents`, `document_children`, `sync_queue`, `audit_log`, `apps`, `workflows`); **v2** adds `docStatus` + `amendedFrom` columns (ADR-013); **v3** adds `document_versions` (ADR-024).
+- **Shipped** — `MercantisDatabase`, `MigrationRunner`. Four versioned migrations: **v1** creates the advertised tables (`doctypes`, `fields`, `documents`, `document_children`, `sync_queue`, `audit_log`, `apps`, `workflows`); **v2** adds `docStatus` + `amendedFrom` columns (ADR-013); **v3** adds `document_versions` (ADR-024); **v4** adds the `sync_state` key/value table (P0.3 bookmark persistence).
 - **Partial** — Migrations are forward-only (as intended) but there is no test suite asserting schema shape.
 - **Partial** — `audit_log` has neither a writer nor a reader API. Created, never used.
 
@@ -95,7 +95,7 @@ The `ValidationPipeline`'s `PermissionStage` calls into `PermissionEngine.canPer
 - **Shipped** — Push of pending mutations, pull of remote mutations, per-DocType sync-policy lookup, `ConflictResolver` with LWW / VCM / AO.
 - **Shipped** — `CloudAdapter` protocol + `NoOpCloudAdapter`.
 - **Shipped (P0.2)** — Remote upserts are now routed through `DocumentEngine.applyRemote(_:from:)`, so `ValidationPipeline`, submit-immutability guard, and `DocumentVersion` diff recording all fire on sync-received writes. `UpsertPayload` has been replaced by encoding the full `Document` into the mutation, so push carries a round-trippable payload.
-- **Partial** — `lastServerSequence` is kept in-memory only. A code comment says "a production version would store this in SQLite". Every process restart will re-pull everything the adapter knows about. (P0.3)
+- **Shipped (P0.3)** — `lastServerSequence` now persists in a v4 `sync_state` key/value table. `SyncEngine` loads the bookmark at init and writes it back on every advance, so a process restart no longer re-pulls already-applied remote mutations.
 - **Partial** — Remote mutations are stored in `sync_queue` with status `applied`, never pruned. The queue grows without bound. (P0.4)
 - **Partial** — `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)` appends a `resolveConflict` mutation but does not load the chosen version's payload — the document row is left as whatever the last write set it to.
 
@@ -210,7 +210,6 @@ If you open the repo today expecting to find everything ARCHITECTURE.md §7 adve
 - `PermissionEvaluator` chain — does not exist; `PermissionEngine` is a flat class.
 - AST in `ExpressionEvaluator` — does not exist; direct-eval recursive descent.
 - Role-filtered `availableReports` — does not exist; returns all.
-- Persisted `lastServerSequence` — does not exist; in-memory only.
 - Any XCTest target — does not exist.
 
 Everything else in the doc is at least partially real. The _engine_ is in good shape; the _shell around the engine_ (naming, scheduling, automation runtime, automated events from manifests) is the gap.
