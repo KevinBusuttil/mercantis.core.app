@@ -420,6 +420,51 @@ public final class DocumentEngine {
         return documents
     }
 
+    // MARK: - Versions (ADR-024, P0.8)
+
+    /// Return the full append-only version history for a document, oldest first.
+    ///
+    /// Each `DocumentVersion` captures the field-level diff that was applied by a single
+    /// `DocumentEngine.save` (or `applyRemote`). Saves that produce no field changes do not
+    /// write a version row, so consecutive timestamps need not imply a visible change.
+    public func versions(of documentId: String) throws -> [DocumentVersion] {
+        let rows = try database.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, documentId, docType, savedAt, savedBy, fieldDiffs
+                    FROM document_versions
+                    WHERE documentId = ?
+                    ORDER BY savedAt ASC
+                    """,
+                arguments: [documentId]
+            )
+        }
+        return try rows.map { try documentVersionFromRow($0) }
+    }
+
+    /// Return the document version that was in effect at `timestamp` — i.e. the most
+    /// recent version whose `savedAt` is less than or equal to `timestamp`. Returns `nil`
+    /// if no version was recorded at or before that instant.
+    public func version(of documentId: String, at timestamp: Date) throws -> DocumentVersion? {
+        let cutoff = ISO8601DateFormatter().string(from: timestamp)
+        let row = try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT id, documentId, docType, savedAt, savedBy, fieldDiffs
+                    FROM document_versions
+                    WHERE documentId = ? AND savedAt <= ?
+                    ORDER BY savedAt DESC
+                    LIMIT 1
+                    """,
+                arguments: [documentId, cutoff]
+            )
+        }
+        guard let row = row else { return nil }
+        return try documentVersionFromRow(row)
+    }
+
     // MARK: - Private Helpers
 
     /// Run the full ValidationPipeline for a document under its DocType. (ADR-022)
@@ -617,6 +662,30 @@ public final class DocumentEngine {
                 version.savedBy,
                 diffsString
             ]
+        )
+    }
+
+    /// Decode a `DocumentVersion` from a `document_versions` row. (ADR-024, P0.8)
+    private func documentVersionFromRow(_ row: Row) throws -> DocumentVersion {
+        let id: String = row["id"] ?? ""
+        let documentId: String = row["documentId"] ?? ""
+        let docType: String = row["docType"] ?? ""
+        let savedBy: String = row["savedBy"] ?? ""
+        let savedAtStr: String = row["savedAt"] ?? ""
+        guard !id.isEmpty, let savedAt = ISO8601DateFormatter().date(from: savedAtStr) else {
+            throw DocumentEngineError.malformedRow
+        }
+        let diffsString: String = row["fieldDiffs"] ?? "[]"
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let diffs = try decoder.decode([FieldDiff].self, from: Data(diffsString.utf8))
+        return DocumentVersion(
+            id: id,
+            documentId: documentId,
+            docType: docType,
+            savedAt: savedAt,
+            savedBy: savedBy,
+            fieldDiffs: diffs
         )
     }
 

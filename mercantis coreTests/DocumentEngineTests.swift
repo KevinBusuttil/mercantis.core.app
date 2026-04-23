@@ -133,6 +133,85 @@ final class DocumentEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try documentVersionCount(for: "note-v"), 1)
     }
 
+    // MARK: - Version readers (ADR-024, P0.8)
+
+    func testVersionsReturnsEmptyForUnknownDocument() throws {
+        XCTAssertTrue(try harness.engine.versions(of: "does-not-exist").isEmpty)
+    }
+
+    func testVersionsReturnsChronologicalHistoryWithCorrectDiffs() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        try harness.engine.save(TestSupport.makeDocument(id: "note-h",
+                                                         fields: ["title": .string("v1")]))
+        // ISO8601DateFormatter stores savedAt at second precision; sleep past the
+        // next second boundary so the two versions are distinguishable.
+        Thread.sleep(forTimeInterval: 1.1)
+
+        var second = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "note-h"))
+        second.fields["title"] = .string("v2")
+        try harness.engine.save(second)
+
+        let versions = try harness.engine.versions(of: "note-h")
+        XCTAssertEqual(versions.count, 2)
+        XCTAssertLessThanOrEqual(versions[0].savedAt, versions[1].savedAt)
+
+        XCTAssertEqual(versions[0].fieldDiffs.first?.fieldKey, "title")
+        XCTAssertNil(versions[0].fieldDiffs.first?.oldValue)
+        XCTAssertEqual(versions[0].fieldDiffs.first?.newValue, .string("v1"))
+
+        XCTAssertEqual(versions[1].fieldDiffs.first?.oldValue, .string("v1"))
+        XCTAssertEqual(versions[1].fieldDiffs.first?.newValue, .string("v2"))
+    }
+
+    func testVersionAtBeforeFirstSaveReturnsNil() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let before = Date()
+        Thread.sleep(forTimeInterval: 1.1)
+        try harness.engine.save(TestSupport.makeDocument(id: "note-p",
+                                                         fields: ["title": .string("v1")]))
+
+        XCTAssertNil(try harness.engine.version(of: "note-p", at: before))
+    }
+
+    func testVersionAtReturnsLatestSaveAtOrBeforeTimestamp() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        try harness.engine.save(TestSupport.makeDocument(id: "note-pit",
+                                                         fields: ["title": .string("v1")]))
+        Thread.sleep(forTimeInterval: 1.1)
+        let cutoff = Date()
+        Thread.sleep(forTimeInterval: 1.1)
+
+        var second = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "note-pit"))
+        second.fields["title"] = .string("v2")
+        try harness.engine.save(second)
+
+        let snapshot = try XCTUnwrap(harness.engine.version(of: "note-pit", at: cutoff))
+        XCTAssertEqual(snapshot.fieldDiffs.first?.newValue, .string("v1"),
+                       "cutoff between v1 and v2 saves must resolve to the v1 version")
+    }
+
+    func testSaveWithoutFieldChangesDoesNotAppendAVersion() throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        try harness.engine.save(TestSupport.makeDocument(id: "note-nop",
+                                                         fields: ["title": .string("v1")]))
+        let countAfterFirstSave = try harness.engine.versions(of: "note-nop").count
+
+        // Re-save with identical field values (refetch to pick up fresh updatedAt).
+        let refetched = try XCTUnwrap(harness.engine.fetch(docType: "Note", id: "note-nop"))
+        try harness.engine.save(refetched)
+
+        XCTAssertEqual(try harness.engine.versions(of: "note-nop").count, countAfterFirstSave,
+                       "a save that changes no fields must not append a version row")
+    }
+
     // MARK: - Delete
 
     func testDeleteRemovesRowAndAppendsMutation() throws {
