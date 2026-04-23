@@ -112,16 +112,24 @@ ADR-012 already says "superseded"; the code should reflect it.
 - Correct the `PermissionEngine.canPerform` signature in §4.15 to `canPerform(operation:on:userRoles:)`.
 - (Already done in this changeset: ADR-027 added to §8.)
 
-### P0.8 — `DocumentVersion` stores the full old/new not just a diff summary [S, low risk] — ADR-024
+### P0.8 — `DocumentVersion` stores the full old/new not just a diff summary [S, low risk] — ADR-024 *(done — 2026-04-23)*
 
-Today `DocumentVersion.fieldDiffs` is computed but there is no reader API. Add:
+`DocumentEngine` now exposes two reader APIs that make the append-only `document_versions` history consumable:
 
 ```swift
 public func versions(of documentId: String) throws -> [DocumentVersion]
 public func version(of documentId: String, at timestamp: Date) throws -> DocumentVersion?
 ```
 
-…on `DocumentEngine`. Without a reader, the feature is write-only and gives "complete field-level change history for audit-sensitive documents" (§4.2) no way to be consumed.
+`versions(of:)` returns the full history ordered oldest first. `version(of:at:)` returns the version that was **in effect at** `timestamp` — the most recent version with `savedAt <= timestamp` — or `nil` if no version was recorded at or before that instant. Both read straight from the v3 `document_versions` table; saves that produce no field changes still do not write a row, so the history surface matches the write path one-for-one.
+
+Coverage in `DocumentEngineTests.swift`:
+
+- `testVersionsReturnsEmptyForUnknownDocument`
+- `testVersionsReturnsChronologicalHistoryWithCorrectDiffs`
+- `testVersionAtBeforeFirstSaveReturnsNil`
+- `testVersionAtReturnsLatestSaveAtOrBeforeTimestamp`
+- `testSaveWithoutFieldChangesDoesNotAppendAVersion`
 
 ### P0.9 — Fix unary minus in `ExpressionEvaluator` [S, low risk] — ADR-017
 
@@ -403,7 +411,7 @@ A 4–6 week plan if one engineer is the target:
 |---|---|
 | 1 | P0.1 test target ✅; P0.6 event bus cleanup ✅; P0.7 doc cleanup ✅; P0.9 unary minus ✅. |
 | 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
-| 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader; P1.5 real validation stages. |
+| 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
 | 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
 
