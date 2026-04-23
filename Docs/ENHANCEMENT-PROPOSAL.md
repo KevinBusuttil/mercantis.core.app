@@ -2,7 +2,7 @@
 
 _Last updated: 2026-04-23_
 
-Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR it relates to so the backlog is obvious.
+Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
 Principles guiding the ranking:
 
@@ -30,21 +30,21 @@ Test source is now in `mercantis coreTests/`:
 
 **Remaining work:** wire the files into an Xcode Unit Testing Bundle target. Steps are in `mercantis coreTests/README.md`. Once added, the suite runs via `⌘U` or `xcodebuild test`.
 
-Why this was first: every enhancement below lands more safely on top of a test target. The validation pipeline in particular was built for independent stage testing (ADR-022) — shipping it without tests defeats the design.
+Why this was first: every enhancement below lands more safely on top of a test target. The validation pipeline in particular was built for independent stage testing (ADR-022) — shipping it without a test target inverts the intended workflow.
 
 ### P0.2 — Run sync-received writes through `DocumentEngine` [M, medium risk] — ADR-005/022/024 *(done)*
 
-`DocumentEngine.applyRemote(_:from:)` now owns the persistence of sync-received upserts. It runs the same `ValidationPipeline` (ADR-022), submit-immutability guard (ADR-013), and `DocumentVersion` diff recording (ADR-024) that `save(_:)` runs for local writes, while skipping the mutation-log append (the remote mutation is the record) and the optimistic-concurrency check (conflict detection is `ConflictResolver`'s job). `syncState` is forced to `.synced`.
+`DocumentEngine.applyRemote(_:from:)` now owns the persistence of sync-received upserts. It runs the same `ValidationPipeline` (ADR-022), submit-immutability guard (ADR-013), and `DocumentVersion` diff recording (ADR-024) that local saves do. Remote writes are no longer a bypass path.
 
-Also fixed an adjacent latent bug: `UpsertPayload` was a 4-field projection that dropped the document's fields on push. Both local saves and remote applies now encode/decode the full `Document` into the mutation payload.
+Also fixed an adjacent latent bug: `UpsertPayload` was a 4-field projection that dropped the document's fields on push. Both local saves and remote applies now encode/decode the full `Document` in the sync queue payload.
 
-`SyncEngine.applyRemoteUpsert` is now a thin dispatcher: decode → `ConflictResolver` → `.accepted` / `.appendedAsNew` delegate to `applyRemote`; `.conflicted` marks the local row. Coverage landed in `DocumentEngineTests.swift` (`testApplyRemote*`, `testSavedMutationPayloadEncodesFullDocument`) and the new `SyncEngineTests.swift` (StubCloudAdapter, push-payload round-trip, rejected invalid remotes, conflicted-without-overwrite).
+`SyncEngine.applyRemoteUpsert` is now a thin dispatcher: decode → `ConflictResolver` → `.accepted` / `.appendedAsNew` delegate to `applyRemote`; `.conflicted` marks the local row. Coverage lands in `SyncEngineTests.swift`.
 
-**Known follow-up:** `LinkValidationStage` runs on remote writes too, which means out-of-order arrivals (child-before-parent) will be rejected rather than buffered. Assumes the CloudAdapter preserves commit order. When a real adapter lands, either require ordered delivery in the adapter contract or add a buffered-retry layer. Tracked as a candidate ADR.
+**Known follow-up:** `LinkValidationStage` runs on remote writes too, which means out-of-order arrivals (child-before-parent) will be rejected rather than buffered. Assumes the CloudAdapter preserves ordering; document when writing the real adapter.
 
 ### P0.3 — Persist `lastServerSequence` [S, low risk] — ADR-005 *(done)*
 
-`SyncEngine.lastServerSequence` now survives process restarts. A new v4 migration adds a small key/value `sync_state` table; the engine loads the bookmark at init and rewrites it (UPSERT) inside the existing `updateLastServerSequence(toAtLeast:)` whenever it advances. Persistence failures are logged-and-swallowed rather than fatal — the in-memory value still advances so the current process won't re-pull already-applied remote mutations, and the next successful advance rewrites the bookmark.
+`SyncEngine.lastServerSequence` now survives process restarts. A new v4 migration adds a small key/value `sync_state` table; the engine loads the bookmark at init and rewrites it (UPSERT) inside the existing write transaction on every pull advance.
 
 Coverage in `SyncEngineTests.swift`:
 
@@ -62,12 +62,12 @@ Both local `.pushed` and remote `.applied` rows accumulate forever. Add a retent
 - Acknowledged local mutations older than N (default 30?) days → delete.
 - Applied remote mutations older than the highest persisted `lastServerSequence` → delete.
 
-Done transactionally with vacuum budgeting (don't vacuum on every call). This is the "sync queue pruning" ADR candidate listed in ARCHITECTURE-CHANGELOG; promote it to an ADR as part of the change.
+Done transactionally with vacuum budgeting (don't vacuum on every call). This is the "sync queue pruning" ADR candidate listed in ARCHITECTURE-CHANGELOG; promote it to an ADR as part of the changeset.
 
 ### P0.5 — Align the Permissions doc with the code (or the other way around) [S, medium risk] — ADR-011
 
 Either:
-- **A. Fix the doc.** Rewrite §4.4 and ADR-011 to describe the flat `canPerform` / `canAccessField` / `canAccessRow` that actually exists, and remove references to `PermissionEvaluator`, `PermissionDecision`, `AppLevelEvaluator`, `WorkflowLevelEvaluator`.
+- **A. Fix the doc.** Rewrite §4.4 and ADR-011 to describe the flat `canPerform` / `canAccessField` / `canAccessRow` that actually exists, and remove references to `PermissionEvaluator`, `PermissionDecision`, and the evaluator chain.
 - **B. Implement the chain.** Introduce the `PermissionEvaluator` protocol, five concrete evaluators, and a chain runner. Replace `PermissionStage` in the pipeline to call the chain.
 
 B is the stated direction (and matches how `ValidationPipeline` is already structured), but it's a larger change. A unblocks P0.2 and P0.8 immediately. **Recommendation: do A now, schedule B.**
@@ -103,7 +103,7 @@ public func version(of documentId: String, at timestamp: Date) throws -> Documen
 
 ### P0.9 — Fix unary minus in `ExpressionEvaluator` [S, low risk] — ADR-017
 
-The tokeniser treats `-` as a negative-number prefix only when `tokens.isEmpty`. `1 + -2` is parsed as `1`, `+`, `2` (silently wrong). Make unary minus a real parser case in `parseFactor` / `parseValue`, or emit `UnaryOp(.neg, ...)` tokens. Minor but easy, and builds the muscle for the AST rework (P2.1).
+The tokeniser treats `-` as a negative-number prefix only when `tokens.isEmpty`. `1 + -2` is parsed as `1`, `+`, `2` (silently wrong). Make unary minus a real parser case in `parseFactor` / `parseUnary`. Cover with `ExpressionEvaluatorTests`.
 
 ---
 
@@ -128,7 +128,7 @@ mercantis core/Naming/
 
 Wire `NamingService.resolve(...)` into `DocumentEngine.save` **before** persist, when `document.id` is empty. Add a `naming_counters` migration (v4) for the series strategy.
 
-**Effort caveat:** Time-token expansion (`YYYY`, `MM`, `DD`) is trivial; concurrent `.####` increments under offline use need the sync queue to carry the counter update, otherwise two devices both produce `SINV-2026-0001`. A simple answer: prefix series with device ID (`SINV-2026-{deviceId}-0001`) and let the cloud reconcile to a canonical number on first server write. That deserves its own ADR.
+**Effort caveat:** Time-token expansion (`YYYY`, `MM`, `DD`) is trivial; concurrent `.####` increments under offline use need the sync queue to carry the counter update, otherwise two devices both start at `SINV-2026-0001`.
 
 ### P1.2 — Implement the Automation runtime [L, medium risk] — ADR-019 / ADR-025
 
@@ -176,12 +176,12 @@ Cron support is the only non-trivial piece. A dependency-free subset (minute, ho
 ### P1.5 — Turn `WorkflowGuardStage` and `PermissionStage` into real stages [S, low risk] — ADR-022
 
 Both are placeholders that comment-document the gap. Fold them in:
-- `WorkflowGuardStage` — given the current document and its target `docStatus`/status transition, verify the transition is declared in the `WorkflowDefinition` and the user has the role. Rejects the save before any write.
+- `WorkflowGuardStage` — given the current document and its target `docStatus`/status transition, verify the transition is declared in the `WorkflowDefinition` and the user has the role. Reject with a typed error if not.
 - `PermissionStage` — once P0.5 option B lands, call `PermissionEngine.canPerform(operation: .write, on: docType, userRoles:)`. Until then, wire the existing flat methods.
 
 ### P1.6 — Expand `FieldValue` [S, low risk] — ARCHITECTURE-CHANGELOG follow-up
 
-Add `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, `.array([FieldValue])`. Decoder needs a disambiguation key (currently `FieldValue` is likely coded as a tagged enum — confirm during the change). All call sites then switch-exhaust cleanly, which is the biggest argument for doing it: the compiler will flag every coercion / formatter / UI renderer that is currently pretending strings are dates.
+Add `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, `.array([FieldValue])`. Decoder needs a disambiguation key (currently `FieldValue` is likely coded as a tagged enum — confirm during the changeset). This is a prerequisite for P2.8 (richer field controls) and for `FieldType.date` / `FieldType.datetime` to round-trip correctly rather than relying on string encoding.
 
 ### P1.7 — Row-level permissions take a condition expression [M, medium risk] — ADR-011
 
@@ -197,17 +197,17 @@ canAccessRow(document:, userRoles:, rowExpression: String?) -> Bool
 
 ### P2.0 — Metadata workspace UX refactor [S, low risk] — ADR-016 / ADR-027 ✅ shipped 2026-04-23
 
-**Rationale:** `DocTypeBuilderView`, `Modules`, and `DocTypes` shared the same workspace chrome but did not read as one coherent family. Section headers (`MercantisSectionHeading`) were visually indistinguishable from interactive chips. Repeated collections (fields, permissions, indexes) were stacked full-form cards — noisy at any count above three.
+**Rationale:** `DocTypeBuilderView`, `Modules`, and `DocTypes` shared the same workspace chrome but did not read as one coherent family. Section headers (`MercantisSectionHeading`) were visually noisy and chrome-heavy.
 
 **Implemented:**
 
 - `MercantisSectionHeading` redesigned as a genuine structural header: uppercase tracking text, no background fill, no border-radius. Looks like a macOS grouped-table section label, not a button.
 - `DocTypeBuilderView` restructured into three logical groups:
   - **Basic Info** — compact card for DocType ID, name, module, title field, search fields, flags.
-  - **Schema** — segmented tab (`Fields` / `Permissions`). Each collection renders compact single-line summary rows (key · type · Required badge; role · R/W/C/D/S/A matrix). Selecting a row expands an inline editor; other rows stay collapsed. Replaces the previous stacked full-form card-per-item layout.
+  - **Schema** — segmented tab (`Fields` / `Permissions`). Each collection renders compact single-line summary rows (key · type · Required badge; role · R/W/C/D/S/A matrix). Selecting a row expands the editor inline.
   - **Configuration** — sync policy card + compact Indexes collection, clearly separated from the schema concerns above.
 - `SelectedRecordHeader` given a surface background and bottom divider, making it a proper workspace entity banner. Shared by both Modules and DocTypes detail views.
-- `moduleSelectedRecordHeader` (NavigationShell) enriched with a `subtitle` ("Custom Module" / "System Module") and a DocType count badge derived from existing `tooling.navigableDocTypes`. No invented analytics.
+- `moduleSelectedRecordHeader` (NavigationShell) enriched with a `subtitle` ("Custom Module" / "System Module") and a DocType count badge derived from existing `tooling.navigableDocTypes`. No invented data.
 - External padding removed from `RecordCollectionHostView`'s `detailHeader` slot to avoid double-padding now that `SelectedRecordHeader` carries its own padding.
 
 **Non-goals respected:** no nav model change, no design-lab promotion, no fake dashboards, no extra color, FormBuilderView left structurally intact.
@@ -219,19 +219,19 @@ canAccessRow(document:, userRoles:, rowExpression: String?) -> Bool
 | Entry point | Today | File |
 |---|---|---|
 | DocTypes workspace → New | `.sheet` presents `DocTypeBuilderView` (correct) | `DocTypeListView.swift:31-34, 60-71` |
-| Quick Create → "New Doctype" | `router.openDocType(...)` + pre-loads `activeDocument` in the generic `docTypeDetail` path, bypassing `DocTypeListView` | `NavigationShell.swift:310-317, 364-397` |
+| Quick Create → "New Doctype" | `router.openDocType(...)` + pre-loads `activeDocument` in the generic `docTypeDetail` path, bypassing `DocTypeListView` | `NavigationShell.swift:310-317, 364-390` |
 | Command Bar → "New <X>" | Same as Quick Create | `NavigationShell.swift:575-588` |
 | Generic workspace toolbar → New | `RecordCollectionHostView.handleCreateDocument()` switches to `.detail` view mode and inlines `GenericFormView` | `RecordCollectionHostView.swift:186-194` |
 
-So for `Doctype` specifically — and for every other DocType — whether the user sees a proper modal or an inline-draft-in-the-content-pane depends on *which door they walked through*. This is the opposite of the macOS HIG pattern (Contacts, Reminders, Calendar, Things): "+" always presents a sheet; double-clicking an existing row edits inline.
+So for `Doctype` specifically — and for every other DocType — whether the user sees a proper modal or an inline-draft-in-the-content-pane depends on *which door they walked through*. This is a UX consistency problem and a latent bug surface (the inline path bypasses the sheet's discard guard).
 
 **Implemented:**
 
-- `CreateRecordSheet` — new sheet primitive (`UIShell/CreateRecordSheet.swift`) that hosts `GenericFormView` on a draft document with a macOS-style header (title "New <DocType.name>", module subtitle), inline error surface, and a Cancel (⎋) / Create (⌘↩) footer. Sheet dismisses on success; the draft is selected in the list via `selectedDocumentID`.
-- `RecordCollectionHostView` — `handleCreateDocument` no longer mutates `selectedViewMode`. Instead it sets `createSheetDraft`, which drives a `.sheet(item:)` presenting `CreateRecordSheet`. `onSaveDocument` is now `(Document) throws -> Void` so both the create sheet and the detail-pane Save can surface errors inline (previous code `try?`-swallowed them). A new optional `externalCreateTrigger: Binding<Bool>?` lets the workspace react to router-driven create requests the same way the toolbar "New" does.
-- `UIShellRouter` — new `pendingCreate: String?` published property plus `requestCreate(docTypeId:module:)` / `consumePendingCreate(_:)`. `requestCreate` navigates to the workspace responsible for that DocType *before* setting the signal so the workspace is already rendered when it observes it. The `Doctype` built-in is specifically routed through `openDocTypes()` so `DocTypeListView` — not the generic `docTypeDetail` — handles the request; this closes the gap where Quick Create → "New Doctype" previously went through the generic path.
-- Quick Create (`NavigationShell.swift`) and Command Bar now call `router.requestCreate(...)` instead of `router.openDocType(...)` + `activeDocument = tooling.createDraftDocument(...)`. No more pre-loaded inline drafts — every "New X" produces the same sheet.
-- `DocTypeListView` keeps its bespoke `DocTypeBuilderView` sheet (authoring DocType metadata is not a generic-form task) but now also listens to `router.pendingCreate == BuiltInDocTypes.docType.id` via the same `externalCreateTrigger`. Its `onCreateDocument` continues to return `nil` (short-circuiting the host's generic sheet) and flip `showNewDocTypeSheet = true`, so one trigger path covers both toolbar-invoked and Quick-Create-invoked creation.
+- `CreateRecordSheet` — new sheet primitive (`UIShell/CreateRecordSheet.swift`) that hosts `GenericFormView` on a draft document with a macOS-style header (title "New <DocType.name>", module subtitle, Cancel / Save buttons). Discard guard built in.
+- `RecordCollectionHostView` — `handleCreateDocument` no longer mutates `selectedViewMode`. Instead it sets `createSheetDraft`, which drives a `.sheet(item:)` presenting `CreateRecordSheet`. `onSave` commits via `tooling.saveDocument`, then selects the new record and dismisses.
+- `UIShellRouter` — new `pendingCreate: String?` published property plus `requestCreate(docTypeId:module:)` / `consumePendingCreate(_:)`. `requestCreate` navigates to the workspace responsible for the target DocType, then signals `pendingCreate`; `RecordCollectionHostView.onAppear` consumes it and fires `handleCreateDocument`.
+- Quick Create (`NavigationShell.swift`) and Command Bar now call `router.requestCreate(...)` instead of `router.openDocType(...)` + `activeDocument = tooling.createDraftDocument(...)`. No more pre-loaded inline drafts.
+- `DocTypeListView` keeps its bespoke `DocTypeBuilderView` sheet (authoring DocType metadata is not a generic-form task) but now also listens to `router.pendingCreate == BuiltInDocTypes.docType.id` and re-routes through the same `CreateRecordSheet` path for cross-entry-point consistency.
 
 **Non-goals respected:** no changes to `FormBuilderView` or the visual-builder window; editing remains inline in detail/browse; no nav model changes beyond the `pendingCreate` signal.
 
@@ -253,43 +253,67 @@ Frequently requested Frappe feature. Requires a decision: cache-by-read, or forc
 
 ### P2.3 — Consolidate `AppInstaller` and CLI `install-app` [M, medium risk] — CLI/app parity
 
-Currently there are two independent install paths (one via GRDB in the app, one via raw `sqlite3` in `MercantisCLI/Sources/Support/SQLiteDatabase.swift`). They will drift. Extract the mutation-queue-and-metadata-write logic into a shared `AppInstallPlan` struct that both callers execute against their respective database handles, or have the CLI link against the Swift library.
+Currently there are two independent install paths (one via GRDB in the app, one via raw `sqlite3` in `MercantisCLI/Sources/Support/SQLiteDatabase.swift`). They will drift. Extract the mutation-query set into a shared target (or at minimum a tested reference implementation) that both paths call.
 
-### P2.4 — Dashboard renderer [L, medium risk] — §5.1
+### P2.4 — Dashboard runtime [L, medium risk] — §5.1
 
-`DashboardDefinition` and `DashboardWidget` are declared in `AppRuntimeTypes.swift`. Build a minimal `DashboardView` that renders registered widgets (count, list, number) from `ReportEngine.execute(...)` results. This is what users see first when they open a module.
+`DashboardDefinition` and `DashboardWidget` are declared in `AppRuntimeTypes.swift`. `AppManifest.dashboards` decodes correctly. The type layer exists; the runtime does not. `IMPLEMENTATION-STATUS.md §2.17` confirms: "The type exists; the runtime does not."
+
+This item should not be scoped as "add a view that renders some widgets". It should be scoped as a **reusable dashboard runtime** that any installed module — including Mercantis Hub — can populate from its manifest without writing custom Swift UI code.
+
+Minimum viable capabilities for an ERP module home page and operational dashboard:
+
+- **Number / KPI widget** — a single labelled aggregate (count, sum, latest value) sourced from `ReportEngine.execute` or `DocumentEngine.list`. Supports colour / threshold colouring.
+- **List widget** — compact recent-records or pending-tasks surface with a configurable DocType, filter set, and column list. Navigates into the relevant workspace row on tap.
+- **Chart-ready extensibility** — a widget protocol slot that accepts an external chart data provider. The runtime does not need to bundle a charting library, but it must expose a stable protocol so Hub or a third-party module can satisfy it without forking the dashboard layer.
+- **Drilldown / navigation hooks** — tapping a KPI or a list row calls into `UIShellRouter` to open a filtered `GenericListView` or a specific document. This requires `UIShellRouter` integration at the widget protocol level.
+- **Module landing pages** — the dashboard runtime must be the default home surface for any installed module that declares a `DashboardDefinition`. `AppManifest.dashboards` already declares this intent; the runtime must deliver it as a first-class navigation destination, not as a demo-only surface in `Views/DesignSystem/`.
+
+Until this is in place, every module home page falls back to `GenericListView`, which is functional but not a dashboard.
 
 ### P2.5 — List filters / sorting / paging [S, low risk] — §4.15
 
-`DocumentEngine.list(docType:filters:)` is equality-only. Add `sortBy:`, `limit:`, and `where:` (expression) to match the advertised signature. The index definitions in `IndexDefinition` exist but aren't used by the query — this is a good time to translate them into SQLite indexes at install time.
+`DocumentEngine.list(docType:filters:)` is equality-only. Add `sortBy:`, `limit:`, and `where:` (expression) to match the advertised signature. The index definitions in `IndexDefinition` exist but are not yet used by the list path.
 
----
+### P2.6 — Productize Core as a reusable library target [M, low risk] — ADR-007
 
-## P3 — Nice-to-haves & ecosystem
+`Package.swift` currently declares a single `.executable` product (`mercantis`) that wraps `MercantisCLI/Sources`. The `mercantis core/` engine exists as an embedded Xcode framework target inside `mercantis.core.app.xcodeproj`, but there is **no `.library` product in `Package.swift`** that Hub — or any third-party app — could reference with a standard `.package(url:from:)` dependency.
 
-### P3.1 — File/Attachment subsystem [L, medium risk] — §4.18
+ADR-007 states: "Mercantis Hub is structured as an Xcode project that imports Core as a Swift package or embedded framework." That presupposes an importable, versioned package product. Right now the Core/Hub boundary is architecturally correct but not mechanically enforced. Hub cannot `import MercantisCore` from a resolved Swift package dependency because no such product exists.
 
-Only interesting once there's a cloud adapter to sync blobs. Keep as "planned".
+Required work:
+- Extract `mercantis core/` source files into a proper `.library` target in `Package.swift` (e.g. target name `MercantisCore`).
+- Declare a `.library(name: "MercantisCore", targets: ["MercantisCore"])` product.
+- Audit `public` vs. `internal` access modifiers deliberately — every `public` member becomes part of the enforced API surface that Hub (and any third party) must use. Internal implementation details become un-importable by design.
+- The CLI target (`mercantis`) continues as an `.executable` that declares a dependency on `MercantisCore`.
+- The Xcode app target (`mercantis core`) becomes a consumer of the `MercantisCore` package target.
 
-### P3.2 — Print & PDF [L, medium risk] — §4.17
+Until this is done, the Core/Hub split is aspirational: the right design, but not an enforced Swift module boundary. ADR-007's "public/internal boundary in Core is enforced by the Swift module system" consequence is not yet true.
 
-Platform-specific (UIKit / AppKit PDF renderers). Keep as "planned".
+### P2.7 — Hub-on-Core readiness: what is sufficient vs. what is still missing [S, low risk] — ADR-007
 
-### P3.3 — CSV/JSON Import / Export [M, low risk] — §4.20
+This is a gap-analysis item, not a criticism of ADR-007. The direction in ADR-007 is correct. The question is: *how much of it is already true?*
 
-Less risky than it sounds: the import path is just `DocumentEngine.save(_:)` in a loop with a DocType-aware column mapper. Good contribution opportunity; no deep design work.
+**What is strong enough to start Hub today:**
 
-### P3.4 — `CacheManager` as a real subsystem [M, medium risk] — §4.14
+The engine core — `DocumentEngine`, `WorkflowEngine`, `ValidationPipeline`, `PermissionEngine`, `SyncEngine`, `MetaComposer`, `AppInstaller`, and the `GenericFormView` / `GenericListView` shell — is in good working order, covered by tests, and sufficient to build Hub's back-office document foundations. Starting Hub now, against the current public API, is the right way to discover which Core capabilities are missing or incomplete. ADR-007 anticipated this: "if Hub needs functionality that Core does not yet provide, the correct approach is to extend Core's public API".
 
-Only if measurable hot paths are found. Premature today — `MetaComposer`'s internal cache is sufficient, and GRDB's prepared statements cover most query cost. Defer until a profiling pass.
+**What is not yet sufficient to claim ADR-007 is fully realised:**
 
-### P3.5 — Audit-log reader + writer [S, low risk]
+The subsystems explicitly recorded as missing in `IMPLEMENTATION-STATUS.md` are not cosmetic. Several are load-bearing for any non-trivial ERP module:
 
-The `audit_log` table exists and nothing writes it. Either repurpose it (the sync queue is already acting as the audit log) and drop the table in a v5 migration, or start writing structured `AuditEvent` rows from `DocumentEngine` side-effects. Pick one; the current "write nothing, read nothing" state is pure cruft.
+| Missing subsystem | Why it matters for Hub |
+|---|---|
+| Naming (ADR-014, P1.1) | Every Hub document — Invoice, Sales Order, Purchase Order — needs a series name like `SINV-2026-00001`, not a raw UUID caller-supplied ID. |
+| Automation runtime (ADR-019/025, P1.2/P1.3) | "On submit, deduct stock" is a basic ERP rule. Without the automation runtime, every such rule must be hard-coded in Hub's own Swift — which is exactly what ADR-007 prohibits. |
+| Files / Attachments (§4.18, P3.1) | Attaching PDFs, images, and supplier documents to records is table-stakes for back-office ERP. |
+| Import / Export (§4.20, P3.3) | Opening-balance imports and data migration are day-one practical needs for any real deployment. |
+| Printing / PDF (§4.17, P3.2) | Invoices, purchase orders, and delivery notes must be printable. |
+| Dashboard runtime (§5.1) | Module home pages need more than `GenericListView`. Without it, every Hub module lands on a flat list. |
 
----
+The conclusion is: **start Hub, extend Core as you hit walls, and treat the gap table above as the real completion criteria for ADR-007 — not a reason to delay starting**.
 
-## Proposed sequencing
+### Proposed sequencing
 
 A 4–6 week plan if one engineer is the target:
 
@@ -299,16 +323,13 @@ A 4–6 week plan if one engineer is the target:
 | 2 | P0.2 sync-through-engine; P0.3 persisted sequence; P0.4 queue pruning + ADR. |
 | 3 | P0.5A (rewrite permissions doc) or P0.5B (implement chain); P0.8 version reader; P1.5 real validation stages. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
-| 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
+| 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution.
 
 P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
 
-The order matters: testing before refactoring, drift closure before new subsystems, mutation-log soundness before automation that depends on it.
+P2.6 (Core library productization) and P2.7 (Hub readiness gap analysis) are relatively lightweight but structurally important; P2.6 in particular should happen before Hub development begins in earnest, not after. Both can run in parallel with late-P1 work. P2.8 (richer field/control model) is incremental and should be tackled field-type by field-type as Hub surfaces concrete UI needs — do not pre-design the full control taxonomy in a vacuum. P3.6 (POS platform) should not begin until P1.1 (Naming), P3.2 (Printing), P2.8 (field controls), and P1.2/P1.3 (Automation) are substantially in place; starting earlier will produce a prototype that cannot be deployed.
+
+The order matters: testing before refactoring, drift closure before new subsystems, mutation-log soundness before automation that depends on it, Core package boundary before Hub, engine completeness before POS glamour work.
 
 ---
 
-## What _not_ to build right now
-
-- **Print & PDF, Files, Cache** — defer. Premature for a platform still closing core loops.
-- **WebSocket RealtimeAdapter** — defer until CloudAdapter has a real implementation.
-- **More ADRs for existing aspirational features** — the current ADR set already over-describes reality in a few places. Write ADRs when you actually implement (like ADR-023/024 did, which closely track the code).
