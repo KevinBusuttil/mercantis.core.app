@@ -216,6 +216,186 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(adapter.lastSincePulled, 0)
     }
 
+    // MARK: - Queue pruning (P0.4 / ADR-028)
+
+    private func insertRawQueueRow(
+        id: UUID = UUID(),
+        type: MutationType = .upsertDocument,
+        status: MutationStatus,
+        localTimestamp: Date
+    ) throws {
+        let iso = ISO8601DateFormatter().string(from: localTimestamp)
+        try harness.database.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO sync_queue
+                        (id, type, payload, deviceId, userId, localTimestamp, syncVersion, status)
+                    VALUES (?, ?, '{}', 'dev', 'user', ?, 0, ?)
+                    """,
+                arguments: [id.uuidString, type.rawValue, iso, status.rawValue]
+            )
+        }
+    }
+
+    private func queueCount(status: MutationStatus) throws -> Int {
+        try harness.database.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM sync_queue WHERE status = ?",
+                arguments: [status.rawValue]
+            ) ?? 0
+        }
+    }
+
+    private func makeSync(
+        config: SyncQueuePruneConfig = .default,
+        now: Date = Date()
+    ) -> SyncEngine {
+        SyncEngine(
+            database: harness.database,
+            documentEngine: harness.engine,
+            registry: harness.registry,
+            cloudAdapter: adapter,
+            pruneConfig: config,
+            clock: { now }
+        )
+    }
+
+    func testPruneRemovesPushedRowsOlderThanRetention() throws {
+        let now = Date()
+        let engine = makeSync(
+            config: SyncQueuePruneConfig(
+                pushedRetention: 30 * 86_400,
+                appliedRetention: 30 * 86_400,
+                pruneInterval: 86_400
+            ),
+            now: now
+        )
+
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-31 * 86_400))
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-1 * 86_400))
+
+        let deleted = try engine.pruneSyncQueue(force: true)
+
+        XCTAssertEqual(deleted, 1)
+        XCTAssertEqual(try queueCount(status: .pushed), 1, "only the fresh .pushed row should remain")
+    }
+
+    func testPruneRemovesAppliedRowsOlderThanRetention() throws {
+        let now = Date()
+        let engine = makeSync(
+            config: SyncQueuePruneConfig(
+                pushedRetention: 30 * 86_400,
+                appliedRetention: 30 * 86_400,
+                pruneInterval: 86_400
+            ),
+            now: now
+        )
+
+        try insertRawQueueRow(status: .applied, localTimestamp: now.addingTimeInterval(-60 * 86_400))
+        try insertRawQueueRow(status: .applied, localTimestamp: now.addingTimeInterval(-29 * 86_400))
+
+        let deleted = try engine.pruneSyncQueue(force: true)
+
+        XCTAssertEqual(deleted, 1)
+        XCTAssertEqual(try queueCount(status: .applied), 1)
+    }
+
+    func testPruneNeverDeletesPendingOrConflictedRows() throws {
+        let now = Date()
+        let engine = makeSync(now: now)
+
+        // Ancient pending and conflicted rows that would be deleted if the
+        // filter were age-only.
+        let ancient = now.addingTimeInterval(-365 * 86_400)
+        try insertRawQueueRow(status: .pending, localTimestamp: ancient)
+        try insertRawQueueRow(status: .conflicted, localTimestamp: ancient)
+
+        _ = try engine.pruneSyncQueue(force: true)
+
+        XCTAssertEqual(try queueCount(status: .pending), 1,
+                       "pending rows must survive prune regardless of age")
+        XCTAssertEqual(try queueCount(status: .conflicted), 1,
+                       "conflicted rows must survive prune regardless of age")
+    }
+
+    func testPruneThrottlesWhenCalledWithinInterval() throws {
+        let now = Date()
+        let engine = makeSync(
+            config: SyncQueuePruneConfig(
+                pushedRetention: 30 * 86_400,
+                appliedRetention: 30 * 86_400,
+                pruneInterval: 86_400
+            ),
+            now: now
+        )
+
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-40 * 86_400))
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-41 * 86_400))
+
+        let first = try engine.pruneSyncQueue(force: false)
+        XCTAssertEqual(first, 2, "first non-forced prune should run")
+
+        // Add another stale row; a second non-forced call within the interval
+        // must be throttled and not touch the queue.
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-42 * 86_400))
+
+        let second = try engine.pruneSyncQueue(force: false)
+        XCTAssertEqual(second, 0, "second non-forced prune within pruneInterval must no-op")
+        XCTAssertEqual(try queueCount(status: .pushed), 1,
+                       "the row added after the first prune must still be there")
+    }
+
+    func testForcePruneBypassesThrottle() throws {
+        let now = Date()
+        let engine = makeSync(now: now)
+
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-60 * 86_400))
+        _ = try engine.pruneSyncQueue(force: false)
+
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-90 * 86_400))
+        let forced = try engine.pruneSyncQueue(force: true)
+        XCTAssertEqual(forced, 1, "force: true must bypass the pruneInterval throttle")
+    }
+
+    func testPruneWatermarkIsPersistedToSyncState() throws {
+        let now = Date()
+        let engine = makeSync(now: now)
+
+        _ = try engine.pruneSyncQueue(force: true)
+
+        let stored: String? = try harness.database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT value FROM sync_state WHERE key = ?",
+                arguments: ["syncQueuePrunedAt"]
+            )?["value"]
+        }
+        XCTAssertNotNil(stored, "prune must persist a watermark in sync_state")
+    }
+
+    func testPushPendingMutationsOpportunisticallyPrunesOldPushedRows() async throws {
+        let docType = TestSupport.makeDocType()
+        try harness.registry.register(docType)
+
+        let now = Date()
+        let engine = makeSync(now: now)
+
+        // Ancient acknowledged row that predates the retention window.
+        try insertRawQueueRow(status: .pushed, localTimestamp: now.addingTimeInterval(-60 * 86_400))
+
+        // A fresh local save produces a pending mutation that will be pushed.
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "prune-push-1",
+            fields: ["title": .string("fresh")]
+        ))
+
+        try await engine.pushPendingMutations()
+
+        XCTAssertEqual(try queueCount(status: .pushed), 1,
+                       "the fresh push should remain; the 60-day-old .pushed row should be pruned")
+    }
+
     func testConflictedRemoteMarksLocalDocumentConflictedWithoutOverwriting() async throws {
         let docType = TestSupport.makeDocType(syncPolicy: SyncPolicy(
             conflictResolution: .versionChecked,

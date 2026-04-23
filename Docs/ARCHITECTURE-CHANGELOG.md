@@ -75,7 +75,7 @@ The following topics were identified during this assessment but are not yet deci
 | Sharing / delegation permission mechanism | A mechanism for users to share document access with other users or roles outside the standard permission model. |
 | Dynamic Link field type semantics | How `dynamic_link` fields (where the DocType is specified by another field) are resolved and validated. |
 | Backlink query support | How to efficiently query "all documents that link to this document" without full-table scans. |
-| Sync queue pruning strategy | When and how acknowledged sync queue entries are pruned to prevent unbounded growth. |
+| ~~Sync queue pruning strategy~~ | Resolved in [ADR-028](ADR/ADR-028-sync-queue-pruning.md) (2026-04-23): acknowledged `.pushed` / `.applied` rows are deleted by `SyncEngine.pruneSyncQueue` once outside a configurable retention window, throttled by a persisted `sync_state` watermark. |
 | FieldValue type system deepening | Explicit `date`, `dateTime`, `data`, and `array` cases in `FieldValue`; type narrowing rules. |
 | Cross-document lookup in ExpressionEngine | A `lookup(docType, name, field)` function for reading a field from another document in expressions. |
 | Server-side validation via CloudAdapter | Whether the CloudAdapter protocol should include a server-side validation round-trip for documents before final commit. |

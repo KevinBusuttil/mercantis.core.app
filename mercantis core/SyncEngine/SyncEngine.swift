@@ -12,6 +12,7 @@ import GRDB
 /// Implements the push/receive/apply/acknowledge flow. (ADR-005)
 ///
 /// Conflict resolution follows the per-DocType sync policy. (ADR-006)
+/// Queue retention is governed by `SyncQueuePruneConfig` (ADR-028).
 public final class SyncEngine {
 
     private let database: MercantisDatabase
@@ -19,6 +20,8 @@ public final class SyncEngine {
     private let registry: MetadataRegistry
     private let conflictResolver: ConflictResolver
     private let cloudAdapter: CloudAdapter
+    private let pruneConfig: SyncQueuePruneConfig
+    private let clock: () -> Date
 
     /// The last known server sequence we have received. Loaded from the
     /// `sync_state` table at init and rewritten there on every advance (P0.3).
@@ -28,17 +31,24 @@ public final class SyncEngine {
     /// Key used in the `sync_state` table to persist `lastServerSequence`.
     private static let lastServerSequenceKey = "lastServerSequence"
 
+    /// Key used in the `sync_state` table to persist the last prune watermark.
+    private static let lastPrunedAtKey = "syncQueuePrunedAt"
+
     public init(
         database: MercantisDatabase,
         documentEngine: DocumentEngine,
         registry: MetadataRegistry,
-        cloudAdapter: CloudAdapter = NoOpCloudAdapter()
+        cloudAdapter: CloudAdapter = NoOpCloudAdapter(),
+        pruneConfig: SyncQueuePruneConfig = .default,
+        clock: @escaping () -> Date = Date.init
     ) {
         self.database = database
         self.documentEngine = documentEngine
         self.registry = registry
         self.conflictResolver = ConflictResolver()
         self.cloudAdapter = cloudAdapter
+        self.pruneConfig = pruneConfig
+        self.clock = clock
         self.lastServerSequence = Self.loadPersistedLastServerSequence(from: database)
     }
 
@@ -107,6 +117,9 @@ public final class SyncEngine {
                 )
             }
         }
+
+        // Opportunistic, throttled prune of acknowledged rows. (ADR-028 / P0.4)
+        try? pruneSyncQueue(force: false)
     }
 
     // MARK: - Receive & Apply
@@ -126,6 +139,9 @@ public final class SyncEngine {
         if let maxSeq = remoteMutations.map({ $0.serverSequence }).max() {
             updateLastServerSequence(toAtLeast: maxSeq)
         }
+
+        // Opportunistic, throttled prune of acknowledged rows. (ADR-028 / P0.4)
+        try? pruneSyncQueue(force: false)
     }
 
     /// Receive and apply remote mutations from the cloud adapter.
@@ -207,6 +223,86 @@ public final class SyncEngine {
                     mutation.status.rawValue
                 ]
             )
+        }
+    }
+
+    // MARK: - Queue Pruning (ADR-028 / P0.4)
+
+    /// Delete acknowledged rows from `sync_queue` according to `pruneConfig`.
+    /// Only `.pushed` (local, server-acknowledged) and `.applied` (remote,
+    /// locally-applied) rows are eligible. `.pending` and `.conflicted` rows
+    /// are always retained.
+    ///
+    /// Callers do not need to invoke this directly — `pushPendingMutations()`
+    /// and `pullAndApplyRemoteMutations()` call it (non-forcing) at the end of
+    /// a successful run. The method no-ops when the last prune ran more
+    /// recently than `pruneConfig.pruneInterval`, unless `force` is `true`.
+    ///
+    /// - Parameter force: Bypass the throttle and run regardless of the
+    ///   persisted watermark.
+    /// - Returns: Number of rows deleted.
+    @discardableResult
+    public func pruneSyncQueue(force: Bool = false) throws -> Int {
+        let now = clock()
+
+        if !force, let last = loadLastPrunedAt(),
+           now.timeIntervalSince(last) < pruneConfig.pruneInterval {
+            return 0
+        }
+
+        let pushedCutoff = now.addingTimeInterval(-pruneConfig.pushedRetention)
+        let appliedCutoff = now.addingTimeInterval(-pruneConfig.appliedRetention)
+        let iso = ISO8601DateFormatter()
+        let pushedCutoffString = iso.string(from: pushedCutoff)
+        let appliedCutoffString = iso.string(from: appliedCutoff)
+        let watermarkString = iso.string(from: now)
+
+        return try database.write { db in
+            try db.execute(
+                sql: """
+                    DELETE FROM sync_queue
+                    WHERE status = ?
+                      AND localTimestamp < ?
+                    """,
+                arguments: [MutationStatus.pushed.rawValue, pushedCutoffString]
+            )
+            let pushedDeleted = db.changesCount
+
+            try db.execute(
+                sql: """
+                    DELETE FROM sync_queue
+                    WHERE status = ?
+                      AND localTimestamp < ?
+                    """,
+                arguments: [MutationStatus.applied.rawValue, appliedCutoffString]
+            )
+            let appliedDeleted = db.changesCount
+
+            try db.execute(
+                sql: """
+                    INSERT INTO sync_state (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                arguments: [Self.lastPrunedAtKey, watermarkString]
+            )
+
+            return pushedDeleted + appliedDeleted
+        }
+    }
+
+    private func loadLastPrunedAt() -> Date? {
+        do {
+            return try database.read { db in
+                let row = try Row.fetchOne(
+                    db,
+                    sql: "SELECT value FROM sync_state WHERE key = ?",
+                    arguments: [Self.lastPrunedAtKey]
+                )
+                guard let value: String = row?["value"] else { return nil }
+                return ISO8601DateFormatter().date(from: value)
+            }
+        } catch {
+            return nil
         }
     }
 
