@@ -42,9 +42,19 @@ Also fixed an adjacent latent bug: `UpsertPayload` was a 4-field projection that
 
 **Known follow-up:** `LinkValidationStage` runs on remote writes too, which means out-of-order arrivals (child-before-parent) will be rejected rather than buffered. Assumes the CloudAdapter preserves commit order. When a real adapter lands, either require ordered delivery in the adapter contract or add a buffered-retry layer. Tracked as a candidate ADR.
 
-### P0.3 — Persist `lastServerSequence` [S, low risk] — ADR-005
+### P0.3 — Persist `lastServerSequence` [S, low risk] — ADR-005 *(done)*
 
-`SyncEngine.lastServerSequence` is in-memory. After a restart the client re-pulls every remote mutation the adapter chooses to return. Store it in a `sync_state` row (or reuse `schema_version`'s shape) in SQLite and load on startup. The in-file comment already anticipates this.
+`SyncEngine.lastServerSequence` now survives process restarts. A new v4 migration adds a small key/value `sync_state` table; the engine loads the bookmark at init and rewrites it (UPSERT) inside the existing `updateLastServerSequence(toAtLeast:)` whenever it advances. Persistence failures are logged-and-swallowed rather than fatal — the in-memory value still advances so the current process won't re-pull already-applied remote mutations, and the next successful advance rewrites the bookmark.
+
+Coverage in `SyncEngineTests.swift`:
+
+- `testPullAdvancesAndPersistsLastServerSequence` — after a pull, the `sync_state` row matches the highest `serverSequence` seen.
+- `testLastServerSequenceSurvivesSyncEngineRestart` — a second `SyncEngine` built against the same database asks the adapter for mutations strictly after the previously persisted sequence.
+- `testLastServerSequenceDefaultsToZeroOnFreshDatabase` — fresh database ⇒ first pull requests from 0.
+
+`MigrationRunnerTests` was extended to assert v4 brings `highestAppliedVersion()` to 4 and creates `sync_state(key, value)`.
+
+The `sync_state` table is a general-purpose key/value store; P0.4 (queue pruning) is expected to add additional keys (e.g., last prune watermark) here without another migration.
 
 ### P0.4 — Prune `sync_queue` on acknowledgement [S, low risk] — follow-up from ARCHITECTURE-CHANGELOG
 

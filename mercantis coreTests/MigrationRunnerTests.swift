@@ -56,7 +56,7 @@ final class MigrationRunnerTests: XCTestCase {
         MigrationRunner.registerAll(into: &runner, pool: pool)
         try runner.migrate(pool: pool)
 
-        XCTAssertEqual(try highestAppliedVersion(), 3)
+        XCTAssertEqual(try highestAppliedVersion(), 4)
     }
 
     func testV1CreatesExpectedTables() throws {
@@ -85,6 +85,16 @@ final class MigrationRunnerTests: XCTestCase {
         try runner.migrate(pool: pool)
 
         XCTAssertTrue(try tableExists("document_versions"))
+    }
+
+    func testV4CreatesSyncStateTable() throws {
+        var runner = MigrationRunner()
+        MigrationRunner.registerAll(into: &runner, pool: pool)
+        try runner.migrate(pool: pool)
+
+        XCTAssertTrue(try tableExists("sync_state"))
+        XCTAssertTrue(try columnExists("key", in: "sync_state"))
+        XCTAssertTrue(try columnExists("value", in: "sync_state"))
     }
 
     func testSecondMigrateIsIdempotent() throws {
