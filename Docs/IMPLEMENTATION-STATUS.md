@@ -169,10 +169,9 @@ The `ValidationPipeline`'s `PermissionStage` calls into `PermissionEngine.canPer
 
 ## 3. Test coverage
 
-- **No test target.** `project.pbxproj` has exactly two native targets: the app (`mercantis core`, iOS/macOS app) and the CLI (`MercantisCLI`, tool). No `XCTest` target, no `*Tests` folder anywhere.
-- Every ADR that introduces a new subsystem claims "independently testable" (ADR-011, ADR-022 in particular). None of it is tested.
-
-This is by far the biggest risk compounder: the ValidationPipeline and ConflictResolver have exactly the shape that rewards unit testing, and get none.
+- **XCTest tests written in `mercantis coreTests/`.** Covers `ExpressionEvaluator`, `MetaComposer`, `ConflictResolver`, `ValidationPipeline`, `DocumentEngine` (save/fetch/concurrency/submit/cancel/amend), and `MigrationRunner` (v1/v2/v3 + idempotency).
+- **Wire-up pending.** The test target does not yet exist in `project.pbxproj`. `mercantis coreTests/README.md` lists the one-time Xcode setup. After that, `⌘U` or `xcodebuild test` runs the suite.
+- Other subsystems remain intentionally uncovered until their implementation settles (see P0.2/P0.5 in `Docs/ENHANCEMENT-PROPOSAL.md`).
 
 ---
 
