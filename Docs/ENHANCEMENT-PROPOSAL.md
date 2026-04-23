@@ -203,11 +203,38 @@ mercantis core/Scheduling/
 
 Cron support is the only non-trivial piece. A dependency-free subset (minute, hour, day-of-month, month, day-of-week, no `@yearly` aliases) covers Frappe's typical use and fits in ~200 lines.
 
-### P1.5 — Turn `WorkflowGuardStage` and `PermissionStage` into real stages [S, low risk] — ADR-022
+### P1.5 — Turn `WorkflowGuardStage` and `PermissionStage` into real stages [S, low risk] — ADR-022 *(done — 2026-04-23)*
 
-Both are placeholders that comment-document the gap. Fold them in:
-- `WorkflowGuardStage` — given the current document and its target `docStatus`/status transition, verify the transition is declared in the `WorkflowDefinition` and the user has the role. Reject with a typed error if not.
-- `PermissionStage` — once P0.5 option B lands, call `PermissionEngine.canPerform(operation: .write, on: docType, userRoles:)`. Until then, wire the existing flat methods.
+Both stages are now real guards in `ValidationPipeline`.
+
+`WorkflowGuardStage` resolves the DocType's `workflowId` via a new `ValidationContext.workflowProvider` closure and compares the document's `status` against the previously-persisted status (obtained via `ValidationContext.previousStatus`). On a detected change, the stage:
+
+- rejects transitions that are not declared in the `WorkflowDefinition` (`from == previous`, `to == document.status`);
+- rejects transitions whose `allowedRoles` do not intersect the caller's roles (system / import contexts with empty `userRoles` remain exempt);
+- rejects transitions whose `conditionExpression` evaluates to false, and surfaces evaluator errors as structured `DocumentValidationError`s.
+
+Creation (no previously-persisted row) and same-status saves are accepted — neither is a transition. `docStatus` lifecycle moves (submit / cancel / amend) remain governed by ADR-013 and are orthogonal to this stage.
+
+`PermissionStage` now delegates directly to `PermissionEngine.canPerform(operation:on:userRoles:)` (ADR-011's flat surface, per P0.5 option A). `ValidationContext.operation` selects the `DocumentOperation` to check; `DocumentEngine.runValidationPipeline` passes `.create` when the document is new and `.write` otherwise. Empty `userRoles` and empty `docType.permissions` both still short-circuit to a pass, matching the prior convention. When ADR-011 option B lands, this stage will swap the flat call for the evaluator chain without a pipeline-level change.
+
+`DocumentEngine` supplies the new context inputs from the existing SQLite tables (`documents.status` and the `workflows` table). No schema change was required.
+
+Coverage in `ValidationPipelineTests.swift`:
+
+- `testPermissionStagePassesWhenDocTypeDeclaresNoPermissionRules`
+- `testPermissionStagePassesWhenUserRolesEmpty`
+- `testPermissionStageHonoursCreateOperationDistinctFromWrite`
+- `testWorkflowGuardPassesWhenNoWorkflowAttached`
+- `testWorkflowGuardPassesWhenWorkflowUnresolvable`
+- `testWorkflowGuardPassesOnNewDocumentCreation`
+- `testWorkflowGuardPassesWhenStatusUnchanged`
+- `testWorkflowGuardRejectsUndeclaredTransition`
+- `testWorkflowGuardRejectsUnauthorisedTransition`
+- `testWorkflowGuardAllowsDeclaredTransitionWithRole`
+- `testWorkflowGuardRejectsTransitionWhenConditionFalse`
+- `testWorkflowGuardAllowsTransitionWhenConditionTrue`
+- `testWorkflowGuardSkipsRoleCheckForSystemContext`
+- `testWorkflowGuardReportsEvaluationErrorForMalformedCondition`
 
 ### P1.6 — Expand `FieldValue` [S, low risk] — ARCHITECTURE-CHANGELOG follow-up
 
@@ -411,7 +438,7 @@ A 4–6 week plan if one engineer is the target:
 |---|---|
 | 1 | P0.1 test target ✅; P0.6 event bus cleanup ✅; P0.7 doc cleanup ✅; P0.9 unary minus ✅. |
 | 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
-| 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages. |
+| 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages ✅. |
 | 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
 | 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
 

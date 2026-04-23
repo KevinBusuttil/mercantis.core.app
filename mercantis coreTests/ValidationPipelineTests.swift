@@ -15,17 +15,78 @@ final class ValidationPipelineTests: XCTestCase {
     private func context(
         for docType: DocType,
         userRoles: Set<String> = [],
+        operation: DocumentOperation = .write,
         documentExists: @escaping @Sendable (String, String) -> Bool = { _, _ in true },
-        uniqueConflict: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false }
+        uniqueConflict: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false },
+        workflowProvider: @escaping @Sendable (String) -> WorkflowDefinition? = { _ in nil },
+        previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil }
     ) -> ValidationContext {
         ValidationContext(
             docType: docType,
             userId: "tester",
             userRoles: userRoles,
+            operation: operation,
             expressionEvaluator: ExpressionEvaluator(),
             documentExists: documentExists,
-            uniqueConflictExists: uniqueConflict
+            uniqueConflictExists: uniqueConflict,
+            workflowProvider: workflowProvider,
+            previousStatus: previousStatus
         )
+    }
+
+    // MARK: - Workflow fixture
+
+    private func draftToSubmittedWorkflow(
+        conditionExpression: String? = nil,
+        allowedRoles: [String] = ["Approver"]
+    ) -> WorkflowDefinition {
+        WorkflowDefinition(
+            id: "NoteWorkflow",
+            name: "Note Workflow",
+            docType: "Note",
+            states: [
+                WorkflowState(name: "Draft", isDefault: true, allowEdit: true),
+                WorkflowState(name: "Submitted", isDefault: false, allowEdit: false)
+            ],
+            transitions: [
+                WorkflowTransition(
+                    from: "Draft",
+                    to: "Submitted",
+                    action: "submit",
+                    allowedRoles: allowedRoles,
+                    conditionExpression: conditionExpression
+                )
+            ]
+        )
+    }
+
+    private func noteDocType(withWorkflowId id: String? = "NoteWorkflow") -> DocType {
+        DocType(
+            id: "Note",
+            name: "Note",
+            module: "Core",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            isSubmittable: false,
+            fields: [TestSupport.textField("title"), TestSupport.numberField("total")],
+            permissions: [],
+            workflowId: id,
+            autoname: nil,
+            syncPolicy: TestSupport.defaultSyncPolicy(),
+            indexes: [],
+            searchFields: ["title"],
+            titleField: "title"
+        )
+    }
+
+    private func workflowDocument(
+        id: String = "doc-1",
+        status: String,
+        total: Double = 0
+    ) -> Document {
+        var doc = TestSupport.makeDocument(id: id, fields: ["title": .string("N"), "total": .double(total)])
+        doc.status = status
+        return doc
     }
 
     // MARK: - Required
@@ -226,5 +287,236 @@ final class ValidationPipelineTests: XCTestCase {
         let ctx = context(for: docType, userRoles: ["Reader"])
         let errors = pipeline.validate(document: doc, context: ctx)
         XCTAssertEqual(errors.first?.stage, "Permission")
+    }
+
+    func testPermissionStagePassesWhenDocTypeDeclaresNoPermissionRules() {
+        // An unconstrained DocType — no rules — is considered open to any authenticated caller.
+        let docType = TestSupport.makeDocType(
+            fields: [TestSupport.textField("title")],
+            permissions: []
+        )
+        let doc = TestSupport.makeDocument()
+        let pipeline = ValidationPipeline(stages: [PermissionStage()])
+
+        let ctx = context(for: docType, userRoles: ["Editor"])
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testPermissionStagePassesWhenUserRolesEmpty() {
+        // System / import contexts do not enforce role-based permission checks.
+        let rule = PermissionRule(
+            role: "Editor",
+            canRead: false, canWrite: false, canCreate: false,
+            canDelete: false, canSubmit: false, canAmend: false
+        )
+        let docType = TestSupport.makeDocType(
+            fields: [TestSupport.textField("title")],
+            permissions: [rule]
+        )
+        let doc = TestSupport.makeDocument()
+        let pipeline = ValidationPipeline(stages: [PermissionStage()])
+
+        let ctx = context(for: docType, userRoles: [])
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testPermissionStageHonoursCreateOperationDistinctFromWrite() {
+        // A role that can create but cannot write: create must pass, write must fail.
+        let rule = PermissionRule(
+            role: "Author",
+            canRead: true, canWrite: false, canCreate: true,
+            canDelete: false, canSubmit: false, canAmend: false
+        )
+        let docType = TestSupport.makeDocType(
+            fields: [TestSupport.textField("title")],
+            permissions: [rule]
+        )
+        let doc = TestSupport.makeDocument()
+        let pipeline = ValidationPipeline(stages: [PermissionStage()])
+
+        let createCtx = context(for: docType, userRoles: ["Author"], operation: .create)
+        XCTAssertTrue(pipeline.validate(document: doc, context: createCtx).isEmpty)
+
+        let writeCtx = context(for: docType, userRoles: ["Author"], operation: .write)
+        let writeErrors = pipeline.validate(document: doc, context: writeCtx)
+        XCTAssertEqual(writeErrors.first?.stage, "Permission")
+    }
+
+    // MARK: - Workflow guard
+
+    func testWorkflowGuardPassesWhenNoWorkflowAttached() {
+        let docType = noteDocType(withWorkflowId: nil)
+        let doc = workflowDocument(status: "Submitted")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardPassesWhenWorkflowUnresolvable() {
+        // DocType declares a workflowId but the provider cannot find it — treated as no workflow.
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in nil },
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardPassesOnNewDocumentCreation() {
+        // No previously-persisted status => creation, not a transition.
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Draft")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow()
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in nil }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardPassesWhenStatusUnchanged() {
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Draft")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow()
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardRejectsUndeclaredTransition() {
+        // Draft -> Closed is not in the workflow.
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Closed")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow()
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        let errors = pipeline.validate(document: doc, context: ctx)
+        XCTAssertEqual(errors.first?.stage, "WorkflowGuard")
+        XCTAssertTrue(errors.first?.message.contains("does not declare a transition") ?? false)
+    }
+
+    func testWorkflowGuardRejectsUnauthorisedTransition() {
+        // User has no role matching allowedRoles.
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow(allowedRoles: ["Approver"])
+        let ctx = context(
+            for: docType,
+            userRoles: ["Reader"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        let errors = pipeline.validate(document: doc, context: ctx)
+        XCTAssertEqual(errors.first?.stage, "WorkflowGuard")
+        XCTAssertTrue(errors.first?.message.contains("not authorised") ?? false)
+    }
+
+    func testWorkflowGuardAllowsDeclaredTransitionWithRole() {
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow()
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardRejectsTransitionWhenConditionFalse() {
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted", total: -1)
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow(conditionExpression: "total > 0")
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        let errors = pipeline.validate(document: doc, context: ctx)
+        XCTAssertEqual(errors.first?.stage, "WorkflowGuard")
+        XCTAssertTrue(errors.first?.message.contains("blocked by its condition") ?? false)
+    }
+
+    func testWorkflowGuardAllowsTransitionWhenConditionTrue() {
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted", total: 10)
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow(conditionExpression: "total > 0")
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardSkipsRoleCheckForSystemContext() {
+        // When userRoles is empty (import / seed / system), role enforcement is skipped.
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted")
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        let workflow = draftToSubmittedWorkflow(allowedRoles: ["Approver"])
+        let ctx = context(
+            for: docType,
+            userRoles: [],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        XCTAssertTrue(pipeline.validate(document: doc, context: ctx).isEmpty)
+    }
+
+    func testWorkflowGuardReportsEvaluationErrorForMalformedCondition() {
+        let docType = noteDocType()
+        let doc = workflowDocument(status: "Submitted", total: 1)
+        let pipeline = ValidationPipeline(stages: [WorkflowGuardStage()])
+
+        // Reference an undefined field so ExpressionEvaluator throws.
+        let workflow = draftToSubmittedWorkflow(conditionExpression: "missingField > 0")
+        let ctx = context(
+            for: docType,
+            userRoles: ["Approver"],
+            workflowProvider: { _ in workflow },
+            previousStatus: { _, _ in "Draft" }
+        )
+        let errors = pipeline.validate(document: doc, context: ctx)
+        XCTAssertEqual(errors.first?.stage, "WorkflowGuard")
+        XCTAssertTrue(errors.first?.message.contains("failed to evaluate") ?? false)
     }
 }

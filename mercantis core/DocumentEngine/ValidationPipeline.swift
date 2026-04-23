@@ -40,8 +40,15 @@ public struct ValidationContext: Sendable {
     /// The user's roles.
     public let userRoles: Set<String>
 
+    /// The operation being performed. Used by `PermissionStage` to call
+    /// `PermissionEngine.canPerform(operation:on:userRoles:)`. Defaults to `.write`.
+    public let operation: DocumentOperation
+
     /// An expression evaluator for condition-based validation rules.
     public let expressionEvaluator: ExpressionEvaluator
+
+    /// The permission engine used by `PermissionStage`. Defaults to a fresh instance.
+    public let permissionEngine: PermissionEngine
 
     /// Function to check whether a linked document exists.
     /// Parameters: (docType, documentId) -> Bool
@@ -51,20 +58,37 @@ public struct ValidationContext: Sendable {
     /// Parameters: (docType, fieldKey, fieldValue, excludeDocumentId) -> Bool (true = conflict exists)
     public let uniqueConflictExists: @Sendable (String, String, FieldValue, String) -> Bool
 
+    /// Lookup the `WorkflowDefinition` for a given workflow id. Returns nil if the workflow
+    /// cannot be resolved. Used by `WorkflowGuardStage`. Default: always nil.
+    public let workflowProvider: @Sendable (String) -> WorkflowDefinition?
+
+    /// Lookup the previously-persisted workflow `status` for a document, if any.
+    /// Parameters: (docType, documentId). Returns nil for brand-new documents. Used by
+    /// `WorkflowGuardStage` to detect state transitions. Default: always nil.
+    public let previousStatus: @Sendable (String, String) -> String?
+
     public init(
         docType: DocType,
         userId: String = "",
         userRoles: Set<String> = [],
+        operation: DocumentOperation = .write,
         expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
+        permissionEngine: PermissionEngine = PermissionEngine(),
         documentExists: @escaping @Sendable (String, String) -> Bool = { _, _ in true },
-        uniqueConflictExists: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false }
+        uniqueConflictExists: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false },
+        workflowProvider: @escaping @Sendable (String) -> WorkflowDefinition? = { _ in nil },
+        previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil }
     ) {
         self.docType = docType
         self.userId = userId
         self.userRoles = userRoles
+        self.operation = operation
         self.expressionEvaluator = expressionEvaluator
+        self.permissionEngine = permissionEngine
         self.documentExists = documentExists
         self.uniqueConflictExists = uniqueConflictExists
+        self.workflowProvider = workflowProvider
+        self.previousStatus = previousStatus
     }
 }
 
@@ -337,64 +361,129 @@ public struct ValidationRuleStage: ValidationStage {
 
 // MARK: - Stage 6: Workflow Guard
 
-/// If the document has an associated workflow, the current transition (if any)
-/// is validated for allowed roles and condition expression. (ADR-022)
+/// If the document has an associated workflow, any change to `status` must correspond
+/// to a transition declared in the `WorkflowDefinition`. The transition's `allowedRoles`
+/// and `conditionExpression` are enforced. (ADR-022, ADR-004, P1.5)
+///
+/// Scope:
+/// - The DocType must declare `workflowId`, and the workflow must be resolvable via
+///   `context.workflowProvider`. If either is absent, the stage passes.
+/// - Creation (no previously-persisted status) is **not** a transition; accepted.
+/// - Saves that leave `status` unchanged are **not** transitions; accepted.
+/// - Saves that change `status` require a matching `WorkflowTransition`
+///   (`from == previous`, `to == document.status`). Missing transitions, missing
+///   roles, or failing conditions produce typed errors.
+///
+/// Role enforcement is skipped only when the caller provided no user roles
+/// (system / import contexts), matching the convention used by `PermissionStage`.
 public struct WorkflowGuardStage: ValidationStage {
     public let stageName = "WorkflowGuard"
 
     public init() {}
 
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
-        // Workflow guard is only relevant when a workflow is attached to the DocType.
-        // The actual workflow transition validation happens in WorkflowEngine.
-        // This stage acts as a placeholder for integration; real workflow checks
-        // are performed when `WorkflowEngine.transition(...)` is called.
-        guard context.docType.workflowId != nil else { return [] }
+        guard let workflowId = context.docType.workflowId,
+              let workflow = context.workflowProvider(workflowId) else {
+            return []
+        }
+        guard let previous = context.previousStatus(document.docType, document.id) else {
+            return []
+        }
+        guard previous != document.status else { return [] }
 
-        // If the document status has changed, the caller should have already
-        // validated it through WorkflowEngine. This stage returns no errors
-        // by default — it exists to hold the position in the pipeline.
+        guard let transition = workflow.transitions.first(where: {
+            $0.from == previous && $0.to == document.status
+        }) else {
+            return [DocumentValidationError(
+                stage: stageName,
+                field: nil,
+                message: "Workflow '\(workflow.id)' does not declare a transition from '\(previous)' to '\(document.status)'."
+            )]
+        }
+
+        // Role enforcement. System / import callers (empty userRoles) are exempt.
+        if !context.userRoles.isEmpty,
+           !transition.allowedRoles.isEmpty,
+           !transition.allowedRoles.contains(where: { context.userRoles.contains($0) }) {
+            return [DocumentValidationError(
+                stage: stageName,
+                field: nil,
+                message: "User is not authorised to transition '\(context.docType.name)' from '\(previous)' to '\(document.status)'."
+            )]
+        }
+
+        if let condition = transition.conditionExpression, !condition.isEmpty {
+            do {
+                let passes = try context.expressionEvaluator.evaluateBool(
+                    expression: condition,
+                    context: document.fields
+                )
+                if !passes {
+                    return [DocumentValidationError(
+                        stage: stageName,
+                        field: nil,
+                        message: "Workflow transition from '\(previous)' to '\(document.status)' is blocked by its condition."
+                    )]
+                }
+            } catch {
+                return [DocumentValidationError(
+                    stage: stageName,
+                    field: nil,
+                    message: "Workflow transition condition failed to evaluate: \(error.localizedDescription)"
+                )]
+            }
+        }
+
         return []
     }
 }
 
 // MARK: - Stage 7: Permission
 
-/// The permission evaluator chain is invoked to confirm the current user
-/// may perform the save operation. (ADR-022)
+/// Delegates to `PermissionEngine.canPerform(operation:on:userRoles:)` to confirm the
+/// current user may perform `context.operation` on the DocType. (ADR-011, ADR-022, P1.5)
+///
+/// Scope:
+/// - If `context.userRoles` is empty (system / import contexts), the stage passes.
+/// - If the DocType declares no `PermissionRule`s, the stage passes — an unconstrained
+///   DocType is assumed open to any caller with a role.
+/// - Otherwise the operation must be granted by at least one matching role.
+///
+/// This is the flat-permissions wiring described in P1.5. Row-level and
+/// field-level checks remain out of scope for the pipeline until the evaluator
+/// chain (ADR-011 option B) lands.
 public struct PermissionStage: ValidationStage {
     public let stageName = "Permission"
 
     public init() {}
 
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
-        // Permission checking requires the full PermissionEngine evaluator chain
-        // (ADR-011), which operates at a higher level than individual document
-        // validation. This stage acts as the integration point.
-        //
-        // When PermissionEngine is fully wired into the validation pipeline,
-        // this stage will call `permissionEngine.canPerform(.write, on: document, context:)`.
-        //
-        // For now, if userRoles are provided but the DocType has permission rules,
-        // perform a basic DocType-level permission check.
         guard !context.userRoles.isEmpty else { return [] }
+        guard !context.docType.permissions.isEmpty else { return [] }
 
-        let docTypePermissions = context.docType.permissions
-        guard !docTypePermissions.isEmpty else { return [] }
-
-        // Check if any of the user's roles grant write access.
-        let hasWriteAccess = docTypePermissions.contains { rule in
-            context.userRoles.contains(rule.role) && rule.canWrite
-        }
-
-        if !hasWriteAccess {
+        let allowed = context.permissionEngine.canPerform(
+            operation: context.operation,
+            on: context.docType,
+            userRoles: context.userRoles
+        )
+        if !allowed {
             return [DocumentValidationError(
                 stage: stageName,
                 field: nil,
-                message: "You do not have permission to save '\(context.docType.name)' documents."
+                message: "User does not have permission to \(describe(context.operation)) '\(context.docType.name)' documents."
             )]
         }
-
         return []
+    }
+
+    private func describe(_ operation: DocumentOperation) -> String {
+        switch operation {
+        case .read:   return "read"
+        case .write:  return "save"
+        case .create: return "create"
+        case .delete: return "delete"
+        case .submit: return "submit"
+        case .amend:  return "amend"
+        }
     }
 }
