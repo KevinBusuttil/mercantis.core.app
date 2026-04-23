@@ -10,12 +10,10 @@ import Foundation
 /// Manages workflow state transitions for documents. (ADR-004)
 public final class WorkflowEngine {
 
-    private let eventBus: EventBus
     private let eventEmitter: EventEmitter
 
-    public init(eventBus: EventBus = EventBus(), eventEmitter: EventEmitter? = nil) {
-        self.eventBus = eventBus
-        self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
+    public init(eventEmitter: EventEmitter = EventEmitter()) {
+        self.eventEmitter = eventEmitter
     }
 
     // MARK: - Available Transitions
@@ -49,7 +47,7 @@ public final class WorkflowEngine {
     ///
     /// - Validates the transition is available for the current state and user roles.
     /// - Updates `document.status` to the transition's `to` state.
-    /// - Fires a `workflow.transition` event on the EventBus.
+    /// - Fires a `WorkflowTransitionEvent` on the EventEmitter.
     /// - Returns a `WorkflowTransitionHistory` record for the caller to persist.
     @discardableResult
     public func transition(

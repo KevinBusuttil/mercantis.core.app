@@ -399,16 +399,16 @@ The Public API Surface defines the Swift types and methods that app-layer code (
 
 Key API points:
 
-- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:sortBy:limit:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)`
+- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)` *(sort/limit on `list` are planned — see `Docs/ENHANCEMENT-PROPOSAL.md` P2.5)*
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
 - `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
-- `PermissionEngine` — evaluator chain; `canPerform(operation:on:context:)`, `canAccessField(...)`, `canAccessRow(...)`
+- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)` *(evaluator chain described in ADR-011 is not yet implemented — see `Docs/IMPLEMENTATION-STATUS.md` §2.4)*
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
-- `SyncEngine` — `push()`, `receive()`, `applyRemote(_:)`
-- `ExpressionEvaluator` — `evaluateBool(_:context:)`, `evaluateFormula(_:context:)`
+- `SyncEngine` — `pushPendingMutations()`, `pullAndApplyRemoteMutations()`, `applyRemoteMutations(_:)`, `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)`
+- `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`
 - `EventEmitter` — `subscribe(_:handler:)` → `SubscriptionToken`, `publish(_:)`
 - `AppInstaller` — `install(_:)`, `uninstall(appId:)`
-- `AutomationActionRegistry` — `register(_:)`, `execute(actionType:document:parameters:context:)`
+- *`AutomationActionRegistry` is planned (ADR-025) — not yet implemented.*
 
 See [ADR-007](Docs/ADR/ADR-007-hub-on-core-public-apis.md).
 
@@ -528,36 +528,27 @@ The Reporting Engine executes `ReportDefinition` queries against the local datab
 
 ## 7. Directory Structure
 
+The tree below reflects what is actually on disk today. Subsystems described in §§4.11–4.20 that are not yet implemented are listed in the "Planned, not on disk" block that follows. For a full doc-vs-code reconciliation see [`Docs/IMPLEMENTATION-STATUS.md`](Docs/IMPLEMENTATION-STATUS.md).
+
 ```
 mercantis core/
+├── mercantis_coreApp.swift       # @main SwiftUI entry point
 ├── AppRuntime/
-│   ├── AppInstaller.swift        # Installs/uninstalls app manifests; resolves extension points
+│   ├── AppInstaller.swift        # Installs/uninstalls app manifests
 │   ├── AppManifest.swift         # Codable manifest struct
-│   └── AppRuntimeTypes.swift     # WorkflowDefinition, ReportDefinition, AutomationRule, …
-├── Automation/
-│   ├── AutomationActionHandler.swift  # Protocol: actionType + execute(document:parameters:context:)
-│   ├── AutomationActionRegistry.swift # Registry: maps actionType → handler
-│   └── BuiltInActionHandlers.swift    # SetValueHandler, SetStatusHandler, SendNotificationHandler, …
-├── Cache/
-│   └── CacheManager.swift        # Generation-counter cache; metadata, document, and query caches
+│   └── AppRuntimeTypes.swift     # WorkflowDefinition, ReportDefinition, AutomationRule, DashboardDefinition, LocalizationBundle, …
 ├── Customization/
-│   ├── ClientScript.swift        # Expression-based form scripts
 │   ├── CustomField.swift         # Runtime field additions to existing DocTypes
 │   └── PropertySetter.swift      # Per-field property overrides
 ├── DocumentEngine/
 │   ├── Document.swift            # Document, ChildRow, SyncState
 │   ├── DocumentEngine.swift      # save, delete, fetch, list, submit, cancel, amend
 │   ├── DocumentVersion.swift     # DocumentVersion, FieldDiff (versioning/diff tracking)
-│   └── ValidationPipeline.swift  # ValidationStage protocol, pipeline, ValidationError
+│   └── ValidationPipeline.swift  # ValidationStage protocol, pipeline, DocumentValidationError
 ├── ExpressionEngine/
-│   └── ExpressionEvaluator.swift # AST-based evaluator: evaluateBool, evaluateFormula
-├── Files/
-│   ├── File.swift                # File DocType metadata record
-│   └── FileManager.swift         # Sandboxed file storage; public/private paths
-├── ImportExport/
-│   ├── DataExporter.swift        # CSV/JSON export with field selection
-│   └── DataImporter.swift        # CSV/JSON import with schema validation
+│   └── ExpressionEvaluator.swift # Recursive-descent evaluator: evaluateBool, evaluateFormula
 ├── Metadata/
+│   ├── BuiltInDocTypes.swift     # Registers system DocTypes (Module, DocTypeField, DocTypePermission, …)
 │   ├── DocType.swift             # DocType struct
 │   ├── FieldDefinition.swift     # FieldDefinition, FieldType, FieldValue, FieldPermission
 │   ├── IndexDefinition.swift     # IndexDefinition
@@ -567,42 +558,51 @@ mercantis core/
 │   ├── ResolvedMeta.swift        # ResolvedMeta, ResolvedFieldDefinition
 │   ├── SchemaValidator.swift     # Validates DocType definitions
 │   └── SyncPolicy.swift          # SyncPolicy, ConflictResolution
-├── Naming/
-│   ├── DocumentNamingRule.swift  # Conditional naming rules with priority ordering
-│   ├── NamingService.swift       # Resolves autoname strategy at save time
-│   ├── NamingSeries.swift        # NamingSeriesStrategy implementation
-│   └── NamingStrategy.swift      # NamingStrategy protocol + UUIDv7, Field, Prompt, Format strategies
 ├── Notifications/
 │   └── EventEmitter.swift        # Typed event bus: subscribe<E>(_:handler:) → SubscriptionToken
 ├── Permissions/
-│   ├── PermissionContext.swift   # PermissionContext, PermissionDecision
-│   ├── PermissionEngine.swift    # Evaluator chain orchestrator
-│   └── PermissionEvaluators.swift# AppLevel, DocTypeLevel, FieldLevel, RowLevel, WorkflowLevel
-├── Printing/
-│   ├── LetterHead.swift          # Company header/footer templates
-│   ├── PDFGenerator.swift        # Protocol-based PDF renderer adapter
-│   └── PrintFormat.swift         # Per-DocType print format definition
+│   └── PermissionEngine.swift    # canPerform / canAccessField / canAccessRow (flat; evaluator chain is planned, see ADR-011)
 ├── Reporting/
 │   └── ReportEngine.swift        # ReportEngine, ReportResult
-├── Scheduling/
-│   ├── ScheduledTask.swift       # Task declaration: type, handler, retry policy
-│   └── SchedulerService.swift    # Evaluates due tasks; exponential-backoff retry
 ├── Storage/
 │   ├── MercantisDatabase.swift   # GRDB DatabasePool wrapper
-│   └── MigrationRunner.swift     # Versioned schema migrations
+│   └── MigrationRunner.swift     # Versioned schema migrations (v1–v3)
 ├── SyncEngine/
+│   ├── CloudAdapter.swift        # Protocol boundary + NoOpCloudAdapter (ADR-018)
 │   ├── ConflictResolver.swift    # LWW / VCM / AO resolution
 │   ├── MutationRecord.swift      # MutationRecord, MutationType, MutationStatus
-│   └── SyncEngine.swift          # push, applyRemote, resolveConflict
+│   └── SyncEngine.swift          # push, pull, applyRemote, resolveConflict
 ├── UIShell/
-│   ├── CommandBarView.swift      # Spotlight-like search overlay
-│   ├── GenericFormView.swift     # Dynamic form renderer
-│   ├── GenericListView.swift     # Sortable/filterable list renderer
-│   └── NavigationShell.swift     # Top-level navigation shell
+│   ├── CommandBarView.swift          # Spotlight-like search overlay
+│   ├── DocTypeBuilderView.swift      # In-app DocType creation/editing (ADR-027, Phase 2)
+│   ├── DocTypeListView.swift         # DocTypes management screen
+│   ├── FormBuilderView.swift         # Three-pane macOS visual builder
+│   ├── GenericFormView.swift         # Dynamic form renderer
+│   ├── GenericListView.swift         # Sortable/filterable list renderer
+│   ├── MercantisTheme.swift          # Design tokens
+│   ├── NavigationShell.swift         # Top-level navigation shell
+│   ├── RecordCollectionHostView.swift# List/form mode container
+│   ├── RecordViewMode.swift          # list / form / detail modes
+│   ├── RecordWorkspaceChrome.swift   # Top bar + sidebar + content scaffold
+│   └── ResolvedMetaCanvasAdapter.swift# Projects ResolvedMeta onto the builder canvas
+├── Views/
+│   └── DesignSystem/             # Design-lab/demo surfaces and preview fixtures — not part of runtime Core (see §5.1)
 └── Workflows/
     ├── WorkflowEngine.swift          # availableTransitions, transition
     └── WorkflowTransitionHistory.swift # Audit record of state changes
 ```
+
+**Planned, not on disk.** The following subsystems are described elsewhere in this document but are not yet implemented. Track them via the linked ADRs and the corresponding `Docs/ENHANCEMENT-PROPOSAL.md` items:
+
+| Subsystem | §s | ADRs | Proposal |
+|---|---|---|---|
+| `Automation/` — action registry + built-in handlers | §4.13 | ADR-019, ADR-025 | P1.2 |
+| `Cache/` — cross-subsystem `CacheManager` | §4.14 | — | P3.4 |
+| `Files/` — attachments + sandboxed storage | §4.18 | — | P3.1 |
+| `ImportExport/` — CSV/JSON importer + exporter + fixtures | §4.20 | — | P3.3 |
+| `Naming/` — strategy registry + `NamingService` | §4.11 | ADR-014 | P1.1 |
+| `Printing/` — `PrintFormat`, `PDFGenerator`, `LetterHead` | §4.17 | — | P3.2 |
+| `Scheduling/` — `SchedulerService` + `ScheduledTask` | §4.13 | — | P1.4 |
 
 ---
 

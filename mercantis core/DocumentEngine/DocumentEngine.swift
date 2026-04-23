@@ -17,7 +17,6 @@ public final class DocumentEngine {
     private let database: MercantisDatabase
     private let registry: MetadataRegistry
     private let validator: SchemaValidator
-    private let eventBus: EventBus
     private let eventEmitter: EventEmitter
     private let validationPipeline: ValidationPipeline
     private let deviceId: String
@@ -26,18 +25,16 @@ public final class DocumentEngine {
     public init(
         database: MercantisDatabase,
         registry: MetadataRegistry,
-        eventBus: EventBus,
         deviceId: String,
         userId: String,
-        eventEmitter: EventEmitter? = nil,
-        validationPipeline: ValidationPipeline? = nil
+        eventEmitter: EventEmitter = EventEmitter(),
+        validationPipeline: ValidationPipeline = ValidationPipeline()
     ) {
         self.database = database
         self.registry = registry
         self.validator = SchemaValidator()
-        self.eventBus = eventBus
-        self.eventEmitter = eventEmitter ?? EventEmitter(legacyBus: eventBus)
-        self.validationPipeline = validationPipeline ?? ValidationPipeline()
+        self.eventEmitter = eventEmitter
+        self.validationPipeline = validationPipeline
         self.deviceId = deviceId
         self.userId = userId
     }
