@@ -61,7 +61,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 - **Shipped** — Optimistic concurrency via `updatedAt` comparison (ADR-023).
 - **Shipped** — Submit-time immutability gate with `allowOnSubmit` (ADR-013); cancel refuses when linked submitted documents reference the doc.
 - **Shipped** — Field-level diffs written to `document_versions` on save (ADR-024).
-- **Shipped** — `ValidationPipeline` protocol + stages (ADR-022): type coercion, required, link, unique, expression rule, workflow guard, permission. All seven are present and composed in `DocumentEngine.save`.
+- **Shipped** — `ValidationPipeline` protocol + stages (ADR-022): type coercion, required, link, unique, expression rule, workflow guard, permission. All seven are real guards composed in `DocumentEngine.save` (and `applyRemote`). `WorkflowGuardStage` enforces declared transitions, roles, and condition expressions against the persisted `status`; `PermissionStage` delegates to `PermissionEngine.canPerform`. (P1.5 — 2026-04-23)
 - **Partial** — `list(docType:filters:)` filters are equality-only. No sort, no limit, no LIKE/range, despite `§4.15` advertising `sortBy:limit:`.
 - **Partial** — `audit_log` table is created in the migration but nothing writes to it. §4.3 describes it as "the immutable audit trail of all document mutations"; in practice the sync queue is acting as that log.
 

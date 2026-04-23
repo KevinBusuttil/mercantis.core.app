@@ -34,8 +34,8 @@ Stages are executed in declared order on every `save(_:)` call:
 3. **`LinkValidationStage`** — For fields of type `link`, the referenced document must exist in the `documents` table.
 4. **`UniqueConstraintStage`** — Fields or index definitions marked `unique: true` are checked against existing documents.
 5. **`ValidationRuleStage`** — `ValidationRule` expressions (declared in the DocType) are evaluated by `ExpressionEngine`. A failing rule produces a user-visible error message.
-6. **`WorkflowGuardStage`** — If the document has an associated workflow, the current transition (if any) is validated for allowed roles and condition expression.
-7. **`PermissionStage`** — The permission evaluator chain (ADR-011) is invoked to confirm the current user may perform the save operation.
+6. **`WorkflowGuardStage`** — If the document's DocType declares a `workflowId` resolvable via `ValidationContext.workflowProvider`, any change to `status` must correspond to a declared `WorkflowTransition` (`from == previous`, `to == document.status`). The transition's `allowedRoles` and `conditionExpression` are enforced. Creation and unchanged-status saves are not transitions and pass. (P1.5)
+7. **`PermissionStage`** — `PermissionEngine.canPerform(operation:on:userRoles:)` (ADR-011's flat surface) is invoked to confirm the current user may perform the save operation. The operation is `.create` for brand-new documents and `.write` for updates; empty `userRoles` or an unconstrained DocType short-circuit to a pass.
 
 If any stage produces errors, the pipeline halts and the errors are returned to the caller. The document is not persisted. All errors from a single stage are collected before halting (not just the first).
 

@@ -46,9 +46,14 @@ public final class DocumentEngine {
     /// If the document belongs to a submittable DocType and has `docStatus == 1` (Submitted),
     /// only fields marked `allowOnSubmit: true` can be changed. (ADR-013)
     public func save(_ document: Document) throws {
+        // ADR-023: Optimistic concurrency check via updatedAt.
+        // ADR-024: Load existing fields for diff computation.
+        // P1.5: isNew drives `DocumentOperation.create` vs `.write` in the pipeline.
+        let existing = try loadExistingState(docType: document.docType, id: document.id)
+
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
-            try runValidationPipeline(on: document, docType: docType)
+            try runValidationPipeline(on: document, docType: docType, isNew: existing == nil)
 
             // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
@@ -62,9 +67,6 @@ public final class DocumentEngine {
         let payloadData = try encoder.encode(document.fields)
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
 
-        // ADR-023: Optimistic concurrency check via updatedAt.
-        // ADR-024: Load existing fields for diff computation.
-        let existing = try loadExistingState(docType: document.docType, id: document.id)
         if let stored = existing?.updatedAt {
             let inMemoryTimestamp = ISO8601DateFormatter().string(from: document.updatedAt)
             if stored != inMemoryTimestamp {
@@ -132,9 +134,11 @@ public final class DocumentEngine {
         doc.syncVersion = mutation.syncVersion
         doc.syncState = .synced
 
+        let existing = try loadExistingState(docType: doc.docType, id: doc.id)
+
         if let docType = registry.get(doc.docType) {
             try validator.validate(docType)
-            try runValidationPipeline(on: doc, docType: docType)
+            try runValidationPipeline(on: doc, docType: docType, isNew: existing == nil)
             if doc.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: doc, docType: docType)
             }
@@ -145,7 +149,6 @@ public final class DocumentEngine {
         let payloadData = try encoder.encode(doc.fields)
         let payloadString = String(data: payloadData, encoding: .utf8) ?? "{}"
 
-        let existing = try loadExistingState(docType: doc.docType, id: doc.id)
         let oldFields = existing?.fields ?? [:]
 
         let createdAtString = ISO8601DateFormatter().string(from: doc.createdAt)
@@ -468,10 +471,21 @@ public final class DocumentEngine {
     // MARK: - Private Helpers
 
     /// Run the full ValidationPipeline for a document under its DocType. (ADR-022)
-    private func runValidationPipeline(on document: Document, docType: DocType) throws {
+    ///
+    /// `isNew` selects the `DocumentOperation` used by `PermissionStage`:
+    /// `.create` when the document has never been persisted, `.write` otherwise.
+    /// Callers that explicitly change `docStatus` (submit / cancel / amend) are
+    /// still enforced by the ADR-013 guards; `.write` is used for the save path
+    /// that piggybacks on those transitions.
+    private func runValidationPipeline(
+        on document: Document,
+        docType: DocType,
+        isNew: Bool
+    ) throws {
         let ctx = ValidationContext(
             docType: docType,
             userId: userId,
+            operation: isNew ? .create : .write,
             expressionEvaluator: ExpressionEvaluator(),
             documentExists: { [weak self] linkedDocType, linkedId in
                 guard let self else { return true }
@@ -483,12 +497,52 @@ public final class DocumentEngine {
                 return docs.contains { doc in
                     doc.id != excludeId && doc.fields[fieldKey] == value
                 }
+            },
+            workflowProvider: { [weak self] workflowId in
+                guard let self else { return nil }
+                return try? self.loadWorkflowDefinition(workflowId: workflowId)
+            },
+            previousStatus: { [weak self] docTypeName, docId in
+                guard let self else { return nil }
+                return try? self.loadStatus(docType: docTypeName, id: docId)
             }
         )
         let errors = validationPipeline.validate(document: document, context: ctx)
         if !errors.isEmpty {
             throw DocumentEngineError.validationFailed(errors: errors)
         }
+    }
+
+    /// Load just the persisted `status` column for a document. Returns nil for
+    /// brand-new documents (no row yet). Used by `WorkflowGuardStage`.
+    private func loadStatus(docType: String, id: String) throws -> String? {
+        try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT status FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
+                arguments: [id, docType]
+            )?["status"] as String?
+        }
+    }
+
+    /// Load a `WorkflowDefinition` from the `workflows` table by id. Returns nil
+    /// if the workflow has not been installed. Used by `WorkflowGuardStage`.
+    private func loadWorkflowDefinition(workflowId: String) throws -> WorkflowDefinition? {
+        let row = try database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT payload FROM workflows WHERE id = ? LIMIT 1",
+                arguments: [workflowId]
+            )
+        }
+        guard let row = row,
+              let payloadString: String = row["payload"],
+              let payloadData = payloadString.data(using: .utf8) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(WorkflowDefinition.self, from: payloadData)
     }
 
     /// Read the currently-stored `updatedAt` string and field payload for a document, if any.
