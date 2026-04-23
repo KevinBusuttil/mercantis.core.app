@@ -80,6 +80,7 @@ public struct MigrationRunner {
         runner.register(version: 2, name: "add_doc_status_columns", sql: MigrationRunner.v2SQL)
         runner.register(version: 3, name: "add_document_versions", sql: MigrationRunner.v3SQL)
         runner.register(version: 4, name: "add_sync_state", sql: MigrationRunner.v4SQL)
+        runner.register(version: 5, name: "add_naming_counters", sql: MigrationRunner.v5SQL)
     }
 
     // MARK: - v1 Schema
@@ -214,6 +215,19 @@ public struct MigrationRunner {
         CREATE TABLE IF NOT EXISTS sync_state (
             key     TEXT    PRIMARY KEY NOT NULL,
             value   TEXT    NOT NULL
+        );
+        """
+
+    // MARK: - v5 Schema — naming_counters (ADR-014 / P1.1)
+
+    private static let v5SQL = """
+        -- Per-series monotonic counters used by NamingSeriesStrategy.
+        -- `seriesKey` is the DocType-scoped prefix after date-token expansion
+        -- (e.g. "SalesInvoice::SINV-2026-"), so counters reset naturally when
+        -- the expanded prefix rolls over (new year / month / day).
+        CREATE TABLE IF NOT EXISTS naming_counters (
+            seriesKey   TEXT    PRIMARY KEY NOT NULL,
+            value       INTEGER NOT NULL DEFAULT 0
         );
         """
 }

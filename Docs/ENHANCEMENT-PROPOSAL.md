@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-23_
+_Last updated: 2026-04-23 (P1.1 — Naming subsystem shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -106,7 +106,7 @@ ADR-012 already says "superseded"; the code should reflect it.
 
 ### P0.7 — Update ARCHITECTURE.md §7 directory tree [S, zero risk] — doc hygiene
 
-- Remove directories that don't exist (`Automation/`, `Cache/`, `Files/`, `ImportExport/`, `Naming/`, `Printing/`, `Scheduling/`) or clearly mark them "(planned — not on disk)".
+- Remove directories that don't exist (`Automation/`, `Cache/`, `Files/`, `ImportExport/`, `Printing/`, `Scheduling/`) or clearly mark them "(planned — not on disk)". (`Naming/` now exists — see P1.1.)
 - Add `Views/DesignSystem/` to the tree with its "demo-only" caveat.
 - Correct the `DocumentEngine.list` signature in §4.15 to `list(docType:filters:)`.
 - Correct the `PermissionEngine.canPerform` signature in §4.15 to `canPerform(operation:on:userRoles:)`.
@@ -141,24 +141,29 @@ The tokeniser treats `-` as a negative-number prefix only when `tokens.isEmpty`.
 
 These are features the docs promise and apps will reasonably assume exist.
 
-### P1.1 — Implement the Naming subsystem [M, low risk] — ADR-014 / §4.11
+### P1.1 — Implement the Naming subsystem [M, low risk] — ADR-014 / §4.11 *(done — 2026-04-23)*
 
-`DocType.autoname` is decoded but unused, so every document's ID comes from the caller. Minimum to honour the ADR:
+`mercantis core/Naming/` ships the five built-in strategies from ADR-014 plus the `NamingService` registry:
 
 ```
 mercantis core/Naming/
-├── NamingStrategy.swift         // protocol + resolve(docType:document:context:)
-├── NamingService.swift          // strategy registry + DocumentNamingRule evaluation
-├── UUIDv7Strategy.swift         // default
-├── NamingSeriesStrategy.swift   // parse SINV-.YYYY.-.####, use a counter row in a new `naming_counters` table
-├── FieldDerivedStrategy.swift
-├── PromptStrategy.swift         // throws if no caller-supplied name in context
-└── FormatStrategy.swift
+├── NamingStrategy.swift         // protocol + NamingContext + NamingError
+├── NamingService.swift          // registry + token parser (splits "naming_series:PATTERN")
+├── UUIDv7Strategy.swift         // RFC 9562 default, offline-safe
+├── NamingSeriesStrategy.swift   // SINV-.YYYY.-.####, date tokens YYYY/YY/MM/DD, counter in naming_counters
+├── FieldDerivedStrategy.swift   // field:email
+├── PromptStrategy.swift         // prompt — throws if no caller-supplied name
+└── FormatStrategy.swift         // format:{customer}-{year}
 ```
 
-Wire `NamingService.resolve(...)` into `DocumentEngine.save` **before** persist, when `document.id` is empty. Add a `naming_counters` migration (v4) for the series strategy.
+`DocumentEngine.save` now takes an optional `userSuppliedName:` and returns `@discardableResult Document` so callers can observe the resolved ID. When `document.id` is empty, `NamingService.resolve(...)` runs before the validation pipeline. Migration v5 adds `naming_counters(seriesKey, value)`; the `DocumentEngine` reserves the next counter in its own short write transaction so concurrent saves serialise correctly.
 
-**Effort caveat:** Time-token expansion (`YYYY`, `MM`, `DD`) is trivial; concurrent `.####` increments under offline use need the sync queue to carry the counter update, otherwise two devices both start at `SINV-2026-0001`.
+`NamingSeriesStrategy`'s counter namespace is `"<DocTypeId>::<expanded-prefix>"` — prefixes with date tokens reset naturally when the expanded prefix rolls over (new year / month / day). Coverage in `NamingTests.swift` (25 tests) exercises each strategy in isolation, `NamingService` dispatch, and end-to-end through `DocumentEngine.save` including the counter-gap-on-validation-failure contract.
+
+**Known follow-ups (not scoped to P1.1):**
+- `DocumentNamingRule` conditional selector (priority-ordered rules that pick strategies based on field values) is not yet implemented.
+- Offline multi-device counter reconciliation via the sync queue is not implemented — ADR-014 calls out per-device range reservation; today two devices saving offline will both start at `SINV-2026-0001`.
+- `amend` still allocates a raw UUID for the new draft rather than routing through `NamingService`. Reasonable for now; worth revisiting if amended copies need series IDs.
 
 ### P1.2 — Implement the Automation runtime [L, medium risk] — ADR-019 / ADR-025
 
@@ -361,7 +366,7 @@ The subsystems explicitly recorded as missing in `IMPLEMENTATION-STATUS.md` are 
 
 | Missing subsystem | Why it matters for Hub |
 |---|---|
-| Naming (ADR-014, P1.1) | Every Hub document — Invoice, Sales Order, Purchase Order — needs a series name like `SINV-2026-00001`, not a raw UUID caller-supplied ID. |
+| ~~Naming (ADR-014, P1.1)~~ ✅ shipped 2026-04-23 | Hub documents can now declare `autoname: "naming_series:SINV-.YYYY.-.####"` and get ERP-shaped IDs. Offline multi-device counter reconciliation is the remaining gap. |
 | Automation runtime (ADR-019/025, P1.2/P1.3) | "On submit, deduct stock" is a basic ERP rule. Without the automation runtime, every such rule must be hard-coded in Hub's own Swift — which is exactly what ADR-007 prohibits. |
 | Files / Attachments (§4.18, P3.1) | Attaching PDFs, images, and supplier documents to records is table-stakes for back-office ERP. |
 | Import / Export (§4.20, P3.3) | Opening-balance imports and data migration are day-one practical needs for any real deployment. |
@@ -439,7 +444,7 @@ A 4–6 week plan if one engineer is the target:
 | 1 | P0.1 test target ✅; P0.6 event bus cleanup ✅; P0.7 doc cleanup ✅; P0.9 unary minus ✅. |
 | 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
 | 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages ✅. |
-| 4 | P1.1 Naming subsystem (behind a feature flag if needed). |
+| 4 | P1.1 Naming subsystem ✅ (2026-04-23). |
 | 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
 
 P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
