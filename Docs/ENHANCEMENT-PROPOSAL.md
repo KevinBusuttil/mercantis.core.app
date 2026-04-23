@@ -16,18 +16,21 @@ Principles guiding the ranking:
 
 These are either doc-vs-code drift or latent correctness issues. None add features.
 
-### P0.1 — Add an XCTest target [M, low risk] — infra
+### P0.1 — Add an XCTest target [M, low risk] — infra *(tests landed; target wire-up pending)*
 
-No test target exists. At minimum, add one and cover:
+Test source is now in `mercantis coreTests/`:
 
-- `ExpressionEvaluator` round-trips (boolean, formula, edge cases: empty input, unary minus, division by zero, unknown field).
-- `ValidationPipeline` stage sequencing and short-circuiting.
-- `MetaComposer` merge order and cache invalidation across custom fields / property setters / generation bumps.
-- `ConflictResolver` LWW / VCM / AO branches.
-- `DocumentEngine.save` → `sync_queue` atomic append; concurrency conflict on stale `updatedAt`; submit immutability for non-`allowOnSubmit` fields.
-- `MigrationRunner` applies v1→v2→v3 in order, idempotent on re-run.
+- `ExpressionEvaluatorTests.swift` — boolean, formula, comparisons, unary minus (P0.9 regression), division by zero, undefined field, empty input.
+- `ValidationPipelineTests.swift` — each stage in isolation plus short-circuit ordering.
+- `MetaComposerTests.swift` — custom-field insertion, property setters, cache invalidation.
+- `ConflictResolverTests.swift` — LWW / VCM / AO across equal / newer / stale versions.
+- `DocumentEngineTests.swift` — save/fetch round-trip, sync-queue atomicity, `DocumentVersion` recording, optimistic concurrency, submit immutability, cancel link integrity, amend.
+- `MigrationRunnerTests.swift` — v1/v2/v3 applied in order, expected tables/columns, idempotency, custom-version registration.
+- `Support/TestSupport.swift` — shared fixtures (tempdir DB, DocType / Document builders, `DocumentEngine` harness).
 
-Why first: every enhancement below lands more safely on top of a test target. The validation pipeline in particular was built for independent stage testing (ADR-022) — shipping it without tests defeats the design.
+**Remaining work:** wire the files into an Xcode Unit Testing Bundle target. Steps are in `mercantis coreTests/README.md`. Once added, the suite runs via `⌘U` or `xcodebuild test`.
+
+Why this was first: every enhancement below lands more safely on top of a test target. The validation pipeline in particular was built for independent stage testing (ADR-022) — shipping it without tests defeats the design.
 
 ### P0.2 — Run sync-received writes through `DocumentEngine` [M, medium risk] — ADR-005/022/024
 
