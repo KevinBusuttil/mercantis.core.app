@@ -187,11 +187,11 @@ final class DocumentEngineTests: XCTestCase {
 
     func testEditingNonAllowOnSubmitFieldAfterSubmitIsRejected() throws {
         let docType = TestSupport.makeDocType(
-            isSubmittable: true,
             fields: [
                 TestSupport.textField("title", required: true, allowOnSubmit: false),
                 TestSupport.textField("memo", allowOnSubmit: true)
-            ]
+            ],
+            isSubmittable: true
         )
         try harness.registry.register(docType)
 
@@ -216,11 +216,11 @@ final class DocumentEngineTests: XCTestCase {
 
     func testEditingAllowOnSubmitFieldAfterSubmitSucceeds() throws {
         let docType = TestSupport.makeDocType(
-            isSubmittable: true,
             fields: [
                 TestSupport.textField("title", required: true, allowOnSubmit: false),
                 TestSupport.textField("memo", allowOnSubmit: true)
-            ]
+            ],
+            isSubmittable: true
         )
         try harness.registry.register(docType)
 
@@ -247,16 +247,16 @@ final class DocumentEngineTests: XCTestCase {
         // Parent DocType and Child DocType (child has a link to parent).
         let parent = TestSupport.makeDocType(
             id: "Parent",
-            isSubmittable: true,
-            fields: [TestSupport.textField("title", required: true)]
+            fields: [TestSupport.textField("title", required: true)],
+            isSubmittable: true
         )
         let child = TestSupport.makeDocType(
             id: "Child",
-            isSubmittable: true,
             fields: [
                 TestSupport.textField("title", required: true),
                 TestSupport.linkField("parent", targeting: "Parent")
-            ]
+            ],
+            isSubmittable: true
         )
         try harness.registry.register(parent)
         try harness.registry.register(child)
@@ -293,8 +293,8 @@ final class DocumentEngineTests: XCTestCase {
 
     func testAmendCreatesDraftWithAmendedFromReference() throws {
         let docType = TestSupport.makeDocType(
-            isSubmittable: true,
-            fields: [TestSupport.textField("title", required: true)]
+            fields: [TestSupport.textField("title", required: true)],
+            isSubmittable: true
         )
         try harness.registry.register(docType)
 
