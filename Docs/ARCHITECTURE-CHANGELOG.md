@@ -137,6 +137,6 @@ The following topics were identified during this assessment but are not yet deci
 | Dynamic Link field type semantics | How `dynamic_link` fields (where the DocType is specified by another field) are resolved and validated. |
 | Backlink query support | How to efficiently query "all documents that link to this document" without full-table scans. |
 | ~~Sync queue pruning strategy~~ | Resolved in [ADR-028](ADR/ADR-028-sync-queue-pruning.md) (2026-04-23): acknowledged `.pushed` / `.applied` rows are deleted by `SyncEngine.pruneSyncQueue` once outside a configurable retention window, throttled by a persisted `sync_state` watermark. |
-| FieldValue type system deepening | Explicit `date`, `dateTime`, `data`, and `array` cases in `FieldValue`; type narrowing rules. |
+| ~~FieldValue type system deepening~~ | Resolved in P1.6 (2026-04-24): `FieldValue` gained `.date`, `.dateTime`, `.data`, and `.array` with a tagged-envelope wire format that preserves backward-compatible decoding of the legacy untagged primitives. |
 | Cross-document lookup in ExpressionEngine | A `lookup(docType, name, field)` function for reading a field from another document in expressions. |
 | Server-side validation via CloudAdapter | Whether the CloudAdapter protocol should include a server-side validation round-trip for documents before final commit. |

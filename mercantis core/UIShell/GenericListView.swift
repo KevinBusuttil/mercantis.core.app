@@ -195,6 +195,9 @@ public struct GenericListView: View {
         case .int(let i): return "\(i)"
         case .double(let d): return String(format: "%.2f", d)
         case .bool(let b): return b ? "Yes" : "No"
+        case .date(let d), .dateTime(let d): return ISO8601DateFormatter().string(from: d)
+        case .data(let d): return "<\(d.count) bytes>"
+        case .array(let xs): return "[\(xs.count) items]"
         case .null, nil: return "—"
         }
     }

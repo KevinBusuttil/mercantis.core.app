@@ -29,16 +29,67 @@ public enum FieldType: String, Codable, Sendable, CaseIterable {
 }
 
 /// A value that can be assigned to a field.
+///
+/// The primitive cases (`.string`, `.int`, `.double`, `.bool`, `.null`) encode
+/// as untagged JSON so existing persisted payloads and sync-queue blobs
+/// round-trip byte-for-byte. The typed cases added in P1.6
+/// (`.date`, `.dateTime`, `.data`, `.array`) encode as a tagged envelope
+/// `{"$type": "<tag>", "$value": <payload>}` to disambiguate them from the
+/// string form the legacy wire used for dates and attachments.
 public enum FieldValue: Sendable, Equatable {
     case string(String)
     case int(Int)
     case double(Double)
     case bool(Bool)
     case null
+    case date(Date)
+    case dateTime(Date)
+    case data(Data)
+    case array([FieldValue])
 }
 
 extension FieldValue: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case type  = "$type"
+        case value = "$value"
+    }
+
+    /// Tag strings used by the tagged envelope. Kept stable on the wire.
+    private enum Tag {
+        static let date     = "date"
+        static let dateTime = "datetime"
+        static let data     = "data"
+        static let array    = "array"
+    }
+
     public init(from decoder: Decoder) throws {
+        // Tagged envelope path — used by the new P1.6 cases. Old payloads never
+        // emit an object shape for a field value, so probing with `try?` is safe.
+        if let keyed = try? decoder.container(keyedBy: CodingKeys.self),
+           let tag = try? keyed.decode(String.self, forKey: .type) {
+            switch tag {
+            case Tag.date:
+                self = .date(try keyed.decode(Date.self, forKey: .value))
+                return
+            case Tag.dateTime:
+                self = .dateTime(try keyed.decode(Date.self, forKey: .value))
+                return
+            case Tag.data:
+                self = .data(try keyed.decode(Data.self, forKey: .value))
+                return
+            case Tag.array:
+                self = .array(try keyed.decode([FieldValue].self, forKey: .value))
+                return
+            default:
+                throw DecodingError.dataCorruptedError(
+                    forKey: .type,
+                    in: keyed,
+                    debugDescription: "Unknown FieldValue type tag '\(tag)'"
+                )
+            }
+        }
+
+        // Legacy untagged primitive path.
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
@@ -56,13 +107,38 @@ extension FieldValue: Codable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
         switch self {
-        case .string(let s): try container.encode(s)
-        case .int(let i):    try container.encode(i)
-        case .double(let d): try container.encode(d)
-        case .bool(let b):   try container.encode(b)
-        case .null:          try container.encodeNil()
+        case .string(let s):
+            var c = encoder.singleValueContainer()
+            try c.encode(s)
+        case .int(let i):
+            var c = encoder.singleValueContainer()
+            try c.encode(i)
+        case .double(let d):
+            var c = encoder.singleValueContainer()
+            try c.encode(d)
+        case .bool(let b):
+            var c = encoder.singleValueContainer()
+            try c.encode(b)
+        case .null:
+            var c = encoder.singleValueContainer()
+            try c.encodeNil()
+        case .date(let d):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(Tag.date, forKey: .type)
+            try c.encode(d, forKey: .value)
+        case .dateTime(let d):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(Tag.dateTime, forKey: .type)
+            try c.encode(d, forKey: .value)
+        case .data(let d):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(Tag.data, forKey: .type)
+            try c.encode(d, forKey: .value)
+        case .array(let xs):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(Tag.array, forKey: .type)
+            try c.encode(xs, forKey: .value)
         }
     }
 }

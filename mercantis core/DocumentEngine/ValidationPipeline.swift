@@ -183,9 +183,15 @@ public struct TypeCoercionStage: ValidationStage {
 
     private func isTypeCompatible(value: FieldValue, fieldType: FieldType) -> Bool {
         switch fieldType {
-        case .text, .longText, .email, .phone, .select, .status, .multiselect, .link, .attachment:
+        case .text, .longText, .email, .phone, .select, .status, .multiselect, .link:
             if case .string = value { return true }
             return false
+        case .attachment:
+            // Attachments identify a blob — string id today, P1.6 `.data` inline path.
+            switch value {
+            case .string, .data: return true
+            default: return false
+            }
         case .number:
             switch value {
             case .int, .double: return true
@@ -201,10 +207,17 @@ public struct TypeCoercionStage: ValidationStage {
         case .boolean:
             if case .bool = value { return true }
             return false
-        case .date, .datetime:
-            // Dates are stored as ISO8601 strings.
-            if case .string = value { return true }
-            return false
+        case .date:
+            // P1.6: typed `.date`; ISO8601 string retained for legacy payloads.
+            switch value {
+            case .date, .dateTime, .string: return true
+            default: return false
+            }
+        case .datetime:
+            switch value {
+            case .dateTime, .date, .string: return true
+            default: return false
+            }
         case .formula:
             // Formula fields are computed — any stored value is acceptable.
             return true
@@ -246,7 +259,9 @@ public struct RequiredFieldStage: ValidationStage {
         switch value {
         case .null: return true
         case .string(let s): return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .int, .double, .bool: return false
+        case .int, .double, .bool, .date, .dateTime: return false
+        case .data(let d): return d.isEmpty
+        case .array(let xs): return xs.isEmpty
         }
     }
 }

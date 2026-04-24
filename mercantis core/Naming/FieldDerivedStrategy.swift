@@ -39,7 +39,9 @@ public struct FieldDerivedStrategy: NamingStrategy {
             return String(n)
         case .double(let d):
             return String(d)
-        case .bool, .null:
+        case .date(let d), .dateTime(let d):
+            return ISO8601DateFormatter().string(from: d)
+        case .bool, .null, .data, .array:
             throw NamingError.missingFieldValue(fieldKey: fieldKey)
         }
     }

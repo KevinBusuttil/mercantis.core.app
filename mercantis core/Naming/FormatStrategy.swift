@@ -12,9 +12,9 @@ import Foundation
 /// and `document.fields["year"]`, concatenated with the dash literal in between.
 ///
 /// Unknown keys throw `NamingError.missingFieldValue`; unbalanced braces throw
-/// `NamingError.malformedAutonameToken`. Dates and other typed values that
-/// `FieldValue` cannot yet represent (see P1.6) are not supported — string /
-/// int / double / bool values only, converted to their natural string form.
+/// `NamingError.malformedAutonameToken`. Dates are expanded as ISO8601 strings;
+/// opaque values (`.data`, `.array`) are not stringifiable and throw
+/// `NamingError.missingFieldValue`.
 public struct FormatStrategy: NamingStrategy {
 
     public var handles: Set<String> { ["format"] }
@@ -67,7 +67,8 @@ public struct FormatStrategy: NamingStrategy {
         case .int(let n): return String(n)
         case .double(let d): return String(d)
         case .bool(let b): return String(b)
-        case .null: return nil
+        case .date(let d), .dateTime(let d): return ISO8601DateFormatter().string(from: d)
+        case .null, .data, .array: return nil
         }
     }
 }

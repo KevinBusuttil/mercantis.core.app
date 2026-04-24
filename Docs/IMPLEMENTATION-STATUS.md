@@ -95,7 +95,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 ### 2.7 Expression Engine — §4.7 / ADR-017
 
 - **Partial** — Hand-rolled tokeniser + recursive-descent parser that **evaluates inline**. There is no AST type, no intermediate representation, and therefore no static field-reference analysis, no constant folding, and no source-position errors. The doc's "typed AST" claim is aspirational.
-- **Partial** — `FieldValue` has cases `.string`, `.int`, `.double`, `.bool`, `.null`. No `.date`, `.dateTime`, `.data`, `.array`. Already captured in the ARCHITECTURE-CHANGELOG follow-up list.
+- **Shipped (P1.6, 2026-04-24)** — `FieldValue` now includes `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, and `.array([FieldValue])`. The four new cases encode as a tagged envelope (`{"$type": "date|datetime|data|array", "$value": ...}`) so they round-trip distinctly; the legacy primitives (`.string` / `.int` / `.double` / `.bool` / `.null`) still encode as untagged JSON and existing payloads continue to decode. Downstream wiring updated: `TypeCoercionStage` accepts typed dates for `.date` / `.datetime` fields and `.data` for `.attachment`; `RequiredFieldStage` treats typed dates as always non-empty and an empty `.data` / `.array` as empty; `ExpressionEvaluator` compares dates as epoch seconds; `GenericFormView.dateBinding` writes typed `.date` / `.dateTime` on save.
 - **Partial** — Numeric literal parsing consumes `-` only when it is the first token, so `a - 1` tokenises fine but `1 + -2` does not. Unary minus is not supported mid-expression.
 - **Partial** — No `lookup(docType, name, field)` (also already on the follow-up list).
 
