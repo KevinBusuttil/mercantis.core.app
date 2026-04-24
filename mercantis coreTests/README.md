@@ -40,7 +40,11 @@ the command line.
 | `ConflictResolverTests.swift` | `SyncEngine/` | LWW, VCM, AO across equal/newer/stale versions. |
 | `ValidationPipelineTests.swift` | `DocumentEngine/` | Each stage in isolation plus short-circuit ordering. |
 | `DocumentEngineTests.swift` | `DocumentEngine/` | Save/fetch round-trip, sync-queue atomicity, `DocumentVersion` recording, optimistic concurrency, submit immutability, cancel link integrity, amend. |
-| `MigrationRunnerTests.swift` | `Storage/` | v1/v2/v3 applied in order, expected tables/columns present, idempotent re-runs, custom migrations at higher versions. |
+| `MigrationRunnerTests.swift` | `Storage/` | v1–v6 applied in order, expected tables/columns present, idempotent re-runs, custom migrations at higher versions. |
+| `NamingTests.swift` | `Naming/` | Each strategy in isolation, `NamingService` dispatch, end-to-end through `DocumentEngine.save` including the counter-gap-on-validation-failure contract. |
+| `AutomationTests.swift` | `Automation/` | Each handler's happy / missing-parameter branches, registry dispatch, runner condition + re-entrancy, on-submit dispatch, scheduler-origin placeholder dispatch. |
+| `ExtensionPointsTests.swift` | `AppRuntime/` | Manifest decoding, install/uninstall lifecycle, reinstall idempotency, scheduler registrar round-trip, end-to-end event dispatch, restore on launch. |
+| `SchedulerTests.swift` | `Scheduling/` | Cron parser (wildcard / range / step / Sunday-as-zero-or-seven / errors), persistence round-trip + prefix-clear, due-check semantics for `.all` / `.hourly` / `.daily` / `.cron`, restart preserves cadence + fires backlog, handle-cancel preserves cadence for reinstall, `unregister(appId:)` wipes persistence, `ExtensionSchedulerRegistrar` conformance, end-to-end through `AppInstaller`. |
 
 Shared fixtures live in `Support/TestSupport.swift`.
 

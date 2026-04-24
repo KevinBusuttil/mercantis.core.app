@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-24 (P1.2 — Automation runtime shipped)_
+_Last updated: 2026-04-24 (P1.4 — Scheduler shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -280,16 +280,80 @@ Coverage in `ExtensionPointsTests.swift`:
   `AppInstaller` or call `restoreExtensionPoints()` at launch; Hub/app-shell
   integration is the consumer for that wiring.
 
-### P1.4 — Implement the Scheduler [M, medium risk] — §4.13
+### P1.4 — Implement the Scheduler [M, medium risk] — §4.13 *(done — 2026-04-24)*
+
+`mercantis core/Scheduling/` ships the periodic-task scheduler that fills the
+`ExtensionSchedulerRegistrar` seam left by P1.3.
 
 ```
 mercantis core/Scheduling/
-├── ScheduledTask.swift              // type, handler, retryPolicy
-├── SchedulerService.swift           // cron/interval matcher; due-check on launch + every 60s while active
-└── SchedulerPersistence.swift       // `scheduler_state` table: lastRun per task key
+├── ScheduledTask.swift              // key + appId + interval + dispatch + RetryPolicy
+├── CronExpression.swift             // dependency-free 5-field cron parser + matcher
+├── SchedulerPersistence.swift       // scheduler_state read/write/clear (key-scoped + prefix-scoped)
+└── SchedulerService.swift           // ExtensionSchedulerRegistrar conformance + tick loop
 ```
 
-Cron support is the only non-trivial piece. A dependency-free subset (minute, hour, day-of-month, month, day-of-week, no `@yearly` aliases) covers Frappe's typical use and fits in ~200 lines.
+Migration v6 adds the `scheduler_state(taskKey, lastRunAt)` table. Task keys
+are composed as `"<appId>::<declarationId>"` so a manifest-declared
+`SchedulerEventDeclaration` lands on a stable identity that survives
+reinstall (resolver's `clear(appId:)` cancels the in-memory binding but
+deliberately leaves the persisted row alone, so cadence is preserved across
+upgrades). Full uninstall calls `SchedulerService.unregister(appId:)` which
+wipes every row whose key starts with `"<appId>::"`.
+
+`AppInstaller` now takes an optional `schedulerService:` parameter and calls
+`unregister(appId:)` after `extensionResolver?.clear(appId:)` on uninstall.
+The resolver path drops in-memory state per task; the new installer step is
+the only place that drops persisted state.
+
+`SchedulerService.start()` runs an opt-in `Task` loop that ticks on
+`tickInterval` (default 60 s); the first tick fires immediately so a task
+that came due while the app was closed catches up on launch instead of
+waiting a full interval. Hosts that prefer to drive the scheduler manually
+(tests, CLI) call `tick()` directly without `start()`.
+
+The cron parser supports the dependency-free subset called out in the
+original P1.4 sketch: `*`, integer, comma-separated lists, inclusive
+ranges, and `*/step`. Day-of-week accepts `0`–`7` with both `0` and `7`
+binding to Sunday (Vixie-cron compatibility). When both day-of-month and
+day-of-week are explicit, the matcher uses the union (Vixie semantics) so
+`"0 12 1 * 5"` fires at noon on the 1st of every month *or* every Friday.
+`@yearly` / `@daily` aliases are intentionally not supported — the
+`ScheduleInterval` enum already exposes `.daily` / `.hourly` / `.weekly`
+/ `.monthly` for those cases.
+
+Coverage in `SchedulerTests.swift` (24 tests):
+- `CronExpression` — wildcard, exact, comma-list, inclusive range, step
+  with wildcard / range, Sunday-as-zero-or-seven, wrong field count,
+  out-of-range, inverted range, zero step, non-integer, exact-time match,
+  Vixie union semantics, `nextFireDate` advance + roll-to-next-day.
+- `SchedulerPersistence` — round-trip, upsert, prefix-scoped clear.
+- `SchedulerService` — first-fire on no-`lastRun`, daily / hourly cadence
+  throttling, cron cadence per minute, invalid-cron error reporting,
+  process-restart preserves `lastRun`, restart fires immediately for
+  backlogged tasks, handle cancel stops dispatch, handle cancel preserves
+  cadence for reinstall, `unregister(appId:)` wipes persistence,
+  `ExtensionSchedulerRegistrar` conformance via the protocol type.
+- `MigrationRunnerTests` — extended to assert v6 brings
+  `highestAppliedVersion()` to 6 and creates `scheduler_state`.
+- End-to-end test routes a manifest-declared scheduler event through
+  `AppInstaller.install` → `ExtensionPointResolver` → `SchedulerService` →
+  `LoggingExtensionActionDispatcher`, then verifies that
+  `installer.uninstall` clears both the in-memory binding and the persisted
+  row.
+
+**Known follow-ups (not scoped to P1.4):**
+- The main app (`mercantis_coreApp.swift`) still does not construct an
+  `AppInstaller` / `SchedulerService` at launch. Hub/app-shell integration
+  is the consumer for that wiring.
+- Scheduler-triggered automation rules (`AutomationRule.triggerEvent ==
+  "onSchedule"`) — P1.2 registers them but never fires. The runner needs
+  to register itself as a `ScheduledTask` per matching rule when the
+  scheduler is wired to the runner; deferred until host-app wiring lands.
+- Background-task budget categories (`short` / `default` / `long` from
+  §4.13) and `audit_log` writes for failed runs are not implemented; the
+  current loop is a single in-process tick. Sufficient for the cadences
+  the manifest exposes today.
 
 ### P1.5 — Turn `WorkflowGuardStage` and `PermissionStage` into real stages [S, low risk] — ADR-022 *(done — 2026-04-23)*
 
@@ -530,8 +594,9 @@ A 4–6 week plan if one engineer is the target:
 | 4 | P1.1 Naming subsystem ✅ (2026-04-23). |
 | 5 | P1.3 Extension-point resolution ✅ (2026-04-24). |
 | 6 | P1.2 Automation runtime ✅ (2026-04-24) (fills the `ExtensionActionDispatcher` seam). |
+| 6 | P1.4 Scheduler ✅ (2026-04-24) (fills the `ExtensionSchedulerRegistrar` seam). |
 
-P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
+P1.6 FieldValue expansion and P1.7 row-level expressions slot in as individual PRs alongside the above.
 
 P2.6 (Core library productization) should happen before Hub development begins in earnest — it is not large work but it is a prerequisite for the Core/Hub boundary being real. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 

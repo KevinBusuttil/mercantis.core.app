@@ -371,12 +371,14 @@ See [ADR-015](Docs/ADR/ADR-015-declarative-hooks-app-extension.md) and [ADR-026]
 
 **Location:** `mercantis core/Scheduling/`
 
-Because Mercantis Core is a pure client-side library (no server process), background tasks execute within the app process using Swift Concurrency (`Task`, `TaskGroup`).
+Because Mercantis Core is a pure client-side library (no server process), background tasks execute within the app process using Swift Concurrency (`Task`).
 
-- **Scheduled tasks** — A `SchedulerService` checks for due tasks on app launch and periodically while the app is active. Tasks are declared in app manifests under `schedulerEvents`.
-- **Task types:** `all` (every 5 min), `hourly`, `daily`, `weekly`, `monthly`, `cron` (custom cron expression).
-- **Queue categories:** `short` (< 5 s, UI-blocking permitted), `default` (< 60 s), `long` (> 60 s, runs as a background task).
-- Failed tasks are retried with exponential backoff. Failures are logged to `audit_log`.
+- **Scheduled tasks** — `SchedulerService` checks for due tasks on app launch and periodically while the app is active. Tasks are declared in app manifests under `schedulerEvents` and registered via `ExtensionPointResolver` → `ExtensionSchedulerRegistrar`. (P1.4 — 2026-04-24)
+- **Task types:** `all` (every tick), `hourly`, `daily`, `weekly`, `monthly`, `cron` (custom expression).
+- **Cron support:** dependency-free five-field parser (minute, hour, day-of-month, month, day-of-week). Supports `*`, integer, comma-separated lists, inclusive ranges, and `*/step`. Day-of-week accepts `0`–`7` with both `0` and `7` binding to Sunday. When both day fields are explicit, the matcher uses Vixie union semantics. `@yearly` / `@daily` aliases are not supported.
+- **Persistence:** the v6 `scheduler_state(taskKey, lastRunAt)` table records the last-run timestamp per task. Task keys are `"<appId>::<declarationId>"`. Reinstall preserves cadence (the resolver only forgets the in-memory binding); full uninstall calls `SchedulerService.unregister(appId:)` which wipes every row whose key starts with `"<appId>::"`.
+- **Tick loop:** `start()` opts into a `Task` loop running every `tickInterval` (default 60 s). The first tick fires immediately so a task that came due while the app was closed catches up on launch instead of waiting a full interval. Tests and CLI hosts can drive the scheduler manually via `tick()` without `start()`.
+- **Queue categories** (`short` / `default` / `long`) and `audit_log` writes for failed scheduled runs are not yet implemented; the current loop is a single in-process tick.
 - Sync operations (push/receive) are themselves scheduled background tasks.
 
 **AutomationActionRegistry:** Automation action dispatch uses a registry of `AutomationActionHandler` protocol conformances keyed by `actionType` string. Built-in action types: `set_value`, `set_status`, `send_notification`, `validate`, `assign`. New action types are added by registering a conformance compiled into Core. See [ADR-025](Docs/ADR/ADR-025-automation-action-registry.md).
@@ -580,9 +582,14 @@ mercantis core/
 │   └── PermissionEngine.swift    # canPerform / canAccessField / canAccessRow
 ├── Reporting/
 │   └── ReportEngine.swift        # ReportEngine, ReportResult
+├── Scheduling/
+│   ├── ScheduledTask.swift          # key + appId + interval + dispatch + RetryPolicy
+│   ├── CronExpression.swift         # 5-field cron parser + matcher
+│   ├── SchedulerPersistence.swift   # scheduler_state read/write/clear
+│   └── SchedulerService.swift       # ExtensionSchedulerRegistrar + tick loop
 ├── Storage/
 │   ├── MercantisDatabase.swift   # GRDB DatabasePool wrapper
-│   └── MigrationRunner.swift     # Versioned schema migrations (v1–v3)
+│   └── MigrationRunner.swift     # Versioned schema migrations (v1–v6)
 ├── SyncEngine/
 │   ├── CloudAdapter.swift        # Protocol boundary + NoOpCloudAdapter (ADR-018)
 │   ├── ConflictResolver.swift    # LWW / VCM / AO resolution
@@ -615,9 +622,7 @@ mercantis core/
 | `Cache/` — cross-subsystem `CacheManager` | §4.14 | — | P3.4 |
 | `Files/` — attachments + sandboxed storage | §4.18 | — | P3.1 |
 | `ImportExport/` — CSV/JSON importer + exporter + fixtures | §4.20 | — | P3.3 |
-| `Naming/` — strategy registry + `NamingService` | §4.11 | ADR-014 | P1.1 |
 | `Printing/` — `PrintFormat`, `PDFGenerator`, `LetterHead` | §4.17 | — | P3.2 |
-| `Scheduling/` — `SchedulerService` + `ScheduledTask` | §4.13 | — | P1.4 |
 
 ---
 

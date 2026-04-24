@@ -81,6 +81,7 @@ public struct MigrationRunner {
         runner.register(version: 3, name: "add_document_versions", sql: MigrationRunner.v3SQL)
         runner.register(version: 4, name: "add_sync_state", sql: MigrationRunner.v4SQL)
         runner.register(version: 5, name: "add_naming_counters", sql: MigrationRunner.v5SQL)
+        runner.register(version: 6, name: "add_scheduler_state", sql: MigrationRunner.v6SQL)
     }
 
     // MARK: - v1 Schema
@@ -228,6 +229,23 @@ public struct MigrationRunner {
         CREATE TABLE IF NOT EXISTS naming_counters (
             seriesKey   TEXT    PRIMARY KEY NOT NULL,
             value       INTEGER NOT NULL DEFAULT 0
+        );
+        """
+
+    // MARK: - v6 Schema — scheduler_state (P1.4)
+
+    private static let v6SQL = """
+        -- Last-run timestamps per scheduled task. Survives process restarts so
+        -- the launch-time due-check can decide whether a task should fire
+        -- immediately (cadence elapsed while the app was closed) or wait.
+        --
+        -- `taskKey` is the resolver-stable identity of one declaration:
+        --   "<appId>::<declarationId>"
+        -- which keeps it usable across reinstall (same app id, same decl id ⇒
+        -- preserved cadence) and isolates apps from each other.
+        CREATE TABLE IF NOT EXISTS scheduler_state (
+            taskKey     TEXT    PRIMARY KEY NOT NULL,
+            lastRunAt   TEXT    NOT NULL
         );
         """
 }
