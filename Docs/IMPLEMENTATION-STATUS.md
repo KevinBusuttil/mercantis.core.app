@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-23_
+_Last updated: 2026-04-24 (P1.4 — Scheduler shipped)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -34,7 +34,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 | `Permissions/` | Yes | `PermissionEngine.swift` is the only file and matches the revised §4.4 / ADR-011 (flat surface — see P0.5). `PermissionContext.swift` and `PermissionEvaluators.swift` were documented by earlier revisions but are no longer part of the target shape. |
 | `Printing/` | **No** | `LetterHead.swift`, `PDFGenerator.swift`, `PrintFormat.swift` absent. (Docs correctly mark §4.17 _planned_, but §7's tree still lists them.) |
 | `Reporting/` | Yes | `ReportEngine.swift` only. |
-| `Scheduling/` | **No** | §4.13 describes `SchedulerService.swift`, `ScheduledTask.swift`. Neither exists. |
+| `Scheduling/` | Yes | Ships `ScheduledTask`, `CronExpression`, `SchedulerPersistence`, `SchedulerService` (P1.4 / §4.13, 2026-04-24). `SchedulerService` conforms to `ExtensionSchedulerRegistrar` so manifest-declared `schedulerEvents` are registered through `ExtensionPointResolver` exactly like document-event subscriptions. Cadence is persisted in the v6 `scheduler_state` table. |
 | `Storage/` | Yes | Matches §4.3. |
 | `SyncEngine/` | Yes | Also contains `CloudAdapter.swift` with a `NoOpCloudAdapter` — not listed in §7 but referenced elsewhere (ADR-018). |
 | `UIShell/` | Yes (much larger than §7) | See §4 "UIShell reality" below. |
@@ -67,7 +67,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.3 Storage — §4.3
 
-- **Shipped** — `MercantisDatabase`, `MigrationRunner`. Five versioned migrations: **v1** creates the advertised tables (`doctypes`, `fields`, `documents`, `document_children`, `sync_queue`, `audit_log`, `apps`, `workflows`); **v2** adds `docStatus` + `amendedFrom` columns (ADR-013); **v3** adds `document_versions` (ADR-024); **v4** adds the `sync_state` key/value table (P0.3 bookmark persistence); **v5** adds `naming_counters` for sequential series IDs (P1.1 / ADR-014).
+- **Shipped** — `MercantisDatabase`, `MigrationRunner`. Six versioned migrations: **v1** creates the advertised tables (`doctypes`, `fields`, `documents`, `document_children`, `sync_queue`, `audit_log`, `apps`, `workflows`); **v2** adds `docStatus` + `amendedFrom` columns (ADR-013); **v3** adds `document_versions` (ADR-024); **v4** adds the `sync_state` key/value table (P0.3 bookmark persistence); **v5** adds `naming_counters` for sequential series IDs (P1.1 / ADR-014); **v6** adds `scheduler_state(taskKey, lastRunAt)` so `SchedulerService` can survive process restarts (P1.4).
 - **Partial** — Migrations are forward-only (as intended) but there is no test suite asserting schema shape.
 - **Partial** — `audit_log` has neither a writer nor a reader API. Created, never used.
 
@@ -108,7 +108,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 - **Shipped** — `AppManifest` (Codable), `AppInstaller.install(_:)`, `AppInstaller.uninstall(appId:)`, `installApp` mutation flow.
 - **Shipped (P1.3, 2026-04-24)** — `AppManifest.extensionPoints: ExtensionPoints`, `ExtensionPointResolver` binds `documentEventSubscription` declarations to the typed `EventEmitter` and forwards `schedulerEvent` declarations to an `ExtensionSchedulerRegistrar`. `AppInstaller.install` / `uninstall` now call the resolver; `AppInstaller.restoreExtensionPoints()` rebinds on launch. Action dispatch routes through the `ExtensionActionDispatcher` seam that P1.2's `AutomationActionRegistry` will conform to; the default `LoggingExtensionActionDispatcher` records dispatches for test assertions until then.
-- **Missing** — The main app (`mercantis_coreApp.swift`) does not yet construct an `AppInstaller` or call `restoreExtensionPoints()` at launch. P1.2 will plug in the real action dispatcher; P1.4 the real scheduler registrar.
+- **Missing** — The main app (`mercantis_coreApp.swift`) does not yet construct an `AppInstaller` or call `restoreExtensionPoints()` at launch. The real action dispatcher (P1.2) and real scheduler registrar (P1.4) both ship and are ready to wire — Hub / app-shell integration is the consumer.
 
 ### 2.10 Document Lifecycle — §4.10 / ADR-013
 
@@ -123,7 +123,10 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.12 Scheduling & Automation — §4.13 / ADR-019 / ADR-025
 
-- **Missing entirely.** No `SchedulerService`, no `ScheduledTask`, no `AutomationActionRegistry`, no `AutomationActionHandler`, no built-in actions. `AppManifest.automationRules: [AutomationRule]` decodes but has no runtime that executes them.
+- **Shipped (Automation, P1.2 — 2026-04-24)** — see §2.9 for the runner / registry wiring; covered separately in `AutomationTests.swift`.
+- **Shipped (Scheduling, P1.4 — 2026-04-24)** — `mercantis core/Scheduling/` ships `ScheduledTask`, `CronExpression`, `SchedulerPersistence`, and `SchedulerService`. `SchedulerService` conforms to `ExtensionSchedulerRegistrar`, so `ExtensionPointResolver` registers manifest-declared `schedulerEvents` against the real service rather than the recording stub. Last-run state survives process restarts via the v6 `scheduler_state` table. `AppInstaller.uninstall` calls `SchedulerService.unregister(appId:)` to wipe persisted state on full uninstall; reinstall preserves cadence.
+- **Cron support** — dependency-free five-field parser (minute, hour, day-of-month, month, day-of-week). Supports `*`, integer, comma-separated lists, inclusive ranges, and `*/step`. Day-of-week accepts `0`–`7` with both `0` and `7` binding to Sunday. When both day fields are explicit, the matcher uses Vixie union semantics (DOM OR DOW). `@yearly` / `@daily` aliases are not supported — `ScheduleInterval` already covers those cases.
+- **Known follow-ups** — `mercantis_coreApp.swift` still does not construct an `AppInstaller` / `SchedulerService` at launch; the host app / Hub will own that wiring. Scheduler-triggered automation rules (`triggerEvent == "onSchedule"`) are still no-ops because the runner is not wired to the scheduler. Background-task budget categories (`short` / `default` / `long` from §4.13) and `audit_log` writes for failed scheduled runs are not yet implemented.
 
 ### 2.13 Caching Layer — §4.14
 
@@ -177,7 +180,7 @@ Both `Modules` and `DocTypes` route through `RecordCollectionHostView`, so all s
 
 ## 3. Test coverage
 
-- **XCTest tests written in `mercantis coreTests/`.** Covers `ExpressionEvaluator`, `MetaComposer`, `ConflictResolver`, `ValidationPipeline`, `DocumentEngine` (save/fetch/concurrency/submit/cancel/amend), and `MigrationRunner` (v1/v2/v3 + idempotency).
+- **XCTest tests written in `mercantis coreTests/`.** Covers `ExpressionEvaluator`, `MetaComposer`, `ConflictResolver`, `ValidationPipeline`, `DocumentEngine` (save/fetch/concurrency/submit/cancel/amend), `MigrationRunner` (v1–v6 + idempotency), `Naming`, `Automation`, `ExtensionPoints`, and `Scheduler` (cron parser, persistence, due-check, ExtensionSchedulerRegistrar conformance, end-to-end through `AppInstaller`).
 - **Wire-up pending.** The test target does not yet exist in `project.pbxproj`. `mercantis coreTests/README.md` lists the one-time Xcode setup. After that, `⌘U` or `xcodebuild test` runs the suite.
 - Other subsystems remain intentionally uncovered until their implementation settles (see P0.2/P0.5 in `Docs/ENHANCEMENT-PROPOSAL.md`).
 
@@ -201,10 +204,10 @@ This is a useful parallel tool but also a **duplicate installer code path**. The
 
 If you open the repo today expecting to find everything ARCHITECTURE.md §7 advertises, here is the short list of what _to stop looking for_:
 
-- `Automation/`, `Cache/`, `Files/`, `ImportExport/`, `Printing/`, `Scheduling/` — do not exist. (`Naming/` shipped P1.1 — see §2.11.)
+- `Cache/`, `Files/`, `ImportExport/`, `Printing/` — do not exist. (`Naming/` shipped P1.1 — see §2.11; `Automation/` shipped P1.2; `Scheduling/` shipped P1.4 — see §2.12.)
 - A chain-style `PermissionEvaluator` protocol — does not exist; `PermissionEngine` is a flat class, and §4.4 / ADR-011 now describe it as such (P0.5).
 - AST in `ExpressionEvaluator` — does not exist; direct-eval recursive descent.
 - Role-filtered `availableReports` — does not exist; returns all.
 - Any XCTest target — does not exist.
 
-Everything else in the doc is at least partially real. The _engine_ is in good shape; the _shell around the engine_ (scheduling, automation runtime) is the remaining gap. Naming shipped in P1.1 (§2.11); extension-point resolution — the load-bearing wiring that binds manifest-declared events into `EventEmitter` — shipped in P1.3 (§2.9).
+Everything else in the doc is at least partially real. The _engine_ is in good shape; what remains is host-app wiring (constructing `AppInstaller` / `SchedulerService` at launch) and the `Files` / `Printing` / `ImportExport` subsystems. Naming shipped in P1.1 (§2.11); extension-point resolution — the load-bearing wiring that binds manifest-declared events into `EventEmitter` — shipped in P1.3 (§2.9); the automation runtime shipped in P1.2 (§2.12); the periodic-task scheduler shipped in P1.4 (§2.12).

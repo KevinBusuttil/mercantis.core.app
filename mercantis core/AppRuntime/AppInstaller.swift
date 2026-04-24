@@ -18,19 +18,22 @@ public final class AppInstaller {
     private let registry: MetadataRegistry
     private let extensionResolver: ExtensionPointResolver?
     private let automationRunner: AutomationRunner?
+    private let schedulerService: SchedulerService?
 
     public init(
         database: MercantisDatabase,
         schemaValidator: SchemaValidator,
         registry: MetadataRegistry,
         extensionResolver: ExtensionPointResolver? = nil,
-        automationRunner: AutomationRunner? = nil
+        automationRunner: AutomationRunner? = nil,
+        schedulerService: SchedulerService? = nil
     ) {
         self.database = database
         self.schemaValidator = schemaValidator
         self.registry = registry
         self.extensionResolver = extensionResolver
         self.automationRunner = automationRunner
+        self.schedulerService = schedulerService
     }
 
     // MARK: - Install
@@ -226,12 +229,19 @@ public final class AppInstaller {
 
         // 8. Release declarative extension-point bindings owned by this app
         //    (ADR-015, P1.3). Safe when no resolver is wired or when the app
-        //    had no declarations.
+        //    had no declarations. The resolver cancels per-task handles
+        //    which forget the in-memory binding; persisted scheduler state
+        //    is wiped in step 10.
         extensionResolver?.clear(appId: appId)
 
         // 9. Release the app's `AutomationRule`s from the runner
         //    (ADR-019, P1.2). Safe when no runner is wired.
         automationRunner?.unregister(appId: appId)
+
+        // 10. Drop persisted scheduler `lastRun` rows for this app
+        //     (P1.4). Reinstall preserves cadence; full uninstall does
+        //     not, so this only runs on uninstall.
+        schedulerService?.unregister(appId: appId)
     }
 
     // MARK: - Restore
