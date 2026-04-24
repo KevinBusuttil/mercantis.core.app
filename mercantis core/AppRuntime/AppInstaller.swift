@@ -17,17 +17,20 @@ public final class AppInstaller {
     private let schemaValidator: SchemaValidator
     private let registry: MetadataRegistry
     private let extensionResolver: ExtensionPointResolver?
+    private let automationRunner: AutomationRunner?
 
     public init(
         database: MercantisDatabase,
         schemaValidator: SchemaValidator,
         registry: MetadataRegistry,
-        extensionResolver: ExtensionPointResolver? = nil
+        extensionResolver: ExtensionPointResolver? = nil,
+        automationRunner: AutomationRunner? = nil
     ) {
         self.database = database
         self.schemaValidator = schemaValidator
         self.registry = registry
         self.extensionResolver = extensionResolver
+        self.automationRunner = automationRunner
     }
 
     // MARK: - Install
@@ -152,6 +155,11 @@ public final class AppInstaller {
         // idempotent — the resolver clears prior bindings for this app id
         // before rebinding.
         extensionResolver?.apply(manifest: manifest)
+
+        // 8. Register `AutomationRule`s with the runner (ADR-019, P1.2).
+        // `register(rules:appId:)` replaces any prior rule set for this app,
+        // matching reinstall semantics above.
+        automationRunner?.register(rules: manifest.automationRules, appId: manifest.id)
     }
 
     // MARK: - Uninstall
@@ -220,6 +228,10 @@ public final class AppInstaller {
         //    (ADR-015, P1.3). Safe when no resolver is wired or when the app
         //    had no declarations.
         extensionResolver?.clear(appId: appId)
+
+        // 9. Release the app's `AutomationRule`s from the runner
+        //    (ADR-019, P1.2). Safe when no runner is wired.
+        automationRunner?.unregister(appId: appId)
     }
 
     // MARK: - Restore
@@ -235,7 +247,7 @@ public final class AppInstaller {
     public func restoreExtensionPoints(
         onDecodeFailure: ((_ appId: String, _ error: Error) -> Void)? = nil
     ) throws -> [String] {
-        guard let extensionResolver else { return [] }
+        guard extensionResolver != nil || automationRunner != nil else { return [] }
 
         let rows: [(appId: String, payload: String)] = try database.read { db in
             let fetched = try Row.fetchAll(db, sql: "SELECT id, payload FROM apps")
@@ -255,7 +267,11 @@ public final class AppInstaller {
             guard let data = row.payload.data(using: .utf8) else { continue }
             do {
                 let manifest = try decoder.decode(AppManifest.self, from: data)
-                extensionResolver.apply(manifest: manifest)
+                extensionResolver?.apply(manifest: manifest)
+                automationRunner?.register(
+                    rules: manifest.automationRules,
+                    appId: manifest.id
+                )
                 applied.append(row.appId)
             } catch {
                 onDecodeFailure?(row.appId, error)
