@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-23 (P1.1 — Naming subsystem shipped)_
+_Last updated: 2026-04-24 (P1.3 — Extension-point resolution shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -94,15 +94,9 @@ Option B (implement the chain — introduce a `PermissionEvaluator` protocol, fi
 
 Until then, §4.4 / ADR-011 accurately document what ships.
 
-### P0.6 — Resolve `EventBus` / `EventEmitter` duality [S, low risk] — ADR-020
+### P0.6 — Resolve `EventBus` / `EventEmitter` duality [S, low risk] — ADR-020 *(done)*
 
-`EventBus.swift` is still alive and `DocumentEngine`/`WorkflowEngine` still require it in their init. The replacement is in place; finish the job:
-1. Delete the `eventBus` parameter from `DocumentEngine.init` and `WorkflowEngine.init`.
-2. Remove `EventEmitter(legacyBus:)` and the legacy bridge.
-3. Delete `EventBus.swift`.
-4. Update call sites in `mercantis_coreApp.swift` / CLI / any tests.
-
-ADR-012 already says "superseded"; the code should reflect it.
+`EventBus.swift` is gone; `EventEmitter(legacyBus:)` and the bridge are gone; `DocumentEngine.init` / `WorkflowEngine.init` no longer take an `eventBus` parameter. ADR-012's "superseded" status now matches the code.
 
 ### P0.7 — Update ARCHITECTURE.md §7 directory tree [S, zero risk] — doc hygiene
 
@@ -131,9 +125,9 @@ Coverage in `DocumentEngineTests.swift`:
 - `testVersionAtReturnsLatestSaveAtOrBeforeTimestamp`
 - `testSaveWithoutFieldChangesDoesNotAppendAVersion`
 
-### P0.9 — Fix unary minus in `ExpressionEvaluator` [S, low risk] — ADR-017
+### P0.9 — Fix unary minus in `ExpressionEvaluator` [S, low risk] — ADR-017 *(done)*
 
-The tokeniser treats `-` as a negative-number prefix only when `tokens.isEmpty`. `1 + -2` is parsed as `1`, `+`, `2` (silently wrong). Make unary minus a real parser case in `parseFactor` / `parseUnary`. Cover with `ExpressionEvaluatorTests`.
+`-` is now always an operator at the lexer level; `parseFactor` (arithmetic) and `parseValue` (comparison) handle unary `+` / `-` prefixes. `ExpressionEvaluatorTests` covers `1 + -2 == -1` and `3 * -2 == -6`.
 
 ---
 
@@ -179,23 +173,67 @@ mercantis core/Automation/
 
 Depends on P1.3 (extension-point resolution) to actually bind a manifest's rule set to the event bus at install time.
 
-### P1.3 — Implement extension-point resolution at install time [M, medium risk] — ADR-015 / ADR-026
+### P1.3 — Implement extension-point resolution at install time [M, medium risk] — ADR-015 / ADR-026 *(done — 2026-04-24)*
 
-`AppManifest` does not yet declare `extensionPoints`. Add:
+`AppManifest.extensionPoints: ExtensionPoints` now ships. Manifests declare two
+kinds of extension points:
 
-```swift
-public struct ExtensionPoints: Codable, Sendable {
-    public var documentEventSubscriptions: [DocumentEventSubscription]
-    public var schedulerEvents: [SchedulerEventDeclaration]
-}
+```
+mercantis core/AppRuntime/
+├── ExtensionPoints.swift            // ExtensionPoints, DocumentEventSubscription,
+│                                    // DocumentEventTrigger, SchedulerEventDeclaration,
+│                                    // ScheduleInterval, ExtensionActionDeclaration
+└── ExtensionPointResolver.swift     // resolver + dispatcher / registrar seams
 ```
 
-…and in `AppInstaller.install`, for each declaration:
-- Resolve the handler against the action registry.
-- Subscribe the resulting closure to `EventEmitter` (or register with `SchedulerService`).
-- Keep the returned `SubscriptionToken`s in a per-app dictionary so `uninstall` can release them.
+`ExtensionPointResolver.apply(manifest:)` binds every `documentEventSubscription`
+to the matching `MercantisEvent` on `EventEmitter` and forwards every
+`schedulerEvent` to an `ExtensionSchedulerRegistrar`. Tokens and scheduler
+handles are kept in per-app dictionaries; `resolver.clear(appId:)` — called
+from `AppInstaller.uninstall` — cancels every handle idempotently. Reinstall
+clears prior bindings before rebinding, so upgrades don't accumulate duplicate
+subscriptions.
 
-This is the load-bearing piece that turns the declarative model from a pretty JSON document into a running system.
+`AppInstaller.restoreExtensionPoints()` walks the `apps` table and reapplies
+every stored manifest's extension points on launch, since in-memory
+subscriptions don't survive a process restart.
+
+Two protocol seams keep P1.2 and P1.4 out of P1.3's critical path:
+
+- `ExtensionActionDispatcher` — P1.2's `AutomationActionRegistry` will conform.
+  Until then, `LoggingExtensionActionDispatcher` records every dispatched
+  action on a testable trail so wiring can be verified without handlers.
+- `ExtensionSchedulerRegistrar` — P1.4's `SchedulerService` will conform.
+  Until then, `RecordingExtensionSchedulerRegistrar` records declarations
+  without arming a timer.
+
+`DocumentEventTrigger` is a closed enum with raw values `on_save`, `on_update`,
+`on_change`, `on_submit`, `on_cancel`, `on_amend`, `on_trash`, `on_delete`.
+Manifests that declare unsupported triggers (e.g. Frappe's `after_insert`) fail
+at `AppManifest` JSON decoding time rather than silently binding nothing.
+
+Coverage in `ExtensionPointsTests.swift`:
+
+- `testManifestDecodesWithoutExtensionPointsField` — pre-P1.3 manifests decode to `.empty`.
+- `testManifestRejectsUnsupportedTrigger` — `"after_insert"` fails at decode.
+- `testInstallAppliesExtensionPointsAndUninstallReleasesThem` — install/uninstall lifecycle.
+- `testReinstallIsIdempotent` — rebinding clears prior tokens.
+- `testSchedulerDeclarationsRegisterAndReleaseWithApp` — scheduler registrar round-trip.
+- `testOnSubmitSubscriptionFiresOnMatchingDocType` — end-to-end dispatch via `DocumentEngine.submit`.
+- `testDocTypeSelectorSkipsNonMatchingDocTypes` — selector filtering.
+- `testWildcardSelectorMatchesEveryDocType` — `"*"` selector.
+- `testUninstallStopsDispatchingEventsForThatApp` — uninstall releases the subscription.
+- `testRestoreReappliesBindingsForAlreadyInstalledApps` — process-restart re-bind.
+
+**Known follow-ups (not scoped to P1.3):**
+- `documentEventSubscriptions` observe *after*-commit events. Pre-commit
+  blocking actions (the `validate` handler shape in ADR-025) require P1.2's
+  automation runtime to run inside the save transaction.
+- `after_insert` semantics need `DocumentSavedEvent` to carry an "isNew" flag;
+  tracked alongside future event refinements.
+- The main app (`mercantis_coreApp.swift`) does not yet construct an
+  `AppInstaller` or call `restoreExtensionPoints()` at launch; Hub/app-shell
+  integration is the consumer for that wiring.
 
 ### P1.4 — Implement the Scheduler [M, medium risk] — §4.13
 
@@ -445,7 +483,8 @@ A 4–6 week plan if one engineer is the target:
 | 2 | P0.2 sync-through-engine ✅; P0.3 persisted sequence ✅; P0.4 queue pruning + ADR-028 ✅. |
 | 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages ✅. |
 | 4 | P1.1 Naming subsystem ✅ (2026-04-23). |
-| 5–6 | P1.2 + P1.3 automation runtime + extension-point resolution. |
+| 5 | P1.3 Extension-point resolution ✅ (2026-04-24). |
+| 6 | P1.2 Automation runtime (fills the `ExtensionActionDispatcher` seam). |
 
 P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
 

@@ -1,5 +1,40 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-24 (Extension-point resolution shipped — P1.3)
+
+This revision records the implementation of declarative extension-point resolution in `AppInstaller`. ADR-015 previously promised that installing a manifest would bind `documentEventSubscriptions` to `EventEmitter` and `schedulerEvents` to `SchedulerService`; with P1.1 complete, P1.3 became the next load-bearing piece and ships in this revision.
+
+### Code added
+
+| File | Summary |
+|---|---|
+| `mercantis core/AppRuntime/ExtensionPoints.swift` | `ExtensionPoints`, `DocumentEventSubscription`, `DocumentEventTrigger` (closed enum: `on_save`, `on_update`, `on_change`, `on_submit`, `on_cancel`, `on_amend`, `on_trash`, `on_delete`), `SchedulerEventDeclaration`, `ScheduleInterval`, `ExtensionActionDeclaration`. |
+| `mercantis core/AppRuntime/ExtensionPointResolver.swift` | `ExtensionPointResolver` + `ExtensionActionDispatcher` / `ExtensionSchedulerRegistrar` protocol seams. Default `LoggingExtensionActionDispatcher` and `RecordingExtensionSchedulerRegistrar` record activity without side effects so P1.2 / P1.4 can plug in real implementations later. |
+| `mercantis coreTests/ExtensionPointsTests.swift` | 10 tests covering decode backward-compat, install/uninstall lifecycle, reinstall idempotency, docType selector behaviour, wildcard matching, scheduler register/release, and process-restart re-bind. |
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/AppRuntime/AppManifest.swift` | Added `extensionPoints: ExtensionPoints` with `.empty` default and a `decodeIfPresent` init so pre-P1.3 manifests still decode. |
+| `mercantis core/AppRuntime/AppInstaller.swift` | New optional `extensionResolver` init parameter; `install` applies it after DocType registration; `uninstall` clears bindings; new `restoreExtensionPoints()` re-binds on process restart by replaying `apps.payload`. |
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ADR/ADR-015-declarative-hooks-app-extension.md` | Replaced the "at install time AppInstaller resolves…" paragraph with the shipped design — `ExtensionPointResolver`, token tracking, `ExtensionActionDispatcher` / `ExtensionSchedulerRegistrar` seams, closed trigger enum. |
+| `Docs/IMPLEMENTATION-STATUS.md` §2.8, §2.9, §5 | Removed the "EventBus still exists" partial note (P0.6 closed that before this revision); marked §2.9 Layer-1 resolution shipped with scope notes; updated §5's closing paragraph so the remaining gap list drops "automated events from manifests". |
+| `Docs/ENHANCEMENT-PROPOSAL.md` P1.3 | Marked done. Sequencing table updated to list P1.3 in week 5 and P1.2 in week 6. |
+
+### Known follow-ups
+
+- The main app (`mercantis_coreApp.swift`) does not yet construct an `AppInstaller` or call `restoreExtensionPoints()` at launch. That wiring belongs to the Hub / app-shell layer (P2.6 / P2.7).
+- Subscriptions observe post-commit events. Pre-commit blocking actions (`validate` in ADR-025) require the automation runtime (P1.2) to run inside the save transaction.
+- `after_insert` needs an "isNew" flag on `DocumentSavedEvent`; the trigger enum deliberately omits it and manifests using it fail at decode.
+
+---
+
 ## Revision: 2026-04-23 (Permissions doc alignment — P0.5 option A)
 
 This revision realigns the Permissions documentation with the shipped `PermissionEngine` code. The 2026-04-14 revision introduced an evaluator-chain design (`PermissionEvaluator` protocol, `PermissionDecision` enum, five concrete evaluators) that was never implemented; the code has always been a flat class with three public methods. `Docs/ENHANCEMENT-PROPOSAL.md` P0.5 picked option A (fix the doc) over option B (implement the chain) as the near-term resolution. The chain remains a candidate direction for a future revision alongside P1.7 (row-level expressions) and a yet-to-be-defined app-/module-level gate.
