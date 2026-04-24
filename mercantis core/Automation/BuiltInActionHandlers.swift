@@ -41,8 +41,9 @@ public enum BuiltInAutomationActions {
 ///   `FieldValueDecoder.decode(_:)` so `"42"` becomes `.int(42)`,
 ///   `"true"` becomes `.bool(true)`, etc.
 /// - `type` (optional) — force a specific `FieldValue` case:
-///   `"string" | "int" | "double" | "bool" | "null"`. When present,
-///   overrides the automatic inference.
+///   `"string" | "int" | "double" | "bool" | "null" | "date" | "datetime" | "data"`.
+///   When present, overrides the automatic inference. The `"array"` case is not
+///   expressible as a manifest string literal and must be constructed in code.
 public struct SetValueHandler: AutomationActionHandler {
     public static let actionType = "set_value"
     public init() {}
@@ -273,6 +274,33 @@ enum FieldValueDecoder {
                 }
             case "null":
                 return .null
+            case "date":
+                guard let d = ISO8601DateFormatter().date(from: raw) else {
+                    throw AutomationActionError.invalidParameter(
+                        actionType: "set_value",
+                        name: "value",
+                        reason: "expected ISO8601 date, got '\(raw)'"
+                    )
+                }
+                return .date(d)
+            case "datetime":
+                guard let d = ISO8601DateFormatter().date(from: raw) else {
+                    throw AutomationActionError.invalidParameter(
+                        actionType: "set_value",
+                        name: "value",
+                        reason: "expected ISO8601 datetime, got '\(raw)'"
+                    )
+                }
+                return .dateTime(d)
+            case "data":
+                guard let data = Data(base64Encoded: raw) else {
+                    throw AutomationActionError.invalidParameter(
+                        actionType: "set_value",
+                        name: "value",
+                        reason: "expected base64, got '\(raw)'"
+                    )
+                }
+                return .data(data)
             default:
                 throw AutomationActionError.invalidParameter(
                     actionType: "set_value",
@@ -342,6 +370,9 @@ enum ParameterInterpolator {
         case .double(let d): return String(d)
         case .bool(let b):   return b ? "true" : "false"
         case .null:          return ""
+        case .date(let d), .dateTime(let d): return ISO8601DateFormatter().string(from: d)
+        case .data(let d):   return d.base64EncodedString()
+        case .array(let xs): return "[\(xs.count) items]"
         }
     }
 }

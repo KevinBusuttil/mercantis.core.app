@@ -45,6 +45,7 @@ the command line.
 | `AutomationTests.swift` | `Automation/` | Each handler's happy / missing-parameter branches, registry dispatch, runner condition + re-entrancy, on-submit dispatch, scheduler-origin placeholder dispatch. |
 | `ExtensionPointsTests.swift` | `AppRuntime/` | Manifest decoding, install/uninstall lifecycle, reinstall idempotency, scheduler registrar round-trip, end-to-end event dispatch, restore on launch. |
 | `SchedulerTests.swift` | `Scheduling/` | Cron parser (wildcard / range / step / Sunday-as-zero-or-seven / errors), persistence round-trip + prefix-clear, due-check semantics for `.all` / `.hourly` / `.daily` / `.cron`, restart preserves cadence + fires backlog, handle-cancel preserves cadence for reinstall, `unregister(appId:)` wipes persistence, `ExtensionSchedulerRegistrar` conformance, end-to-end through `AppInstaller`. |
+| `FieldValueTests.swift` | `Metadata/` | Tagged-envelope encode/decode for the P1.6 cases (`.date`, `.dateTime`, `.data`, `.array`), untagged primitive round-trip (backward-compat), recursive `.array` equality, `TypeCoercionStage` / `RequiredFieldStage` behaviour on typed dates and inline data, `ExpressionEvaluator` comparing dates as epoch seconds, `FormatStrategy` / `FieldDerivedStrategy` stringification of dates and rejection of opaque values, `FieldValueDecoder` parsing `"date"` / `"data"` parameters in `set_value`. |
 
 Shared fixtures live in `Support/TestSupport.swift`.
 

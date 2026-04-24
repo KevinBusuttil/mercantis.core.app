@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-24 (P1.4 — Scheduler shipped)_
+_Last updated: 2026-04-24 (P1.6 — FieldValue expansion shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -388,9 +388,36 @@ Coverage in `ValidationPipelineTests.swift`:
 - `testWorkflowGuardSkipsRoleCheckForSystemContext`
 - `testWorkflowGuardReportsEvaluationErrorForMalformedCondition`
 
-### P1.6 — Expand `FieldValue` [S, low risk] — ARCHITECTURE-CHANGELOG follow-up
+### P1.6 — Expand `FieldValue` [S, low risk] — ARCHITECTURE-CHANGELOG follow-up *(done — 2026-04-24)*
 
-Add `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, `.array([FieldValue])`. Decoder needs a disambiguation key (currently `FieldValue` is likely coded as a tagged enum — confirm during the changeset). This is a prerequisite for P2.8 (richer field controls) and for `FieldType.date` / `FieldType.datetime` to round-trip correctly rather than relying on string encoding.
+`FieldValue` now has nine cases: the original `.string` / `.int` / `.double` / `.bool` / `.null` primitives plus `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, and `.array([FieldValue])`.
+
+Encoding uses a two-shape wire format. The legacy primitives still encode as untagged JSON (`"abc"`, `42`, `true`, `null`) so existing database rows and sync-queue blobs decode byte-for-byte. The four new cases encode as a tagged envelope:
+
+```json
+{ "$type": "date",     "$value": "2026-04-24T10:00:00Z" }
+{ "$type": "datetime", "$value": "2026-04-24T10:00:00Z" }
+{ "$type": "data",     "$value": "<base64>" }
+{ "$type": "array",    "$value": [ <FieldValue>, ... ] }
+```
+
+Decoder probes the tagged envelope first (`$type` tag dispatch) and falls back to the untagged primitive path, so a mixed-version dataset decodes without a migration.
+
+Downstream wiring followed the new cases out:
+
+- `TypeCoercionStage.isTypeCompatible` accepts typed `.date` / `.dateTime` for `.date` / `.datetime` fields and still accepts ISO8601 strings for backward compat; `.attachment` fields accept `.string` (id) or inline `.data`.
+- `RequiredFieldStage.isValueEmpty` treats typed dates as never empty, `.data` as empty iff the payload has zero bytes, and `.array` as empty iff it has zero elements.
+- `ExpressionEvaluator.numericValue` / `fieldValueToExprValue` surface dates as `timeIntervalSince1970`, so expressions like `start < end` work without a dedicated date AST; `.data` / `.array` fall through to `.null` for comparison purposes.
+- `ReportEngine.formatValue`, `GenericListView.displayValue`, and `BuiltInActionHandlers.stringify` emit deterministic display strings for every new case instead of returning `nil`.
+- `NamingService` strategies: `FormatStrategy` and `FieldDerivedStrategy` now stringify typed dates as ISO8601; `.data` and `.array` are rejected with `NamingError.missingFieldValue` (they are not naming-convertible).
+- `FieldValueDecoder` (the `set_value` handler's literal parser) gained `date` / `datetime` / `data` type tags so manifest-declared automation rules can target the typed cases; `array` is deliberately unsupported as a manifest string literal (constructed in code only).
+- `GenericFormView.dateBinding` now writes typed `.date` / `.dateTime` on save (based on the field's declared `FieldType`) and reads typed values first, falling back to the ISO8601-string path only for legacy rows.
+
+Coverage in `FieldValueTests.swift` (24 tests): tagged-envelope encode/decode for each new case, untagged primitive round-trip (backward-compat), explicit wire-shape assertion on the `data` envelope, unknown-`$type` rejection, recursive `.array` equality, `TypeCoercionStage` happy-paths and the bool-for-date rejection, `RequiredFieldStage` emptiness matrix for the new cases, `ExpressionEvaluator` ordering typed dates by epoch seconds and treating opaque values as null, `FormatStrategy` / `FieldDerivedStrategy` dispatch on `.date` / `.dateTime` plus rejection of `.data`, and `FieldValueDecoder` parsing `"date"` / `"data"` with a malformed-value rejection.
+
+**Known follow-ups (not scoped to P1.6):**
+- `FieldType` does not yet expose a dedicated "array" type or "data" type surface in the form builder; the new `FieldValue` cases are a storage/expression-layer expansion. Rendering new control types is P2.8 work.
+- `TypeCoercionStage` allows `.date` ↔ `.dateTime` interchange today (either typed case satisfies either field type). A stricter separation can land once the UI picker treats the two as distinct; keeping them interchangeable now avoids a forced migration for existing rows that used `.string` indiscriminately.
 
 ### P1.7 — Row-level permissions take a condition expression [M, medium risk] — ADR-011
 
@@ -595,8 +622,9 @@ A 4–6 week plan if one engineer is the target:
 | 5 | P1.3 Extension-point resolution ✅ (2026-04-24). |
 | 6 | P1.2 Automation runtime ✅ (2026-04-24) (fills the `ExtensionActionDispatcher` seam). |
 | 6 | P1.4 Scheduler ✅ (2026-04-24) (fills the `ExtensionSchedulerRegistrar` seam). |
+| 6 | P1.6 FieldValue expansion ✅ (2026-04-24) (tagged envelope, backward-compatible decode). |
 
-P1.6 FieldValue expansion and P1.7 row-level expressions slot in as individual PRs alongside the above.
+P1.7 row-level expressions slots in as an individual PR alongside the above; it now has typed dates to compare against via `ExpressionEvaluator`.
 
 P2.6 (Core library productization) should happen before Hub development begins in earnest — it is not large work but it is a prerequisite for the Core/Hub boundary being real. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 

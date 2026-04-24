@@ -328,14 +328,24 @@ public struct GenericFormView: View {
     private func dateBinding(for field: FieldDefinition) -> Binding<Date> {
         Binding<Date>(
             get: {
-                if case .string(let s) = document.fields[field.key] {
-                    return ISO8601DateFormatter().date(from: s) ?? Date()
+                switch document.fields[field.key] {
+                case .date(let d), .dateTime(let d): return d
+                case .string(let s): return ISO8601DateFormatter().date(from: s) ?? Date()
+                default: return Date()
                 }
-                return Date()
             },
             set: { newValue in
-                let str = ISO8601DateFormatter().string(from: newValue)
-                document.fields[field.key] = .string(str)
+                // P1.6: write typed `.date` / `.dateTime` based on the declared
+                // field type. Falls back to ISO8601 string only for UI fields
+                // without a date type (should not happen through `dateField`).
+                switch field.type {
+                case .date:
+                    document.fields[field.key] = .date(newValue)
+                case .datetime:
+                    document.fields[field.key] = .dateTime(newValue)
+                default:
+                    document.fields[field.key] = .string(ISO8601DateFormatter().string(from: newValue))
+                }
             }
         )
     }

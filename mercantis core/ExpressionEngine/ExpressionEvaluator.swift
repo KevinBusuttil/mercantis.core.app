@@ -379,6 +379,10 @@ public final class ExpressionEvaluator {
         case .string(let s): return Double(s) ?? 0
         case .bool(let b): return b ? 1 : 0
         case .null: return 0
+        // P1.6: dates compare/order as epoch seconds so `created > 0` and
+        // `created < deadline` work without adding a dedicated date AST.
+        case .date(let d), .dateTime(let d): return d.timeIntervalSince1970
+        case .data, .array: return 0
         }
     }
 
@@ -389,6 +393,8 @@ public final class ExpressionEvaluator {
         case .double(let d): return .number(d)
         case .bool(let b): return .bool(b)
         case .null: return .null
+        case .date(let d), .dateTime(let d): return .number(d.timeIntervalSince1970)
+        case .data, .array: return .null
         }
     }
 }
