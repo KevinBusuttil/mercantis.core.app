@@ -40,7 +40,11 @@ First-party code can provide custom `NamingStrategy`, `AutomationActionHandler`,
 - Untraceable execution — no static analysis can determine what code runs on a given event.
 - Circular dependency risk — hooks from different apps can form undeclared dependency cycles.
 
-At install time, `AppInstaller` resolves each `documentEventSubscription` and `schedulerEvent` declaration into a typed `EventBus` subscription or a `SchedulerService` registration. Since no executable code is downloaded, subscription "handlers" are limited to built-in action types (ADR-025).
+At install time, `AppInstaller` delegates to `ExtensionPointResolver`, which binds each `documentEventSubscription` to the typed `EventEmitter` (ADR-020) and forwards each `schedulerEvent` to an `ExtensionSchedulerRegistrar`. The resolver keeps per-app `SubscriptionToken` and scheduler handle arrays so `AppInstaller.uninstall` releases them cleanly. Reinstall clears prior bindings before rebinding; restarts rebind via `AppInstaller.restoreExtensionPoints()` against the persisted `apps` table.
+
+Action dispatch routes through the `ExtensionActionDispatcher` protocol so P1.2's `AutomationActionRegistry` (ADR-025) can plug in without a resolver-level change. Scheduler registration routes through `ExtensionSchedulerRegistrar` for the same reason — `SchedulerService` (P1.4) is the eventual conformer. Since no executable code is downloaded, subscription "handlers" remain limited to built-in action types (ADR-025).
+
+`DocumentEventTrigger` is a closed Swift enum (`on_save`, `on_update`, `on_change`, `on_submit`, `on_cancel`, `on_amend`, `on_trash`, `on_delete`). Manifests declaring unlisted triggers fail at `AppManifest` JSON decoding — there is no silent-no-op failure mode. Frappe's `after_insert` requires a future "isNew" flag on `DocumentSavedEvent` and is not yet in the enum.
 
 ## Consequences
 

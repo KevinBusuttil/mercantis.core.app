@@ -101,14 +101,14 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.8 Notifications & Events — §4.8 / ADR-020
 
-- **Shipped** — `EventEmitter`, `MercantisEvent` marker protocol, concrete event types (`DocumentSavedEvent`, `DocumentDeletedEvent`, `DocumentSubmittedEvent`, `DocumentCancelledEvent`, `DocumentAmendedEvent`, `WorkflowTransitionEvent`, `AppInstalledEvent`).
-- **Partial** — `EventBus.swift` (ADR-012, superseded) **still exists and is still required by `DocumentEngine.init` and `WorkflowEngine.init`**. `EventEmitter` takes a `legacyBus:` in its initialiser to bridge. The migration is halfway done.
+- **Shipped** — `EventEmitter`, `MercantisEvent` marker protocol, concrete event types (`DocumentSavedEvent`, `DocumentDeletedEvent`, `DocumentSubmittedEvent`, `DocumentCancelledEvent`, `DocumentAmendedEvent`, `WorkflowTransitionEvent`, `AppInstalledEvent`). `EventBus.swift` / `EventEmitter(legacyBus:)` removed (P0.6).
 - **Missing** — In-app `NotificationLog` DocType, notification rules, email/SMS/webhook channels described in §4.16. §4.16 itself says "in progress".
 
 ### 2.9 App Runtime — §4.9 / §4.12
 
 - **Shipped** — `AppManifest` (Codable), `AppInstaller.install(_:)`, `AppInstaller.uninstall(appId:)`, `installApp` mutation flow.
-- **Missing** — §4.12's Layer-1 declarative resolution at install time: `documentEventSubscriptions`, `schedulerEvents`. `AppInstaller` does not read these keys from the manifest; `AppManifest` does not even declare them. ADR-015 / ADR-026 promise this; the runtime has no hook into it.
+- **Shipped (P1.3, 2026-04-24)** — `AppManifest.extensionPoints: ExtensionPoints`, `ExtensionPointResolver` binds `documentEventSubscription` declarations to the typed `EventEmitter` and forwards `schedulerEvent` declarations to an `ExtensionSchedulerRegistrar`. `AppInstaller.install` / `uninstall` now call the resolver; `AppInstaller.restoreExtensionPoints()` rebinds on launch. Action dispatch routes through the `ExtensionActionDispatcher` seam that P1.2's `AutomationActionRegistry` will conform to; the default `LoggingExtensionActionDispatcher` records dispatches for test assertions until then.
+- **Missing** — The main app (`mercantis_coreApp.swift`) does not yet construct an `AppInstaller` or call `restoreExtensionPoints()` at launch. P1.2 will plug in the real action dispatcher; P1.4 the real scheduler registrar.
 
 ### 2.10 Document Lifecycle — §4.10 / ADR-013
 
@@ -207,4 +207,4 @@ If you open the repo today expecting to find everything ARCHITECTURE.md §7 adve
 - Role-filtered `availableReports` — does not exist; returns all.
 - Any XCTest target — does not exist.
 
-Everything else in the doc is at least partially real. The _engine_ is in good shape; the _shell around the engine_ (naming, scheduling, automation runtime, automated events from manifests) is the gap.
+Everything else in the doc is at least partially real. The _engine_ is in good shape; the _shell around the engine_ (scheduling, automation runtime) is the remaining gap. Naming shipped in P1.1 (§2.11); extension-point resolution — the load-bearing wiring that binds manifest-declared events into `EventEmitter` — shipped in P1.3 (§2.9).

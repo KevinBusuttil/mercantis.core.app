@@ -16,11 +16,18 @@ public final class AppInstaller {
     private let database: MercantisDatabase
     private let schemaValidator: SchemaValidator
     private let registry: MetadataRegistry
+    private let extensionResolver: ExtensionPointResolver?
 
-    public init(database: MercantisDatabase, schemaValidator: SchemaValidator, registry: MetadataRegistry) {
+    public init(
+        database: MercantisDatabase,
+        schemaValidator: SchemaValidator,
+        registry: MetadataRegistry,
+        extensionResolver: ExtensionPointResolver? = nil
+    ) {
         self.database = database
         self.schemaValidator = schemaValidator
         self.registry = registry
+        self.extensionResolver = extensionResolver
     }
 
     // MARK: - Install
@@ -140,6 +147,11 @@ public final class AppInstaller {
         for docType in manifest.doctypes {
             try registry.register(docType)
         }
+
+        // 7. Bind declarative extension points (ADR-015, P1.3). Reinstall is
+        // idempotent — the resolver clears prior bindings for this app id
+        // before rebinding.
+        extensionResolver?.apply(manifest: manifest)
     }
 
     // MARK: - Uninstall
@@ -203,6 +215,53 @@ public final class AppInstaller {
                 try? registry.remove(docTypeId)
             }
         }
+
+        // 8. Release declarative extension-point bindings owned by this app
+        //    (ADR-015, P1.3). Safe when no resolver is wired or when the app
+        //    had no declarations.
+        extensionResolver?.clear(appId: appId)
+    }
+
+    // MARK: - Restore
+
+    /// Re-bind extension points for every already-installed app. Call once at
+    /// app launch after the resolver is wired — in-memory subscriptions do
+    /// not survive process restarts; the `apps` table does. (ADR-015, P1.3)
+    ///
+    /// Returns the set of app ids whose manifests were decoded and applied.
+    /// Apps whose payloads fail to decode are skipped and reported via
+    /// `onDecodeFailure` rather than aborting the whole restore.
+    @discardableResult
+    public func restoreExtensionPoints(
+        onDecodeFailure: ((_ appId: String, _ error: Error) -> Void)? = nil
+    ) throws -> [String] {
+        guard let extensionResolver else { return [] }
+
+        let rows: [(appId: String, payload: String)] = try database.read { db in
+            let fetched = try Row.fetchAll(db, sql: "SELECT id, payload FROM apps")
+            return fetched.compactMap { row in
+                guard let id: String = row["id"], let payload: String = row["payload"] else {
+                    return nil
+                }
+                return (appId: id, payload: payload)
+            }
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        var applied: [String] = []
+        for row in rows {
+            guard let data = row.payload.data(using: .utf8) else { continue }
+            do {
+                let manifest = try decoder.decode(AppManifest.self, from: data)
+                extensionResolver.apply(manifest: manifest)
+                applied.append(row.appId)
+            } catch {
+                onDecodeFailure?(row.appId, error)
+            }
+        }
+        return applied
     }
 
     // MARK: - Errors
