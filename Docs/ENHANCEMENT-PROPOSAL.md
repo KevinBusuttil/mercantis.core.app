@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-24 (P1.3 — Extension-point resolution shipped)_
+_Last updated: 2026-04-24 (P1.2 — Automation runtime shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -159,19 +159,64 @@ mercantis core/Naming/
 - Offline multi-device counter reconciliation via the sync queue is not implemented — ADR-014 calls out per-device range reservation; today two devices saving offline will both start at `SINV-2026-0001`.
 - `amend` still allocates a raw UUID for the new draft rather than routing through `NamingService`. Reasonable for now; worth revisiting if amended copies need series IDs.
 
-### P1.2 — Implement the Automation runtime [L, medium risk] — ADR-019 / ADR-025
+### P1.2 — Implement the Automation runtime [L, medium risk] — ADR-019 / ADR-025 *(done — 2026-04-24)*
 
-`AppManifest.automationRules` decodes but nothing executes them. Minimum viable:
+`mercantis core/Automation/` ships the P1.2 runtime described below. Handlers
+use the registry-based dispatch required by ADR-025; new action types are
+added by registering an `AutomationActionHandler` conformance compiled into
+Core (downloaded apps cannot).
 
 ```
 mercantis core/Automation/
-├── AutomationActionHandler.swift    // protocol: actionType, execute(document:parameters:context:)
-├── AutomationActionRegistry.swift   // register / lookup / execute
-├── BuiltInActionHandlers.swift      // SetValueHandler, SetStatusHandler, SendNotificationHandler (log-only for now), ValidateHandler, AssignHandler
-└── AutomationRunner.swift           // subscribes to DocumentSavedEvent / DocumentSubmittedEvent, matches rules, dispatches handlers
+├── AutomationActionHandler.swift       // protocol: actionType + execute(document:parameters:context:), AutomationContext, AutomationActionError
+├── AutomationActionRegistry.swift      // register / unregister / handler(for:) / execute(...); replaces earlier entries on duplicate register
+├── BuiltInActionHandlers.swift         // SetValueHandler, SetStatusHandler, SendNotificationHandler, ValidateHandler, AssignHandler; FieldValueDecoder + ParameterInterpolator helpers
+├── AutomationSinks.swift               // NotificationLogWriter / AssignmentLogWriter protocols + in-memory defaults (log-only, no migration)
+├── AutomationRunner.swift              // subscribes to DocumentSavedEvent / DocumentSubmittedEvent / DocumentCancelledEvent; matches AppManifest.automationRules; re-entrancy guard on document id
+└── AutomationActionDispatcher.swift    // fills the P1.3 ExtensionActionDispatcher seam so manifest-declared documentEventSubscriptions route through the same registry
 ```
 
-Depends on P1.3 (extension-point resolution) to actually bind a manifest's rule set to the event bus at install time.
+`AppInstaller` now takes an optional `automationRunner:` parameter and, on
+`install` / `uninstall` / `restoreExtensionPoints`, registers or releases the
+manifest's `automationRules` alongside the P1.3 extension-point bindings.
+`DocumentEngine` gains an `AutomationDocumentGateway` conformance (via a thin
+extension) so the runner and dispatcher can reload the canonical document
+before running handlers and write the mutation back post-commit.
+
+The built-ins map to ADR-025's action-type table:
+
+- `set_value` — writes one field; `FieldValueDecoder` infers the `FieldValue` case from the string literal (or honours an explicit `type` parameter: `string | int | double | bool | null`).
+- `set_status` — writes `document.status`. Does not touch ADR-013's `docStatus`; that remains the job of `DocumentEngine.submit` / `cancel` / `amend`.
+- `send_notification` — writes one `NotificationLogEntry` to the injected `NotificationLogWriter`. `subject` / `body` support `{field}` placeholders expanded from the document's field map.
+- `validate` — evaluates a boolean expression via `ExpressionEvaluator` and throws `AutomationActionError.validationFailed` when the condition is false. Intended to block saves when run inside the save transaction; post-commit it surfaces the failure to the runner / dispatcher's error reporter.
+- `assign` — writes one `AssignmentLogEntry` (user or role target) to the injected `AssignmentLogWriter`.
+
+Coverage in `AutomationTests.swift` (25 tests): each handler's happy-path and
+missing-parameter branches, the registry's unknown-action-type guard and
+handler-replacement semantics, `FieldValueDecoder`'s inference table,
+`ParameterInterpolator`'s placeholder handling, the runner's condition
+evaluation and Frappe-style `on_update` / `on_change` / `onSave` alias
+matching, the re-entrancy guard that breaks `set_value`-rewrites-save loops,
+the on-submit-only dispatch path, `AppInstaller` → runner register/unregister
+wiring, end-to-end dispatch through `ExtensionPointResolver` via
+`AutomationActionDispatcher`, and scheduler-origin placeholder dispatch.
+
+**Known follow-ups (not scoped to P1.2):**
+- Pre-commit blocking `validate` — ADR-019 calls for the automation runtime
+  to execute inside the save transaction so a failing action rolls back the
+  write. That requires threading the runner through
+  `DocumentEngine.save(_:)` (new parameter + new coverage), which is deferred
+  beyond P1.2. Post-commit `validate` still runs; it reports the failure via
+  `RunnerError.ruleFailed` but the commit is not rolled back.
+- Persistent `notification_log` / `assignment_log` tables — handlers write to
+  in-memory sinks today. Adding migrations before P1.4 (Scheduler) can drive
+  real notification delivery would be premature.
+- Scheduler-triggered rules — `AppManifest.automationRules` with
+  `triggerEvent == "onSchedule"` are registered but never fire. P1.4's
+  `SchedulerService` will drive them.
+- `AutomationActionDispatcher` running scheduler-origin actions against a
+  placeholder `Document` is a minimal path; when a real schedule runs, the
+  handler set needs a context shape that doesn't pretend there's a document.
 
 ### P1.3 — Implement extension-point resolution at install time [M, medium risk] — ADR-015 / ADR-026 *(done — 2026-04-24)*
 
@@ -405,7 +450,7 @@ The subsystems explicitly recorded as missing in `IMPLEMENTATION-STATUS.md` are 
 | Missing subsystem | Why it matters for Hub |
 |---|---|
 | ~~Naming (ADR-014, P1.1)~~ ✅ shipped 2026-04-23 | Hub documents can now declare `autoname: "naming_series:SINV-.YYYY.-.####"` and get ERP-shaped IDs. Offline multi-device counter reconciliation is the remaining gap. |
-| Automation runtime (ADR-019/025, P1.2/P1.3) | "On submit, deduct stock" is a basic ERP rule. Without the automation runtime, every such rule must be hard-coded in Hub's own Swift — which is exactly what ADR-007 prohibits. |
+| ~~Automation runtime (ADR-019/025, P1.2/P1.3)~~ ✅ shipped 2026-04-24 | Declarative `AutomationRule`s and `documentEventSubscription`s now route through `AutomationActionRegistry`. "On submit, deduct stock" is expressible as a `set_value` / `validate` pair on the manifest side. Remaining gaps: pre-commit blocking inside the save transaction, scheduler-driven rules (P1.4), and persistent notification / assignment storage. |
 | Files / Attachments (§4.18, P3.1) | Attaching PDFs, images, and supplier documents to records is table-stakes for back-office ERP. |
 | Import / Export (§4.20, P3.3) | Opening-balance imports and data migration are day-one practical needs for any real deployment. |
 | Printing / PDF (§4.17, P3.2) | Invoices, purchase orders, and delivery notes must be printable. |
@@ -484,7 +529,7 @@ A 4–6 week plan if one engineer is the target:
 | 3 | P0.5A (rewrite permissions doc) ✅; P0.5B (implement chain) deferred; P0.8 version reader ✅; P1.5 real validation stages ✅. |
 | 4 | P1.1 Naming subsystem ✅ (2026-04-23). |
 | 5 | P1.3 Extension-point resolution ✅ (2026-04-24). |
-| 6 | P1.2 Automation runtime (fills the `ExtensionActionDispatcher` seam). |
+| 6 | P1.2 Automation runtime ✅ (2026-04-24) (fills the `ExtensionActionDispatcher` seam). |
 
 P1.4 Scheduler, P1.6 FieldValue expansion, and P1.7 row-level expressions slot in as individual PRs alongside the above.
 

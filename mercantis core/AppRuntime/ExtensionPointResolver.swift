@@ -12,9 +12,11 @@ import Foundation
 /// Executes a single built-in action declared in a manifest. (ADR-025, P1.2)
 ///
 /// `ExtensionPointResolver` delegates to this protocol so the automation action
-/// registry (P1.2) and the resolver can ship independently. Until P1.2 lands,
-/// `LoggingExtensionActionDispatcher` is the default — it logs each dispatch
-/// and records it in an inspectable trail so tests can assert wiring.
+/// registry (P1.2) and the resolver stay decoupled. P1.2 ships
+/// `AutomationActionDispatcher` as the production conformance; the resolver
+/// keeps `LoggingExtensionActionDispatcher` as its default so tests and
+/// headless diagnostics can assert wiring without pulling in the automation
+/// runtime.
 public protocol ExtensionActionDispatcher: AnyObject, Sendable {
     /// Dispatch one action declared in an app manifest.
     ///
@@ -72,7 +74,8 @@ public struct ExtensionActionContext: Sendable {
 // MARK: - Default implementations
 
 /// Default dispatcher that records each call without touching document state.
-/// Replaced by the real `AutomationActionRegistry` when P1.2 lands.
+/// Replaced by `AutomationActionDispatcher` (P1.2) when the host wires the
+/// automation runtime into the resolver.
 public final class LoggingExtensionActionDispatcher: ExtensionActionDispatcher, @unchecked Sendable {
     public struct Entry: Sendable, Equatable {
         public let appId: String

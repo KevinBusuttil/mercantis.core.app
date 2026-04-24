@@ -164,7 +164,7 @@ public enum ScheduleInterval: Codable, Sendable, Equatable {
 /// One built-in action to execute when a subscription fires. (ADR-015, ADR-025)
 ///
 /// `actionType` is resolved by `ExtensionActionDispatcher` — typically against
-/// the `AutomationActionRegistry` once P1.2 lands. `parameters` is the raw
+/// the `AutomationActionRegistry` (P1.2 / ADR-025). `parameters` is the raw
 /// map from the manifest; handlers interpret it per-action-type.
 public struct ExtensionActionDeclaration: Codable, Sendable, Equatable {
     public var actionType: String

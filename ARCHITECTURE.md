@@ -541,9 +541,18 @@ The tree below reflects what is actually on disk today. Subsystems described in 
 mercantis core/
 ├── mercantis_coreApp.swift       # @main SwiftUI entry point
 ├── AppRuntime/
-│   ├── AppInstaller.swift        # Installs/uninstalls app manifests
+│   ├── AppInstaller.swift        # Installs/uninstalls app manifests; wires ExtensionPointResolver + AutomationRunner
 │   ├── AppManifest.swift         # Codable manifest struct
-│   └── AppRuntimeTypes.swift     # WorkflowDefinition, ReportDefinition, AutomationRule, DashboardDefinition, LocalizationBundle, …
+│   ├── AppRuntimeTypes.swift     # WorkflowDefinition, ReportDefinition, AutomationRule, DashboardDefinition, LocalizationBundle, …
+│   ├── ExtensionPoints.swift     # DocumentEventSubscription, SchedulerEventDeclaration, ExtensionActionDeclaration
+│   └── ExtensionPointResolver.swift # Binds manifest extension points to EventEmitter + scheduler
+├── Automation/
+│   ├── AutomationActionHandler.swift       # AutomationActionHandler protocol + AutomationContext + AutomationActionError
+│   ├── AutomationActionRegistry.swift      # Registry keyed by actionType (ADR-025)
+│   ├── BuiltInActionHandlers.swift         # set_value / set_status / send_notification / validate / assign
+│   ├── AutomationSinks.swift               # NotificationLogWriter / AssignmentLogWriter + in-memory defaults
+│   ├── AutomationRunner.swift              # Subscribes to document events, matches AppManifest.automationRules
+│   └── AutomationActionDispatcher.swift    # Bridges registry → ExtensionActionDispatcher seam for P1.3
 ├── Customization/
 │   ├── CustomField.swift         # Runtime field additions to existing DocTypes
 │   └── PropertySetter.swift      # Per-field property overrides
@@ -603,7 +612,6 @@ mercantis core/
 
 | Subsystem | §s | ADRs | Proposal |
 |---|---|---|---|
-| `Automation/` — action registry + built-in handlers | §4.13 | ADR-019, ADR-025 | P1.2 |
 | `Cache/` — cross-subsystem `CacheManager` | §4.14 | — | P3.4 |
 | `Files/` — attachments + sandboxed storage | §4.18 | — | P3.1 |
 | `ImportExport/` — CSV/JSON importer + exporter + fixtures | §4.20 | — | P3.3 |
