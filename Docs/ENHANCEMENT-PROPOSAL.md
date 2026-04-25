@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-25 (P2.6 — MercantisCore library product shipped)_
+_Last updated: 2026-04-25 (P2.5 — list filters / sorting / paging shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -527,9 +527,44 @@ Minimum viable capabilities for an ERP module home page and operational dashboar
 
 Until this is in place, every module home page falls back to `GenericListView`, which is functional but not a dashboard.
 
-### P2.5 — List filters / sorting / paging [S, low risk] — §4.15
+### P2.5 — List filters / sorting / paging [S, low risk] — §4.15 *(done — 2026-04-25)*
 
-`DocumentEngine.list(docType:filters:)` is equality-only. Add `sortBy:`, `limit:`, and `where:` (expression) to match the advertised signature. The index definitions in `IndexDefinition` exist but are not yet used by the list path.
+`DocumentEngine.list` now exposes the full surface §4.15 used to caveat as planned:
+
+```swift
+public func list(
+    docType: String,
+    filters: [String: FieldValue]? = nil,
+    whereExpression: String? = nil,
+    sortBy: [ListSort]? = nil,
+    limit: Int? = nil,
+    offset: Int = 0
+) throws -> [Document]
+```
+
+Three orthogonal additions ride on the existing equality-filter behaviour:
+
+- **`whereExpression`** — a sandboxed boolean expression evaluated per row via `ExpressionEvaluator.evaluateBool` (ADR-017). Empty / whitespace expressions are ignored; evaluation failures fail closed (the row is excluded), matching the convention `PermissionEngine.canAccessRow` (P1.7) established. Lets callers express predicates the equality-filter map can't (`amount > 1000`, `status == "Submitted" && warehouse == "Main"`, P1.6 typed-date comparisons via the evaluator's epoch-seconds path).
+- **`sortBy`** — ordered `[ListSort]` chain. `ListSort` is a new public struct (`fieldKey: String`, `direction: .ascending | .descending`). Sort keys may name either a `documents`-table system column or a user-defined field; the comparator handles missing values (sorted last in ascending order), numeric cases (int / double / bool / date-as-epoch), and strings.
+- **`limit` / `offset`** — paging. `limit == nil` means "to end"; `offset` is bounds-clamped so out-of-range values yield `[]` rather than crashing.
+
+The new `IndexDefinition` use is the second half of P2.5: declared indexes now actually accelerate queries.
+
+- `MetadataRegistry.register(_:)` reconciles SQLite expression indexes for every `DocType.indexes` entry, creating `CREATE INDEX … ON documents(doctype, json_extract(payload, '$.<fieldKey>'))` and dropping any prior indexes whose name shares the DocType's `idx_doc_<sanitized-doctype>_` prefix but no longer matches a current `IndexDefinition`. Re-registering a DocType is idempotent.
+- `DocumentEngine.list` pushes filters and sort keys to SQL when the field is either a system column or a declared `IndexDefinition`. Other filters / sorts run in memory after the row fetch. Paging is pushed to SQL only when no in-memory filtering or sorting is required; otherwise it runs in memory after those passes so the slice is taken from the final ordered list.
+
+**Downstream wiring** — three existing call sites kept their original signatures untouched (every new parameter has a default): `ReportEngine.execute`, `DocumentEngine.runValidationPipeline`'s `UniqueConstraintStage` callback, and `DocTypeToolingContext.listDocuments`.
+
+**Doc updates** — `ARCHITECTURE.md` §4.6 (Document Engine method list) and §4.15 (Public API Surface) now show the full signature; the "sort/limit planned" caveat is gone.
+
+**Tagged `FieldValue` cases (`.date`, `.dateTime`, `.data`, `.array`)** — these encode as `{"$type":...,"$value":...}` envelopes (P1.6) and would not match a flat `json_extract` value, so equality filters carrying tagged values transparently fall back to in-memory comparison. Sorts on tagged-date fields work in-memory via the comparator's epoch-seconds path; sorts on `.data` / `.array` fall through to the string fallback.
+
+**Coverage in `DocumentEngineTests.swift`** — 17 new tests exercise: empty / equality filters, mixed system + indexed-field filter pushdown, in-memory filter fallback for non-indexed fields, `.null` filter via `IS NULL`, ascending / descending sort on system columns and indexed fields, multi-key sort with mixed direction, in-memory sort when one key is non-indexed, missing-value sort placement, `whereExpression` filtering with comparison and compound operators, fail-closed behaviour on parse error and undefined identifier, empty / whitespace expression short-circuits, `limit` only, `offset` only, `limit + offset`, out-of-range offset, and the existing-callers regression (default-args call signature unchanged). `MigrationRunnerTests` was extended to assert that an `IndexDefinition`-backed DocType registration creates the matching `idx_doc_*` row in `sqlite_master`, and that re-registering with the index removed drops the row.
+
+**Known follow-ups (not scoped to P2.5):**
+- Range / inequality predicates on indexed fields aren't pushed to SQL today — only equality is. The indexes still help at the in-memory `whereExpression` stage because the SQL pre-filter narrows the row set first; lifting the where expression itself into SQL is P2.1 territory (parser → AST → SQL emitter).
+- `IndexDefinition.unique == true` is still enforced only by `UniqueConstraintStage`, not by a SQLite `UNIQUE` index. Adding the SQLite-level guarantee would catch race conditions but change error semantics from `DocumentValidationError` to a SQLite constraint violation; deferred until the trade-off is genuinely needed.
+- The CLI's raw-`sqlite3` install path (P2.3) does not create expression indexes today — when CLI install is consolidated onto Core, it inherits the new behaviour for free.
 
 ### P2.6 — Productize Core as a reusable library target [M, low risk] — ADR-007 *(done — 2026-04-25)*
 
@@ -652,6 +687,7 @@ A 4–6 week plan if one engineer is the target:
 | 6 | P1.6 FieldValue expansion ✅ (2026-04-24) (tagged envelope, backward-compatible decode). |
 | 7 | P1.7 row-level expression permissions ✅ (2026-04-25) (`user.*` namespace, fail-closed). |
 | 7 | P2.6 MercantisCore library product ✅ (2026-04-25) (Hub-importable engine target; UI stays in the app). |
+| 7 | P2.5 list filters / sorting / paging ✅ (2026-04-25) (whereExpression, ListSort, limit/offset; IndexDefinition wired to SQLite expression indexes). |
 
 P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 
