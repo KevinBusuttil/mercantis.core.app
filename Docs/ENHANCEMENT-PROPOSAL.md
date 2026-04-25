@@ -491,17 +491,40 @@ So for `Doctype` specifically — and for every other DocType — whether the us
 
 **Non-goals respected:** no changes to `FormBuilderView` or the visual-builder window; editing remains inline in detail/browse; no nav model changes beyond the `pendingCreate` signal.
 
-### P2.1 — Turn the ExpressionEvaluator into a real AST [M, low risk] — ADR-017
+### P2.1 — Turn the ExpressionEvaluator into a real AST [M, low risk] — ADR-017 *(done — 2026-04-25)*
 
-`ARCHITECTURE.md` §4.7 already advertises this ("typed AST", static field-reference analysis, constant folding, source positions). Lift the current evaluator to a two-phase design:
+`ExpressionEngine/` is now a two-phase design that matches the contract `ARCHITECTURE.md` §4.7 has been advertising for some time.
 
-1. `Parser` — produces `ExpressionNode` (enum: `literal`, `fieldRef`, `binaryOp`, `unaryOp`, `call`). Records source `Range<String.Index>` per node.
-2. `Evaluator` — walks the AST with a typed `ExprValue` result.
+- `ExpressionAST.swift` — typed `ExpressionNode` (`.literal`, `.fieldRef`, `.unary`, `.binary`, `.call`) plus `LiteralValue`, `UnaryOperator`, `BinaryOperator`, and `ExpressionSourceRange`. Every node carries a `[start, end)` UTF-8 byte range over the original source; the lexer that feeds the parser computes those offsets up-front.
+- `ExpressionParser.swift` — recursive-descent parser. Grammar runs `or → and → equality → comparison → additive → multiplicative → unary → call → primary`, which is strictly more powerful than the legacy two-grammar split (`parseValue` for booleans, `parseFactor` for arithmetic). Comparison RHS now accepts arithmetic (`total > 100 + 50`); trailing tokens (`a == b c`) and unknown characters (`a $ b`) raise `ExpressionParseError` instead of being silently dropped. The `.call` form is parsed but rejected by the interpreter so the AST shape is forward-compatible with P2.2's `lookup()`.
+- `ExpressionEvaluator.swift` — public façade. The legacy `evaluateBool(expression:context:)` / `evaluateFormula(expression:context:)` API is unchanged; new call sites that evaluate the same source repeatedly (a `whereExpression` over many rows; an automation rule's `conditionExpression` per save) can call `parse(_:)` once and pass the resulting `ExpressionNode` to the new `evaluateBool(parsed:context:)` / `evaluateFormula(parsed:context:)` overloads.
 
-Immediate wins:
-- `MetaComposer` can call `Parser.referencedFields(expression:)` and fail validation at install time if an expression references a field the DocType does not declare.
-- `visibilityExpression` / `readOnlyExpression` can be cached (parsed once per DocType load, evaluated per document).
-- Errors include a caret position instead of "unexpectedToken".
+The three "immediate wins" the proposal called out all landed:
+
+- **Static field-reference analysis** — `ExpressionEvaluator.referencedFields(in:)` returns the set of identifiers an expression touches without evaluating it. `SchemaValidator.validate(_:)` now uses this to reject any DocType whose `visibilityExpression` / `readOnlyExpression` / `formulaExpression` references a field key the DocType does not declare. Two new `ValidationError` cases — `unknownFieldInExpression` and `expressionParseFailed` — surface this at install time instead of at first form render. Dotted identifiers (`user.id`, `user.roles`) are exempt from the declared-field check because the permission engine pre-flattens them into the evaluation context. A `validatesExpressions` flag on `SchemaValidator` lets builder previews opt out while a draft DocType is incomplete.
+- **Parsed-expression cache** — the evaluator keeps a bounded LRU (`parseCacheLimit`, default 256) of recently-parsed source strings keyed by raw text. `evaluateBool(expression:context:)` looks up or parses, then walks; calling it with the same expression twice parses once. The cache is thread-safe via `NSLock`; `parseCacheLimit: 0` disables it.
+- **Constant folding** — pure-literal subtrees collapse at parse time. `2 + 3 * 4` materialises as a single `.literal(.number(14))`; `status == "Submitted" || true` collapses to `.literal(.bool(true))`. Subtrees that throw at fold time (e.g. division by zero) are deliberately left unfolded so the runtime error contract is preserved (`testConstantFoldingPreservesDivisionByZeroAsRuntimeError`).
+
+**Caret-style errors** — parse failures lift through a new `EvaluatorError.parseError(ExpressionParseError)` case. `ExpressionParseError.description` renders the message, the source line, and a `^` pointer at the byte offset. The legacy `EvaluatorError.unexpectedToken` case is preserved for callers that match on it (`DocumentEngine.list` `whereExpression` fail-closed regression, `ValidateHandler.expressionFailed` wrapping); other parse errors lift through `.parseError`.
+
+**Backward-compatibility** — the existing legacy contracts are preserved verbatim:
+
+- `evaluateBool` empty-string short-circuits to `false` (`testEmptyExpressionEvaluatesToFalse`).
+- Truthiness fallback for bare identifiers (`flag` resolves to `.bool(true)` in the context).
+- Undefined fields throw `undefinedField` from arithmetic context, but resolve to a comparison-only `.null`-like value from boolean context. The interpreter carries an internal `.undefined(name)` runtime value — arithmetic operators detect it and throw, comparisons treat it like `.null`, truthiness yields `false`. `testUndefinedFieldInFormulaThrows` still throws; `testIdentifierTruthiness` for `missing` still returns `false`.
+- Date / dateTime fields compare and order as epoch seconds (`testExpressionEvaluatorComparesDatesAsEpochSeconds`); `.data` / `.array` map to `.null` (`testExpressionEvaluatorTreatsOpaqueValuesAsNullForComparison`).
+- The `unary minus` regression (P0.9) tests still pass — unary `-` / `+` / `!` bind tighter than every binary operator and walk the same RuntimeValue path.
+
+**Coverage in `ExpressionEvaluatorTests.swift`** — every legacy test (15) is preserved. New tests exercise: `parse` round-trip + `evaluateBool(parsed:)`, parse-cache equality, `referencedFields(in:)` for compound / literal-only / dotted / empty expressions, constant-folding collapse vs preservation of fieldRef-bearing trees, division-by-zero deferral, source-position parse errors (unknown character, unterminated string, trailing tokens), `parseCacheLimit: 0` opt-out.
+
+**Coverage in `SchemaValidatorTests.swift` (new)** — declared-field happy path / undeclared-field rejection for each of the three field-level expression slots, malformed-expression rejection (`expressionParseFailed`), dotted-identifier exemption, `validatesExpressions = false` opt-out.
+
+**Known follow-ups (not scoped to P2.1):**
+
+- Workflow `transition.conditionExpression` and `AutomationRule.conditionExpression` are not yet validated at install time. Both reference DocType fields and would benefit from the same `referencedFields` check; the wire-up belongs in `AppInstaller.install` rather than `SchemaValidator` (the rules don't live on the DocType). Filed for a future pass.
+- The new parser elevates `+`-then-arithmetic on the RHS of a comparison (`total > 100 + 50`) from "silent drop" to "actually computed". Any production manifest that was relying on the legacy drop will now see the comparison evaluate against the full RHS — this is a strict improvement, but worth flagging.
+- Constant folding is conservative — it never folds `||` / `&&` when one side is constant and the other isn't (e.g. `true || x`). Adding short-circuit folding is a safe future tweak.
+- `IndexDefinition`-driven `whereExpression` push-down to SQL still requires the AST → SQL emitter that P2.5 deferred; the parser side of that work is now in place.
 
 ### P2.2 — Cross-document `lookup(docType, name, field)` [M, medium risk] — ARCHITECTURE-CHANGELOG follow-up
 
@@ -688,6 +711,7 @@ A 4–6 week plan if one engineer is the target:
 | 7 | P1.7 row-level expression permissions ✅ (2026-04-25) (`user.*` namespace, fail-closed). |
 | 7 | P2.6 MercantisCore library product ✅ (2026-04-25) (Hub-importable engine target; UI stays in the app). |
 | 7 | P2.5 list filters / sorting / paging ✅ (2026-04-25) (whereExpression, ListSort, limit/offset; IndexDefinition wired to SQLite expression indexes). |
+| 7 | P2.1 ExpressionEvaluator AST ✅ (2026-04-25) (Parser → typed `ExpressionNode`, source positions, `referencedFields` static analysis wired into `SchemaValidator`, parse-cache, constant folding). |
 
 P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 

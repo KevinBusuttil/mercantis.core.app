@@ -1,5 +1,47 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-25 (ExpressionEvaluator AST shipped — P2.1)
+
+This revision records the long-promised lift of `ExpressionEngine/` from a string-walking evaluator to a typed-AST parser + interpreter, plus the install-time static-analysis wiring it unlocks.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/ExpressionEngine/ExpressionAST.swift` *(new)* | `ExpressionNode` (`.literal`, `.fieldRef`, `.unary`, `.binary`, `.call`), `LiteralValue`, `UnaryOperator`, `BinaryOperator`, `ExpressionSourceRange`, `ExpressionParseError`, `ExpressionLexer`. Every node carries a UTF-8 byte range over the original source. |
+| `mercantis core/ExpressionEngine/ExpressionParser.swift` *(new)* | Recursive-descent parser. Grammar `or → and → equality → comparison → additive → multiplicative → unary → call → primary` — strictly more powerful than the legacy split (`parseValue` for booleans, `parseFactor` for arithmetic). Comparison RHS now accepts arithmetic; trailing tokens / unknown characters raise parse errors. Static analysis: `ExpressionNode.referencedFields()` and `isConstant`. |
+| `mercantis core/ExpressionEngine/ExpressionEvaluator.swift` | Rewritten as a public façade around the parser + an AST interpreter. Existing API (`evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`, the four `EvaluatorError` cases) is preserved verbatim; a fifth `EvaluatorError.parseError(ExpressionParseError)` case carries source positions. New API: `parse(_:)`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)`. Bounded LRU parse cache (`parseCacheLimit`, default 256). Pure-literal subtrees collapse at parse time (constant folding); fold-time exceptions (e.g. `10 / 0`) are deliberately deferred to runtime. |
+| `mercantis core/Metadata/SchemaValidator.swift` | New `validatesExpressions: Bool = true` toggle. `validate(_:)` now parses each field's `visibilityExpression` / `readOnlyExpression` / `formulaExpression` and rejects DocTypes whose expressions reference an undeclared field key (`unknownFieldInExpression`) or fail to parse (`expressionParseFailed`). Dotted identifiers (`user.id`, `user.roles`) are exempt because the permission engine pre-flattens them into the evaluation context. |
+| `mercantis core/UIShell/DocTypeBuilderView.swift` | `errorMessage(for:)` switch updated to surface the two new `SchemaValidator.ValidationError` cases. |
+| `mercantis coreTests/ExpressionEvaluatorTests.swift` | New tests for `parse`, `referencedFields`, parse-cache equality, constant folding (collapse + division-by-zero deferral), source-position parse errors (unknown char, unterminated string, trailing tokens), `parseCacheLimit: 0` opt-out. Every legacy test preserved. |
+| `mercantis coreTests/SchemaValidatorTests.swift` *(new)* | Declared-field happy-path / undeclared-field rejection for each of the three field-level expression slots, malformed-expression rejection, dotted-identifier exemption, `validatesExpressions = false` opt-out. |
+
+### Behaviour changes
+
+- Comparison RHS now accepts arithmetic expressions (`total > 100 + 50` evaluates the addition); the legacy parser silently dropped the `+ 50` half. Strict improvement, but flagged for any manifest that was relying on the drop.
+- Trailing tokens (`a == b c`) and unknown characters (`a $ b`) now raise parse errors. The legacy parser silently ignored them.
+- Undefined-field semantics preserved exactly: arithmetic context throws `undefinedField`; comparison and truthiness context behaves like `null` / `false`. Implemented via an internal `RuntimeValue.undefined(name)` carrier inside the interpreter.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ENHANCEMENT-PROPOSAL.md` P2.1 | Marked done. Detailed three-file split, immediate-wins list, behaviour-change call-outs, coverage matrix, and the three known follow-ups (workflow / automation install-time validation, SQL push-down via the new AST, short-circuit folding). Sequencing footer updated. |
+| `Docs/IMPLEMENTATION-STATUS.md` §2.7 | Replaced "Partial — no AST" entry with the P2.1 shipped breakdown. P0.9 unary-minus partial removed (subsumed by the new AST grammar). |
+| `ARCHITECTURE.md` §4.7 | Reframed the "typed AST" claim as fact rather than aspiration; expanded the four AST-enabled benefits (static analysis, parse-once / evaluate-many, constant folding, source-position errors). |
+| `ARCHITECTURE.md` §4.15 | `ExpressionEvaluator` public-API line expanded to list `parse`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)`. |
+| `ARCHITECTURE.md` §7 | Directory tree shows the three files now in `ExpressionEngine/`. |
+| `mercantis coreTests/README.md` | Coverage row for `ExpressionEvaluatorTests.swift` extended with the P2.1 additions; new row for `SchemaValidatorTests.swift`. |
+
+### Known follow-ups
+
+- Workflow `transition.conditionExpression` and `AutomationRule.conditionExpression` are not yet validated at install time. The right hook is `AppInstaller.install`, not `SchemaValidator` (the rules don't live on the DocType). Tracked.
+- The AST → SQL emitter that would push `whereExpression` filters down to SQLite is the second half of P2.5's known follow-up. The parser side is now in place; the emitter is not yet written.
+- Constant folding is conservative — it does not short-circuit `||` / `&&` when only one side is constant. Adding short-circuit folding is a safe future tweak.
+- The `.call` AST node is parsed but rejected by the interpreter, so the AST shape is forward-compatible with `lookup()` (P2.2) when it lands.
+
+---
+
 ## Revision: 2026-04-25 (MercantisCore library product shipped — P2.6)
 
 This revision records the productization of Core as a reusable Swift package library, completing the precondition for ADR-007's "Hub imports Core as a Swift package or embedded framework" wiring. Hub — or any third-party app — can now consume Core via a standard `.package(url: ...)` dependency.

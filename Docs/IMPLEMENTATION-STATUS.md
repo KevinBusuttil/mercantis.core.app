@@ -25,7 +25,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 | `Cache/` | **No** | No `CacheManager.swift`. `MetaComposer` carries its own generation counter; there is no cross-subsystem cache. |
 | `Customization/` | Yes (partial) | Contains `CustomField.swift`, `PropertySetter.swift`. `ClientScript.swift` (referenced in §4.19) is missing. |
 | `DocumentEngine/` | Yes | Matches §4.2 / §4.10. |
-| `ExpressionEngine/` | Yes | See note below on AST claim. |
+| `ExpressionEngine/` | Yes | AST-based parser + interpreter. `referencedFields` static analysis wired into `SchemaValidator` (P2.1). |
 | `Files/` | **No** | §4.18 describes `File.swift`, `FileManager.swift`. Neither exists. |
 | `ImportExport/` | **No** | §4.20 describes `DataImporter.swift`, `DataExporter.swift`. Neither exists. |
 | `Metadata/` | Yes | Matches §4.1. |
@@ -94,10 +94,11 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.7 Expression Engine — §4.7 / ADR-017
 
-- **Partial** — Hand-rolled tokeniser + recursive-descent parser that **evaluates inline**. There is no AST type, no intermediate representation, and therefore no static field-reference analysis, no constant folding, and no source-position errors. The doc's "typed AST" claim is aspirational.
+- **Shipped (P2.1, 2026-04-25)** — The evaluator is now a two-phase design: `ExpressionParser` builds a typed `ExpressionNode` AST (`.literal`, `.fieldRef`, `.unary`, `.binary`, `.call`) and `ExpressionEvaluator` walks it. Every node carries a UTF-8 `[start, end)` source range; parse errors lift through `EvaluatorError.parseError(ExpressionParseError)` whose `description` renders the source line and a `^` caret. New public APIs: `parse(_:)`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)`. A bounded LRU caches recently-parsed source strings (configurable `parseCacheLimit`, default 256). Pure-literal subtrees collapse at parse time (constant folding); subtrees that throw at fold time (e.g. `10 / 0`) are deliberately left unfolded so the runtime error contract holds. `SchemaValidator.validate(_:)` calls `referencedFields` on every field-level `visibilityExpression` / `readOnlyExpression` / `formulaExpression` and rejects DocTypes whose expressions reference an undeclared field key — two new `ValidationError` cases, `unknownFieldInExpression` and `expressionParseFailed`, surface this at install time. The existing public API (`evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`, the four `EvaluatorError` cases) is preserved verbatim.
+- **Shipped (P0.9, 2026-04-22)** — Unary minus mid-expression (`1 + -2`, `-price`, `-(a + b)`) parses correctly through the new AST grammar — unary `-` / `+` / `!` bind tighter than every binary operator.
 - **Shipped (P1.6, 2026-04-24)** — `FieldValue` now includes `.date(Date)`, `.dateTime(Date)`, `.data(Data)`, and `.array([FieldValue])`. The four new cases encode as a tagged envelope (`{"$type": "date|datetime|data|array", "$value": ...}`) so they round-trip distinctly; the legacy primitives (`.string` / `.int` / `.double` / `.bool` / `.null`) still encode as untagged JSON and existing payloads continue to decode. Downstream wiring updated: `TypeCoercionStage` accepts typed dates for `.date` / `.datetime` fields and `.data` for `.attachment`; `RequiredFieldStage` treats typed dates as always non-empty and an empty `.data` / `.array` as empty; `ExpressionEvaluator` compares dates as epoch seconds; `GenericFormView.dateBinding` writes typed `.date` / `.dateTime` on save.
-- **Partial** — Numeric literal parsing consumes `-` only when it is the first token, so `a - 1` tokenises fine but `1 + -2` does not. Unary minus is not supported mid-expression.
-- **Partial** — No `lookup(docType, name, field)` (also already on the follow-up list).
+- **Partial** — No `lookup(docType, name, field)` (P2.2). The `.call` AST node is parsed but rejected by the interpreter so the AST shape is forward-compatible with `lookup()` when it lands.
+- **Partial** — Workflow `transition.conditionExpression` and `AutomationRule.conditionExpression` are not yet validated at install time. Both reference DocType fields and would benefit from the same `referencedFields` check; the wire-up belongs in `AppInstaller.install` rather than `SchemaValidator` (the rules don't live on the DocType). Filed for a future pass.
 
 ### 2.8 Notifications & Events — §4.8 / ADR-020
 

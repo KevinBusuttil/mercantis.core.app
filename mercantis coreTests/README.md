@@ -35,7 +35,8 @@ the command line.
 
 | File | Subsystem | Notes |
 |---|---|---|
-| `ExpressionEvaluatorTests.swift` | `ExpressionEngine/` | Boolean, formula, comparisons, unary minus (P0.9 regression), division by zero, undefined field. |
+| `ExpressionEvaluatorTests.swift` | `ExpressionEngine/` | Boolean, formula, comparisons, unary minus (P0.9 regression), division by zero, undefined field. P2.1 AST coverage: `parse` / `referencedFields` static analysis, parse-cache equality, constant folding, source-position parse errors, trailing-token / unknown-character rejection. |
+| `SchemaValidatorTests.swift` | `Metadata/` | P2.1 install-time expression checks: `visibilityExpression` / `readOnlyExpression` / `formulaExpression` reference only declared field keys, malformed expressions surface `expressionParseFailed`, dotted identifiers (`user.id`) bypass enforcement, `validatesExpressions = false` opt-out. |
 | `MetaComposerTests.swift` | `Metadata/` | Custom field insertion order, property setters (`label`, `hidden`, `read_only`), cache invalidation. |
 | `ConflictResolverTests.swift` | `SyncEngine/` | LWW, VCM, AO across equal/newer/stale versions. |
 | `ValidationPipelineTests.swift` | `DocumentEngine/` | Each stage in isolation plus short-circuit ordering. |

@@ -261,7 +261,12 @@ Supported syntax:
 - Parentheses for grouping
 - Arithmetic formulas: `+`, `-`, `*`, `/`
 
-The evaluator parses expressions into a **typed AST** (Abstract Syntax Tree) before evaluation — not string-walking. Benefits: static analysis of field references, constant folding, and precise error messages with source position information.
+The evaluator parses expressions into a **typed AST** (`ExpressionNode`) before evaluation — not string-walking. Benefits unlocked by the AST (P2.1):
+
+- **Static field-reference analysis** — `ExpressionEvaluator.referencedFields(in:)` returns the identifiers an expression touches without evaluating it. `SchemaValidator.validate(_:)` calls this at install time and rejects DocTypes whose `visibilityExpression` / `readOnlyExpression` / `formulaExpression` references a field key the DocType does not declare.
+- **Parse-once / evaluate-many** — `parse(_:)` returns a reusable `ExpressionNode` that callers (e.g. `DocumentEngine.list` running a `whereExpression` over many rows, or an automation rule's per-save `conditionExpression`) hand to `evaluateBool(parsed:context:)` to skip the parse phase. A bounded LRU on the evaluator caches recently-seen source strings so naive callers also benefit transparently.
+- **Constant folding** — pure-literal subtrees collapse at parse time. `2 + 3 * 4` becomes a single `.literal(.number(14))`. Subtrees that throw (e.g. `10 / 0`) are deliberately left unfolded so the runtime error contract is preserved.
+- **Source-position errors** — every AST node carries a `[start, end)` UTF-8 range; parse errors lift through `EvaluatorError.parseError(ExpressionParseError)` whose `description` renders the source line and a `^` caret pointing at the offending byte.
 
 The evaluator operates with **no access to the file system, network, or arbitrary Swift APIs**.
 
@@ -416,7 +421,7 @@ Key API points:
 - `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
 - `SyncEngine` — `pushPendingMutations()`, `pullAndApplyRemoteMutations()`, `applyRemoteMutations(_:)`, `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)`
-- `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`
+- `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`, `parse(_:) -> ExpressionNode`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)` (P2.1)
 - `EventEmitter` — `subscribe(_:handler:)` → `SubscriptionToken`, `publish(_:)`
 - `AppInstaller` — `install(_:)`, `uninstall(appId:)`
 - *`AutomationActionRegistry` is planned (ADR-025) — not yet implemented.*
@@ -566,7 +571,9 @@ mercantis core/
 │   ├── DocumentVersion.swift     # DocumentVersion, FieldDiff (versioning/diff tracking)
 │   └── ValidationPipeline.swift  # ValidationStage protocol, pipeline, DocumentValidationError
 ├── ExpressionEngine/
-│   └── ExpressionEvaluator.swift # Recursive-descent evaluator: evaluateBool, evaluateFormula
+│   ├── ExpressionAST.swift       # ExpressionNode, LiteralValue, UnaryOperator, BinaryOperator, ExpressionSourceRange, lexer
+│   ├── ExpressionParser.swift    # Recursive-descent parser → ExpressionNode AST; referencedFields, isConstant
+│   └── ExpressionEvaluator.swift # Public façade: parse, evaluateBool/Formula (string + parsed), referencedFields, parse cache, constant folding
 ├── Metadata/
 │   ├── BuiltInDocTypes.swift     # Registers system DocTypes (Module, DocTypeField, DocTypePermission, …)
 │   ├── DocType.swift             # DocType struct
