@@ -1,5 +1,36 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-25 (MercantisCore library product shipped — P2.6)
+
+This revision records the productization of Core as a reusable Swift package library, completing the precondition for ADR-007's "Hub imports Core as a Swift package or embedded framework" wiring. Hub — or any third-party app — can now consume Core via a standard `.package(url: ...)` dependency.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `Package.swift` | Added a `.library(name: "MercantisCore", targets: ["MercantisCore"])` product. New `MercantisCore` target points at `mercantis core/` with `exclude:` for the four UI / app-shell entries (`Assets.xcassets`, `mercantis_coreApp.swift`, `UIShell`, `Views`). Added GRDB (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) as a SwiftPM dependency, threaded through the library target only. The CLI executable continues to use its `MercantisCLI/SQLite3` system-library path; consolidating the two persistence stacks remains P2.3. |
+
+### Boundary established
+
+- Library compile set: `AppRuntime/`, `Automation/`, `Customization/`, `DocumentEngine/`, `ExpressionEngine/`, `Metadata/`, `Naming/`, `Notifications/`, `Permissions/`, `Reporting/`, `Scheduling/`, `Storage/`, `SyncEngine/`, `Workflows/` — 51 source files.
+- Excluded from the library: SwiftUI views in `UIShell/` and `Views/`, the `@main` `mercantis_coreApp.swift` entry, and `Assets.xcassets`. These continue to compile inside the Xcode app target only.
+- No engine source file imports SwiftUI / AppKit / UIKit. The boundary is one-way (UI → engine).
+- Access-modifier audit: every top-level engine type is `public` with `public init`s and `public func`s. Manifest / DocType value types expose `public let` / `public var` members. Two helpers in `Automation/BuiltInActionHandlers.swift` (`FieldValueDecoder`, `ParameterInterpolator`) are deliberately internal; nothing else needed visibility changes.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ENHANCEMENT-PROPOSAL.md` P2.6 | Marked done. Detailed product/target shape, exclude list, GRDB wiring, audit summary, and the three known follow-ups (Xcode app target migration, SwiftPM test target wiring, P2.3 CLI consolidation). Sequencing footer updated. |
+
+### Known follow-ups
+
+- The Xcode app target (`mercantis core`) still compiles the engine source directly via project membership. Migrating it to consume the SwiftPM `MercantisCore` product instead is a `.pbxproj` change best made in Xcode itself; the library declaration alone is sufficient for Hub to consume Core today.
+- The XCTest files under `mercantis coreTests/` use `@testable import mercantis_core` (the Xcode app module name); mirroring them as a SwiftPM `testTarget` against `MercantisCore` would require switching the import and is left as follow-up to the Xcode test-target wire-up tracked in P0.1.
+- The CLI consolidating onto `MercantisCore` instead of its own raw-SQLite path remains P2.3.
+
+---
+
 ## Revision: 2026-04-25 (Row-level permission expressions shipped — P1.7)
 
 This revision replaces the equality-only `rowFilter` argument on `PermissionEngine.canAccessRow` with a sandboxed boolean `rowExpression` evaluated by `ExpressionEvaluator` (ADR-017) over the document's fields plus a `user.*` namespace. P1.6's typed `.date` / `.dateTime` cases land here as the comparison surface for deadline-style row predicates. No callers of the old signature existed in the codebase, so the swap was direct.

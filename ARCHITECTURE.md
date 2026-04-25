@@ -626,6 +626,8 @@ mercantis core/
 | `ImportExport/` — CSV/JSON importer + exporter + fixtures | §4.20 | — | P3.3 |
 | `Printing/` — `PrintFormat`, `PDFGenerator`, `LetterHead` | §4.17 | — | P3.2 |
 
+**SwiftPM module boundary.** `Package.swift` exposes a `MercantisCore` library product so Hub and third-party apps can `import MercantisCore` from a resolved package dependency (ADR-007, P2.6). The library target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]` — every engine subsystem above is part of the public package; the SwiftUI shell and `@main` entry stay in the Xcode app target. GRDB is declared as a SwiftPM dependency on the library target. The `mercantis` CLI executable continues to use its `MercantisCLI/SQLite3` system-library path; consolidating the two persistence stacks remains P2.3.
+
 ---
 
 ## 8. Architecture Decision Records

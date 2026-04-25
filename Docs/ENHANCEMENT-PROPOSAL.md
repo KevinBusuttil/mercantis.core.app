@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-25 (P1.7 — row-level expression permissions shipped)_
+_Last updated: 2026-04-25 (P2.6 — MercantisCore library product shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -531,20 +531,27 @@ Until this is in place, every module home page falls back to `GenericListView`, 
 
 `DocumentEngine.list(docType:filters:)` is equality-only. Add `sortBy:`, `limit:`, and `where:` (expression) to match the advertised signature. The index definitions in `IndexDefinition` exist but are not yet used by the list path.
 
-### P2.6 — Productize Core as a reusable library target [M, low risk] — ADR-007
+### P2.6 — Productize Core as a reusable library target [M, low risk] — ADR-007 *(done — 2026-04-25)*
 
-`Package.swift` currently declares a single `.executable` product (`mercantis`) that wraps `MercantisCLI/Sources`. The `mercantis core/` engine exists as an embedded Xcode framework target inside `mercantis.core.app.xcodeproj`, but there is **no `.library` product in `Package.swift`** that Hub — or any third-party app — could reference with a standard `.package(url:from:)` dependency.
+`Package.swift` now declares a `.library(name: "MercantisCore", targets: ["MercantisCore"])` product alongside the existing `mercantis` executable. Hub — or any third-party app — can pull Core in with a standard `.package(url:from:)` dependency and `import MercantisCore`.
 
-ADR-007 states: "Mercantis Hub is structured as an Xcode project that imports Core as a Swift package or embedded framework." That presupposes an importable, versioned package product. Right now the Core/Hub boundary is architecturally correct but not mechanically enforced. Hub cannot `import MercantisCore` from a resolved Swift package dependency because no such product exists.
+```swift
+products: [
+    .library(name: "MercantisCore", targets: ["MercantisCore"]),
+    .executable(name: "mercantis", targets: ["mercantis"])
+]
+```
 
-Required work:
-- Extract `mercantis core/` source files into a proper `.library` target in `Package.swift` (e.g. target name `MercantisCore`).
-- Declare a `.library(name: "MercantisCore", targets: ["MercantisCore"])` product.
-- Audit `public` vs. `internal` access modifiers deliberately — every `public` member becomes part of the enforced API surface that Hub (and any third party) must use. Internal implementation details become un-importable by design.
-- The CLI target (`mercantis`) continues as an `.executable` that declares a dependency on `MercantisCore`.
-- The Xcode app target (`mercantis core`) becomes a consumer of the `MercantisCore` package target.
+The `MercantisCore` target points at the existing `mercantis core/` directory with `exclude:` for the four UI / app-shell entries (`Assets.xcassets`, `mercantis_coreApp.swift`, `UIShell/`, `Views/`). Engine subsystems — `AppRuntime/`, `Automation/`, `Customization/`, `DocumentEngine/`, `ExpressionEngine/`, `Metadata/`, `Naming/`, `Notifications/`, `Permissions/`, `Reporting/`, `Scheduling/`, `Storage/`, `SyncEngine/`, `Workflows/` (51 source files) — compile into the library; SwiftUI views and the App entry stay in the Xcode app target. GRDB is added as a SwiftPM dependency (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) and threaded through the library target only — the CLI continues to use its `MercantisCLI/SQLite3` system-library path (consolidating the two persistence stacks is P2.3).
 
-Until this is done, the Core/Hub split is aspirational: the right design, but not an enforced Swift module boundary. ADR-007's "public/internal boundary in Core is enforced by the Swift module system" consequence is not yet true.
+Access-modifier audit: every top-level engine type (`DocumentEngine`, `MercantisDatabase`, `SyncEngine`, `WorkflowEngine`, `MetaComposer`, `MetadataRegistry`, `PermissionEngine`, `ValidationPipeline`, `ExpressionEvaluator`, `ReportEngine`, `AppInstaller`, `AutomationActionRegistry`, `AutomationRunner`, `SchedulerService`, `EventEmitter`, `NamingService`, `ConflictResolver`, …) is declared `public` with `public init`s and `public func`s. Manifest / DocType value types (`Document`, `DocType`, `FieldDefinition`, `FieldValue`, `PermissionRule`, `IndexDefinition`, `ResolvedMeta`, `MutationRecord`, `WorkflowDefinition`, …) expose `public let` / `public var` members. Two helpers in `Automation/BuiltInActionHandlers.swift` (`FieldValueDecoder`, `ParameterInterpolator`) are deliberately internal — they're implementation detail of the built-in action handlers. No engine source file imports SwiftUI / AppKit / UIKit; the boundary is one-way (UI → engine).
+
+ADR-007's "public/internal boundary in Core is enforced by the Swift module system" consequence is now true at the SwiftPM target level.
+
+**Known follow-ups (not scoped to P2.6):**
+- The Xcode app target (`mercantis core`) still compiles the engine source directly (via project membership). Migrating it to consume the `MercantisCore` SwiftPM product instead — so the Xcode-side build path also enforces the module boundary — is a `.pbxproj` change best done in Xcode itself: remove engine-folder file references from the app target's compile sources, add the local SwiftPM package as a dependency, and link `MercantisCore` in the app target. The library declaration itself is sufficient for Hub to start consuming Core today.
+- The XCTest files in `mercantis coreTests/` use `@testable import mercantis_core` (the Xcode app module name). They are not yet wired as a SwiftPM `testTarget` against `MercantisCore`. P0.1 already tracks the Xcode-side wire-up; mirroring as a SwiftPM test target would require `@testable import MercantisCore` and is left to follow up.
+- The CLI target consolidating onto `MercantisCore` (instead of its own raw-SQLite path) remains P2.3.
 
 ### P2.7 — Hub-on-Core readiness: what is sufficient vs. what is still missing [S, low risk] — ADR-007
 
@@ -644,8 +651,9 @@ A 4–6 week plan if one engineer is the target:
 | 6 | P1.4 Scheduler ✅ (2026-04-24) (fills the `ExtensionSchedulerRegistrar` seam). |
 | 6 | P1.6 FieldValue expansion ✅ (2026-04-24) (tagged envelope, backward-compatible decode). |
 | 7 | P1.7 row-level expression permissions ✅ (2026-04-25) (`user.*` namespace, fail-closed). |
+| 7 | P2.6 MercantisCore library product ✅ (2026-04-25) (Hub-importable engine target; UI stays in the app). |
 
-P2.6 (Core library productization) should happen before Hub development begins in earnest — it is not large work but it is a prerequisite for the Core/Hub boundary being real. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
+P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 
 P3.6 (POS platform) should not begin until P1.1, P3.2, P2.8, and P1.2/P1.3 are substantially complete. The sequencing dependency is real: a POS without naming, printing, richer controls, and automation is not a POS.
 

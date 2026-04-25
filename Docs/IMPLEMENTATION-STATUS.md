@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-24 (P1.4 — Scheduler shipped)_
+_Last updated: 2026-04-25 (P2.6 — MercantisCore library product shipped)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -186,7 +186,18 @@ Both `Modules` and `DocTypes` route through `RecordCollectionHostView`, so all s
 
 ---
 
-## 4. The MercantisCLI target
+## 4. SwiftPM products
+
+`Package.swift` declares two products:
+
+- `.library(name: "MercantisCore", targets: ["MercantisCore"])` — the engine, importable via `.package(url:from:)`. The target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]`, so SwiftUI / app-shell code is deliberately not part of the library. GRDB (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) is declared on the library target. Shipped in P2.6 (2026-04-25).
+- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Continues to use `MercantisCLI/SQLite3` as a system library; consolidating onto `MercantisCore` is P2.3.
+
+Notes on consumers:
+- The Xcode app target (`mercantis core`) still compiles the engine source via project membership rather than via the SwiftPM library. The `.library` declaration is sufficient for Hub to consume Core today; migrating the Xcode app to consume the SwiftPM library is a `.pbxproj` change best done in Xcode itself.
+- The XCTest files in `mercantis coreTests/` use `@testable import mercantis_core` (the Xcode app module name) and are not yet wired as a SwiftPM test target. P0.1 tracks the Xcode-side wire-up.
+
+## 5. The MercantisCLI target
 
 `MercantisCLI/` is a separate SwiftPM executable built on `swift-argument-parser`. Commands:
 
@@ -200,7 +211,7 @@ This is a useful parallel tool but also a **duplicate installer code path**. The
 
 ---
 
-## 5. Summary for new contributors
+## 6. Summary for new contributors
 
 If you open the repo today expecting to find everything ARCHITECTURE.md §7 advertises, here is the short list of what _to stop looking for_:
 
