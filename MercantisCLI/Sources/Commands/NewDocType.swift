@@ -1,9 +1,8 @@
 import ArgumentParser
 import Foundation
+import MercantisCore
 
 struct NewDocType: ParsableCommand {
-    private static let defaultConflictResolution = "lastWriteWins"
-
     static let configuration = CommandConfiguration(
         commandName: "new-doctype",
         abstract: "Interactively scaffold a new DocType definition."
@@ -19,53 +18,67 @@ struct NewDocType: ParsableCommand {
         let isSubmittable = promptYesNo("Is Submittable?", defaultValue: false)
         let isSingle = promptYesNo("Is Single?", defaultValue: false)
         let isChildTable = promptYesNo("Is Child Table?", defaultValue: false)
-        let naming = try promptNamingConfig()
+        let autoname = promptAutoname()
         let fields = try promptFields()
         let titleField = promptTitleField(from: fields)
-        let permissions = try promptPermissions(isSubmittable: isSubmittable)
-        let payload = makeDocTypePayload(
+        let permissions = promptPermissions(isSubmittable: isSubmittable)
+
+        let docType = DocType(
             id: id,
             name: name,
             module: module,
             appId: "",
+            isChildTable: isChildTable,
             isSubmittable: isSubmittable,
             isSingle: isSingle,
-            isChildTable: isChildTable,
-            naming: naming,
             fields: fields,
-            titleField: titleField,
-            permissions: permissions
+            permissions: permissions,
+            autoname: autoname,
+            // Phase 1 scaffolds the default sync policy used for generic
+            // business DocTypes; submittable types pick up version-checked +
+            // immutable-after-submit.
+            syncPolicy: SyncPolicy(
+                conflictResolution: isSubmittable ? .versionChecked : .lastWriteWins,
+                immutableAfterSubmit: isSubmittable
+            ),
+            indexes: [],
+            searchFields: [],
+            titleField: titleField
         )
 
-        try SchemaValidator().validate(payload)
+        // Use Core's SchemaValidator with `validatesExpressions = false` —
+        // the scaffold doesn't yet have any expressions, but if the user
+        // adds them by hand the install path catches undeclared field
+        // references at install time (P2.1).
+        var validator = SchemaValidator()
+        validator.validatesExpressions = false
+        try validator.validate(docType)
 
         if let app {
-            try appendDocTypeToManifest(at: app, payload: payload)
+            try appendDocTypeToManifest(at: app, docType: docType)
         } else {
-            try writeStandaloneDocType(payload: payload)
+            try writeStandaloneDocType(docType: docType)
         }
     }
 
-    private func writeStandaloneDocType(payload: DocTypeTemplate) throws {
+    private func writeStandaloneDocType(docType: DocType) throws {
         let outputURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("\(payload.id).doctype.json")
+            .appendingPathComponent("\(docType.id).doctype.json")
         if FileManager.default.fileExists(atPath: outputURL.path) {
             throw ValidationError("File already exists at \(outputURL.path)")
         }
 
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-        try encoder.encode(payload).write(to: outputURL)
+        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(docType).write(to: outputURL)
 
         printSuccess("DocType scaffold created.")
         print("Created:")
         print("- \(outputURL.path)")
     }
 
-    private func appendDocTypeToManifest(
-        at appDirectory: String,
-        payload: DocTypeTemplate
-    ) throws {
+    private func appendDocTypeToManifest(at appDirectory: String, docType: DocType) throws {
         let appURL = URL(fileURLWithPath: appDirectory)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: appURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -82,14 +95,25 @@ struct NewDocType: ParsableCommand {
             throw ValidationError("manifest.json must be a JSON object")
         }
 
-        var payloadForManifest = payload
-        payloadForManifest.appId = (manifestObject["id"] as? String) ?? ""
+        // Stamp the owning app id on the new DocType so registry lookups by
+        // app id (uninstall, restore) match the manifest contents.
+        var stamped = docType
+        stamped.appId = (manifestObject["id"] as? String) ?? ""
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let docTypeData = try encoder.encode(stamped)
+        let docTypeJSON = try JSONSerialization.jsonObject(with: docTypeData)
 
         var doctypes = manifestObject["doctypes"] as? [Any] ?? []
-        doctypes.append(try jsonObject(payloadForManifest))
+        doctypes.append(docTypeJSON)
         manifestObject["doctypes"] = doctypes
 
-        let updatedData = try JSONSerialization.data(withJSONObject: manifestObject, options: [.prettyPrinted])
+        let updatedData = try JSONSerialization.data(
+            withJSONObject: manifestObject,
+            options: [.prettyPrinted, .sortedKeys]
+        )
         try updatedData.write(to: manifestURL)
 
         printSuccess("DocType scaffold created.")
@@ -97,83 +121,52 @@ struct NewDocType: ParsableCommand {
         print("- \(manifestURL.path)")
     }
 
-    private func makeDocTypePayload(
-        id: String,
-        name: String,
-        module: String,
-        appId: String,
-        isSubmittable: Bool,
-        isSingle: Bool,
-        isChildTable: Bool,
-        naming: NamingConfig,
-        fields: [FieldDefinitionTemplate],
-        titleField: String,
-        permissions: [PermissionRuleTemplate]
-    ) -> DocTypeTemplate {
-        DocTypeTemplate(
-            id: id,
-            name: name,
-            module: module,
-            appId: appId,
-            isChildTable: isChildTable,
-            isSubmittable: isSubmittable,
-            isSingle: isSingle,
-            fields: fields,
-            permissions: permissions,
-            // Phase 1 scaffolds the default sync policy used for generic business DocTypes.
-            syncPolicy: .init(conflictResolution: Self.defaultConflictResolution, immutableAfterSubmit: false),
-            indexes: [],
-            workflowId: nil,
-            autoname: naming.autoname,
-            namingSeries: naming.namingSeries,
-            namingField: naming.namingField,
-            namingFormat: naming.namingFormat,
-            searchFields: [],
-            titleField: titleField
-        )
-    }
+    // MARK: - Prompts
 
-    private func promptNamingConfig() throws -> NamingConfig {
+    private func promptAutoname() -> String? {
         while true {
-            let input = prompt("Naming strategy (\(NamingStrategyOption.promptValues))", defaultValue: NamingStrategyOption.uuid.rawValue)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
+            let input = prompt(
+                "Naming strategy (\(NamingStrategyOption.promptValues))",
+                defaultValue: NamingStrategyOption.uuid.rawValue
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
 
             switch input {
             case NamingStrategyOption.uuid.rawValue:
-                return NamingConfig(autoname: "UUID")
+                return "UUID"
             case NamingStrategyOption.series.rawValue:
                 let pattern = promptRequired("Series pattern (e.g. AR.#######)")
-                return NamingConfig(autoname: "naming_series:\(pattern)", namingSeries: pattern)
+                return "naming_series:\(pattern)"
             case NamingStrategyOption.field.rawValue:
                 let fieldKey = promptRequired("Field key for naming (e.g. email)")
-                return NamingConfig(autoname: "field:\(fieldKey)", namingField: fieldKey)
+                return "field:\(fieldKey)"
             case NamingStrategyOption.prompt.rawValue:
-                return NamingConfig(autoname: "prompt")
+                return "prompt"
             case NamingStrategyOption.format.rawValue:
                 let format = promptRequired("Format string (e.g. {company_abbr}-{naming_series})")
-                return NamingConfig(autoname: "format:\(format)", namingFormat: format)
+                return "format:\(format)"
             default:
                 printError("Invalid naming strategy. Choose: \(NamingStrategyOption.promptValues).")
             }
         }
     }
 
-    private func promptFields() throws -> [FieldDefinitionTemplate] {
-        var fields: [FieldDefinitionTemplate] = []
+    private func promptFields() throws -> [FieldDefinition] {
+        var fields: [FieldDefinition] = []
         var addAnother = true
 
         while addAnother {
             let key = promptRequired("Field key (e.g. article_name)")
             let label = prompt("Field label", defaultValue: humanizedLabel(from: key))
-            let fieldType = try promptFieldType()
+            let type = try promptFieldType()
 
             var options: [String]?
             var linkedDocType: String?
             var childDocType: String?
 
-            switch fieldType {
-            case .select:
+            switch type {
+            case .select, .multiselect:
                 options = promptSelectOptions()
             case .link:
                 linkedDocType = promptRequired("Linked DocType name")
@@ -185,23 +178,14 @@ struct NewDocType: ParsableCommand {
 
             let required = promptYesNo("Required?", defaultValue: false)
             fields.append(
-                FieldDefinitionTemplate(
+                FieldDefinition(
                     key: key,
                     label: label,
-                    type: fieldType.fieldTypeValue,
+                    type: type,
                     required: required,
-                    defaultValue: nil,
                     options: options,
                     linkedDocType: linkedDocType,
-                    childDocType: childDocType,
-                    validationRules: [],
-                    visibilityExpression: nil,
-                    readOnlyExpression: nil,
-                    formulaExpression: nil,
-                    permissions: nil,
-                    isSearchable: false,
-                    isSynced: true,
-                    allowOnSubmit: false
+                    childDocType: childDocType
                 )
             )
 
@@ -211,8 +195,8 @@ struct NewDocType: ParsableCommand {
         return fields
     }
 
-    private func promptPermissions(isSubmittable: Bool) throws -> [PermissionRuleTemplate] {
-        var permissions: [PermissionRuleTemplate] = []
+    private func promptPermissions(isSubmittable: Bool) -> [PermissionRule] {
+        var permissions: [PermissionRule] = []
         var addAnother = true
 
         while addAnother {
@@ -225,7 +209,7 @@ struct NewDocType: ParsableCommand {
             let canAmend = isSubmittable ? promptYesNo("Amend?", defaultValue: false) : false
 
             permissions.append(
-                PermissionRuleTemplate(
+                PermissionRule(
                     role: role,
                     canRead: canRead,
                     canWrite: canWrite,
@@ -242,7 +226,7 @@ struct NewDocType: ParsableCommand {
         return permissions
     }
 
-    private func promptTitleField(from fields: [FieldDefinitionTemplate]) -> String {
+    private func promptTitleField(from fields: [FieldDefinition]) -> String {
         while true {
             let value = prompt("Title field key (optional; leave blank for none)", defaultValue: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -253,15 +237,14 @@ struct NewDocType: ParsableCommand {
         }
     }
 
-    private func promptFieldType() throws -> SupportedFieldType {
+    private func promptFieldType() throws -> FieldType {
+        let allowed = FieldType.allCases.map(\.rawValue).joined(separator: "/")
         while true {
-            let input = prompt("Field type (\(SupportedFieldType.promptValues))", defaultValue: SupportedFieldType.text.rawValue)
+            let input = prompt("Field type (\(allowed))", defaultValue: FieldType.text.rawValue)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if let value = SupportedFieldType(rawValue: input) {
+            if let value = FieldType(rawValue: input) {
                 return value
             }
-
             printError("Invalid field type.")
         }
     }
@@ -292,9 +275,7 @@ struct NewDocType: ParsableCommand {
     }
 
     private func splitOptions(_ input: String) -> [String] {
-        input
-            .split(separator: ",")
-            .map { String($0) }
+        input.split(separator: ",").map { String($0) }
     }
 
     private func promptRequired(_ text: String) -> String {
@@ -315,12 +296,9 @@ struct NewDocType: ParsableCommand {
                 .lowercased()
 
             switch value {
-            case "y", "yes":
-                return true
-            case "n", "no":
-                return false
-            default:
-                printError("Please enter y or n.")
+            case "y", "yes": return true
+            case "n", "no": return false
+            default: printError("Please enter y or n.")
             }
         }
     }
@@ -330,11 +308,6 @@ struct NewDocType: ParsableCommand {
             .split(whereSeparator: { $0 == "_" || $0 == "-" })
             .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
             .joined(separator: " ")
-    }
-
-    private func jsonObject<T: Encodable>(_ value: T) throws -> Any {
-        let data = try JSONEncoder().encode(value)
-        return try JSONSerialization.jsonObject(with: data)
     }
 
     private enum NamingStrategyOption: String, CaseIterable {
@@ -347,159 +320,5 @@ struct NewDocType: ParsableCommand {
         static var promptValues: String {
             allCases.map(\.rawValue).joined(separator: "/")
         }
-    }
-
-    private enum SupportedFieldType: String, CaseIterable {
-        case text
-        case number
-        case date
-        case datetime
-        case check
-        case select
-        case link
-        case table
-        case currency
-        case float
-        case attach
-        case image
-        case textEditor
-
-        static var promptValues: String {
-            allCases.map(\.rawValue).joined(separator: "/")
-        }
-
-        var fieldTypeValue: String {
-            switch self {
-            case .text: return "text"
-            case .number: return "number"
-            case .date: return "date"
-            case .datetime: return "datetime"
-            case .check: return "boolean"
-            case .select: return "select"
-            case .link: return "link"
-            case .table: return "table"
-            case .currency: return "currency"
-            case .float: return "decimal"
-            case .attach: return "attachment"
-            case .image: return "attachment"
-            case .textEditor: return "longText"
-            }
-        }
-    }
-
-    private struct NamingConfig {
-        let autoname: String
-        let namingSeries: String?
-        let namingField: String?
-        let namingFormat: String?
-
-        init(autoname: String, namingSeries: String? = nil, namingField: String? = nil, namingFormat: String? = nil) {
-            self.autoname = autoname
-            self.namingSeries = namingSeries
-            self.namingField = namingField
-            self.namingFormat = namingFormat
-        }
-    }
-
-    private struct DocTypeTemplate: Codable {
-        let id: String
-        let name: String
-        let module: String
-        var appId: String
-        let isChildTable: Bool
-        let isSubmittable: Bool
-        let isSingle: Bool
-        let fields: [FieldDefinitionTemplate]
-        let permissions: [PermissionRuleTemplate]
-        let syncPolicy: SyncPolicyTemplate
-        let indexes: [IndexDefinitionTemplate]
-        let workflowId: String?
-        let autoname: String
-        let namingSeries: String?
-        let namingField: String?
-        let namingFormat: String?
-        let searchFields: [String]
-        let titleField: String
-    }
-
-    private struct SchemaValidator {
-        func validate(_ docType: DocTypeTemplate) throws {
-            guard !docType.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ValidationError("DocType ID cannot be empty.")
-            }
-
-            var seen = Set<String>()
-            for field in docType.fields {
-                let key = field.key.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !key.isEmpty else {
-                    throw ValidationError("Field key cannot be empty.")
-                }
-                guard !seen.contains(key) else {
-                    throw ValidationError("Duplicate field key: \(key)")
-                }
-                seen.insert(key)
-
-                if field.type == "link" && (field.linkedDocType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    throw ValidationError("Link field '\(key)' requires linkedDocType.")
-                }
-                if field.type == "table" && (field.childDocType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    throw ValidationError("Table field '\(key)' requires childDocType.")
-                }
-            }
-
-            if !docType.titleField.isEmpty && !docType.fields.contains(where: { $0.key == docType.titleField }) {
-                throw ValidationError("Title field '\(docType.titleField)' was not found in fields.")
-            }
-        }
-    }
-
-    private struct FieldDefinitionTemplate: Codable {
-        let key: String
-        let label: String
-        let type: String
-        let required: Bool
-        let defaultValue: String?
-        let options: [String]?
-        let linkedDocType: String?
-        let childDocType: String?
-        let validationRules: [ValidationRuleTemplate]
-        let visibilityExpression: String?
-        let readOnlyExpression: String?
-        let formulaExpression: String?
-        let permissions: FieldPermissionTemplate?
-        let isSearchable: Bool
-        let isSynced: Bool
-        let allowOnSubmit: Bool
-    }
-
-    private struct ValidationRuleTemplate: Codable {
-        let ruleType: String
-        let expression: String
-        let message: String
-    }
-
-    private struct FieldPermissionTemplate: Codable {
-        let readRoles: [String]
-        let writeRoles: [String]
-    }
-
-    private struct PermissionRuleTemplate: Codable {
-        let role: String
-        let canRead: Bool
-        let canWrite: Bool
-        let canCreate: Bool
-        let canDelete: Bool
-        let canSubmit: Bool
-        let canAmend: Bool
-    }
-
-    private struct SyncPolicyTemplate: Codable {
-        let conflictResolution: String
-        let immutableAfterSubmit: Bool
-    }
-
-    private struct IndexDefinitionTemplate: Codable {
-        let fieldKey: String
-        let unique: Bool
     }
 }

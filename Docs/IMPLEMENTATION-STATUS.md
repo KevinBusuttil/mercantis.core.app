@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-25 (P2.6 — MercantisCore library product shipped)_
+_Last updated: 2026-04-25 (P2.3 — CLI install consolidated onto MercantisCore)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -192,7 +192,7 @@ Both `Modules` and `DocTypes` route through `RecordCollectionHostView`, so all s
 `Package.swift` declares two products:
 
 - `.library(name: "MercantisCore", targets: ["MercantisCore"])` — the engine, importable via `.package(url:from:)`. The target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]`, so SwiftUI / app-shell code is deliberately not part of the library. GRDB (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) is declared on the library target. Shipped in P2.6 (2026-04-25).
-- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Continues to use `MercantisCLI/SQLite3` as a system library; consolidating onto `MercantisCore` is P2.3.
+- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Now depends on `MercantisCore` (P2.3) for `install-app` / `list-apps` / `new-app` / `new-doctype`. The `SQLite3` system-library link is still wired for the patch commands (`migrate`, `create-patch`, `run-patch`), which operate on `patch_log` and arbitrary SQL deltas rather than the engine schema.
 
 Notes on consumers:
 - The Xcode app target (`mercantis core`) still compiles the engine source via project membership rather than via the SwiftPM library. The `.library` declaration is sufficient for Hub to consume Core today; migrating the Xcode app to consume the SwiftPM library is a `.pbxproj` change best done in Xcode itself.
@@ -202,13 +202,13 @@ Notes on consumers:
 
 `MercantisCLI/` is a separate SwiftPM executable built on `swift-argument-parser`. Commands:
 
-- `new-app` — scaffold a manifest.
-- `new-doctype` — scaffold a DocType, optionally append to a manifest.
-- `install-app` — write a manifest into the SQLite database (bypasses the Swift `AppInstaller`; uses its own `SQLiteDatabase` support class).
-- `migrate`, `create-patch`, `run-patch` — data-patch flow.
-- `list-apps`.
+- `new-app` — scaffold a canonical `AppManifest` JSON.
+- `new-doctype` — scaffold a canonical `DocType` (encoded via Core's `Codable`), optionally appending to a manifest.
+- `install-app` — calls `AppInstaller.install(manifestData:)` against a `MercantisDatabase`. Same schema, same `SchemaValidator` pass, same side-effects (registry registration, expression-index reconciliation, `installApp` mutation in the sync queue, extension-point binding) as the in-app install path. Pre-decode envelope checks (reverse-DNS id, semver versions) run on the CLI side as a fast-fail layer. (P2.3)
+- `migrate`, `create-patch`, `run-patch` — data-patch flow. These operate on `patch_log` and arbitrary SQL deltas rather than the engine schema; they continue to use the CLI's lightweight `SQLiteDatabase` helper.
+- `list-apps` — reads the canonical `apps(id, name, version, installedAt, payload)` schema via `MercantisDatabase`.
 
-This is a useful parallel tool but also a **duplicate installer code path**. The app's `AppInstaller.swift` and the CLI's `InstallApp.swift` share no code, so schema drift between the two is possible.
+The earlier duplicate installer code path is gone — there is one install pipeline for both surfaces. Tests pinning the parity live in `mercantis coreTests/CLIInstallParityTests.swift`.
 
 ---
 

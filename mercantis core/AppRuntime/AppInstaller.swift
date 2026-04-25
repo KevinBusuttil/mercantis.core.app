@@ -290,9 +290,51 @@ public final class AppInstaller {
         return applied
     }
 
+    // MARK: - JSON convenience (P2.3)
+
+    /// Decode an `AppManifest` from raw JSON data. Used by both the CLI's
+    /// `install-app` command and any other tool that needs to validate a
+    /// manifest file without writing to a database.
+    ///
+    /// Throws `AppInstallerError.manifestDecodeFailed` so callers can
+    /// distinguish a decode failure from a downstream install error.
+    public static func decodeManifest(from data: Data) throws -> AppManifest {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            return try decoder.decode(AppManifest.self, from: data)
+        } catch {
+            throw AppInstallerError.manifestDecodeFailed(underlying: "\(error)")
+        }
+    }
+
+    /// Decode `data` as an `AppManifest` and run the same `SchemaValidator`
+    /// pass `install(_:)` does — without writing to the database. Suitable
+    /// for a CLI `--dry-run` mode.
+    public func validate(manifestData data: Data) throws -> AppManifest {
+        let manifest = try AppInstaller.decodeManifest(from: data)
+        for docType in manifest.doctypes {
+            try schemaValidator.validate(docType)
+        }
+        return manifest
+    }
+
+    /// Decode `data` as an `AppManifest` and install it. Single shared entry
+    /// point used by the CLI's `install-app` command so the CLI and the app
+    /// share validation, schema, and side-effects (registry registration,
+    /// expression-index reconciliation, sync-queue mutation, extension-point
+    /// binding).
+    @discardableResult
+    public func install(manifestData data: Data) throws -> AppManifest {
+        let manifest = try AppInstaller.decodeManifest(from: data)
+        try install(manifest)
+        return manifest
+    }
+
     // MARK: - Errors
 
     public enum AppInstallerError: Error, Sendable {
         case encodingFailed(appId: String)
+        case manifestDecodeFailed(underlying: String)
     }
 }

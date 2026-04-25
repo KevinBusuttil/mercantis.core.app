@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import MercantisCore
 
 struct NewApp: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -16,9 +17,8 @@ struct NewApp: ParsableCommand {
             }
         } while !isValidReverseDNS(appID)
 
-        let title = prompt("App Title")
+        let name = prompt("App Name")
         let description = prompt("App Description")
-        let publisher = prompt("App Publisher")
         let version = prompt("App Version", defaultValue: "0.1.0")
         let minimumCoreVersion = prompt("Minimum Core Version", defaultValue: "1.0.0")
         let outputDirectory = prompt("Output directory", defaultValue: FileManager.default.currentDirectoryPath)
@@ -49,24 +49,27 @@ struct NewApp: ParsableCommand {
         try FileManager.default.createDirectory(at: rootURL.appendingPathComponent("patches"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: rootURL.appendingPathComponent("fixtures"), withIntermediateDirectories: true)
 
-        let manifest = AppManifestTemplate(
+        // Scaffold the canonical AppManifest shape so `mercantis install-app`
+        // can decode it directly via MercantisCore (P2.3).
+        let manifest = AppManifest(
             id: appID,
-            title: title,
-            description: description,
-            publisher: publisher,
+            name: name,
             version: version,
             minimumCoreVersion: minimumCoreVersion,
+            description: description,
             doctypes: [],
             workflows: [],
+            permissions: [],
             reports: [],
             automationRules: [],
-            fixtures: [],
-            schedulerEvents: [],
-            extensionPoints: .init(documentEventSubscriptions: [], schedulerEvents: [])
+            dashboards: [],
+            localizations: [],
+            extensionPoints: .empty
         )
 
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         let manifestData = try encoder.encode(manifest)
         try manifestData.write(to: manifestURL)
 
@@ -75,7 +78,7 @@ struct NewApp: ParsableCommand {
         try emptyPatches.write(to: patchesIndexURL)
 
         let readmeURL = rootURL.appendingPathComponent("README.md")
-        let readme = "# \(title)\n\n\(description)\n"
+        let readme = "# \(name)\n\n\(description)\n"
         try readme.write(to: readmeURL, atomically: true, encoding: .utf8)
 
         printSuccess("App scaffold created at \(rootURL.path)")
@@ -85,27 +88,6 @@ struct NewApp: ParsableCommand {
         print("- \(patchesIndexURL.path)")
         print("- \(rootURL.appendingPathComponent("fixtures").path)/")
         print("- \(readmeURL.path)")
-    }
-
-    private struct AppManifestTemplate: Codable {
-        struct ExtensionPoints: Codable {
-            let documentEventSubscriptions: [String]
-            let schedulerEvents: [String]
-        }
-
-        let id: String
-        let title: String
-        let description: String
-        let publisher: String
-        let version: String
-        let minimumCoreVersion: String
-        let doctypes: [String]
-        let workflows: [String]
-        let reports: [String]
-        let automationRules: [String]
-        let fixtures: [String]
-        let schedulerEvents: [String]
-        let extensionPoints: ExtensionPoints
     }
 
     private struct PatchesIndex: Codable {

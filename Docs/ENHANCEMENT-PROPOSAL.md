@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-25 (P2.2 — cross-document `lookup()` shipped)_
+_Last updated: 2026-04-25 (P2.3 — CLI / app install paths consolidated)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -561,9 +561,46 @@ Coverage in `DocumentLookupResolverTests.swift` (24 tests):
 - The cache is unbounded today. Adding an LRU bound is a future tweak gated on real measurement; typical write patterns keep the working set small.
 - A second named call (e.g. a `has_role(...)` predicate to round out P1.7's role-membership story) is now a one-case extension to `evaluateCall`. The AST shape is forward-compatible.
 
-### P2.3 — Consolidate `AppInstaller` and CLI `install-app` [M, medium risk] — CLI/app parity
+### P2.3 — Consolidate `AppInstaller` and CLI `install-app` [M, medium risk] — CLI/app parity *(done — 2026-04-25)*
 
-Currently there are two independent install paths (one via GRDB in the app, one via raw `sqlite3` in `MercantisCLI/Sources/Support/SQLiteDatabase.swift`). They will drift. Extract the mutation-query set into a shared target (or at minimum a tested reference implementation) that both paths call.
+The CLI now imports `MercantisCore` (the library product P2.6 shipped) and runs the same `AppInstaller` pipeline the app does. Both surfaces share one schema, one `SchemaValidator` pass, one set of side-effects (DocType + field registration, expression-index reconciliation, sync-queue mutation, extension-point binding).
+
+**Engine surface added (`mercantis core/AppRuntime/AppInstaller.swift`):**
+
+```swift
+public static func decodeManifest(from data: Data) throws -> AppManifest
+public func validate(manifestData: Data) throws -> AppManifest        // dry-run
+@discardableResult
+public func install(manifestData: Data) throws -> AppManifest         // decode + install
+```
+
+`AppInstallerError` gained a `.manifestDecodeFailed(underlying:)` case so the CLI can distinguish a malformed JSON file from a downstream install error.
+
+**CLI changes (`MercantisCLI/Sources/Commands/`):**
+
+- `InstallApp.swift` — opens the database via `MercantisDatabase` (so Core's migrations run), constructs an `AppInstaller` with a fresh `MetadataRegistry`, and dispatches to `validate(manifestData:)` (`--dry-run`) or `install(manifestData:)`. The pre-decode envelope checks (reverse-DNS id, semver `version` / `minimumCoreVersion`) stay on the CLI side as a fast-fail layer that runs before JSON decode.
+- `ListApps.swift` — opens via `MercantisDatabase` and reads the canonical `apps(id, name, version, installedAt, payload)` schema directly through GRDB. The legacy `(title, manifestJson)` column-rename branch is gone; the dual-shape table is no longer possible because both install paths produce the same schema.
+- `NewApp.swift` — scaffolds a canonical `AppManifest` (uses Core's `Codable` shape) so a fresh scaffold can be installed end-to-end. The earlier `AppManifestTemplate` private struct (with non-canonical `title` / `publisher` / `fixtures` / `schedulerEvents` keys) is gone.
+- `NewDocType.swift` — encodes a canonical `DocType` directly. Drops the legacy `namingSeries` / `namingField` / `namingFormat` keys (the strategy + arg are already encoded in `autoname`); validation now goes through Core's `SchemaValidator` with `validatesExpressions = false` (the scaffold has no expressions yet, but the install path will catch undeclared references at install time per P2.1).
+
+**Package wiring (`Package.swift`)** — the CLI executable target now depends on `MercantisCore`. The CLI keeps its `SQLite3` system-library link for `Migrate` / `CreatePatch` / `RunPatch`, which operate on raw SQL patch files rather than the engine schema; consolidating those onto `MercantisCore` is not needed and not in scope.
+
+**Lenient `FieldDefinition` decode** — `mercantis core/Metadata/FieldDefinition.swift` gained a custom `init(from:)` that treats `section` / `column` / `collapsible` / `validationRules` / `isSearchable` / `isSynced` / `allowOnSubmit` as optional with sensible defaults. Hand-authored manifests and the CLI scaffold (which omits the layout fields) now decode without forcing every JSON file to spell out every key.
+
+**Coverage in `CLIInstallParityTests.swift`:**
+
+- `testDecodeManifestFromJSONRoundTripsAllFields` — engine-encoded JSON survives a `decodeManifest` round-trip.
+- `testDecodeManifestSurfacesDecodeFailureAsTypedError` — malformed JSON ⇒ `AppInstallerError.manifestDecodeFailed`.
+- `testValidateManifestDataReturnsManifestWithoutWriting` — dry-run path leaves `apps` and `doctypes` empty.
+- `testValidateManifestDataRejectsInvalidDocType` — `SchemaValidator` short-circuits dry-run validation.
+- `testInstallFromManifestDataMatchesDirectInstallEndState` — two parallel databases (CLI-via-data + app-via-`install(_:)`) produce identical end state: same `apps` row shape, same registered DocType + fields, same `sync_queue.installApp` mutation enqueued.
+- `testInstallFromManifestDataCreatesExpressionIndex` — declared `IndexDefinition` rows materialise as SQLite expression indexes when installed via the JSON path (closes the P2.5 follow-up).
+- `testFieldDefinitionDecodesWithoutLayoutFields` / `testFieldDefinitionDecodesWithLegacyAndNewKeysMixed` — pin the lenient decoder.
+
+**Known follow-ups (not scoped to P2.3):**
+- Legacy CLI databases (created by `mercantis install-app` *before* P2.3) had a non-canonical `apps(id, title, version, installedAt, manifestJson)` schema and stored a manifest blob without registering DocTypes / workflows / sync state. They are not migrated automatically — recreate the database. No production state is lost because the legacy install never wired up the engine's metadata tables.
+- `Migrate` / `CreatePatch` / `RunPatch` still use the CLI's `SQLiteDatabase` raw-SQL helper. They operate on `patch_log` and arbitrary SQL deltas, not the engine schema, so consolidation onto `MercantisCore` would only swap the SQLite client without changing semantics. Deferred until a concrete need arises.
+- The CLI's `SchemaValidator` opt-in for expression checks is `false` in `new-doctype`. When a richer scaffold gains expression slots, flipping it to `true` (or running it inside the install pass) catches undeclared references earlier.
 
 ### P2.4 — Dashboard runtime [L, medium risk] — §5.1
 
@@ -618,7 +655,7 @@ The new `IndexDefinition` use is the second half of P2.5: declared indexes now a
 **Known follow-ups (not scoped to P2.5):**
 - Range / inequality predicates on indexed fields aren't pushed to SQL today — only equality is. The indexes still help at the in-memory `whereExpression` stage because the SQL pre-filter narrows the row set first; lifting the where expression itself into SQL is P2.1 territory (parser → AST → SQL emitter).
 - `IndexDefinition.unique == true` is still enforced only by `UniqueConstraintStage`, not by a SQLite `UNIQUE` index. Adding the SQLite-level guarantee would catch race conditions but change error semantics from `DocumentValidationError` to a SQLite constraint violation; deferred until the trade-off is genuinely needed.
-- The CLI's raw-`sqlite3` install path (P2.3) does not create expression indexes today — when CLI install is consolidated onto Core, it inherits the new behaviour for free.
+- ~~The CLI's raw-`sqlite3` install path (P2.3) does not create expression indexes today — when CLI install is consolidated onto Core, it inherits the new behaviour for free.~~ ✅ shipped 2026-04-25 — see P2.3.
 
 ### P2.6 — Productize Core as a reusable library target [M, low risk] — ADR-007 *(done — 2026-04-25)*
 
@@ -744,6 +781,7 @@ A 4–6 week plan if one engineer is the target:
 | 7 | P2.5 list filters / sorting / paging ✅ (2026-04-25) (whereExpression, ListSort, limit/offset; IndexDefinition wired to SQLite expression indexes). |
 | 7 | P2.1 ExpressionEvaluator AST ✅ (2026-04-25) (Parser → typed `ExpressionNode`, source positions, `referencedFields` static analysis wired into `SchemaValidator`, parse-cache, constant folding). |
 | 7 | P2.2 cross-document `lookup()` ✅ (2026-04-25) (`DocumentLookupResolver` + read-through `CachingDocumentLookupResolver` with per-save invalidation; `DocumentEngine.list` `whereExpression` runs through the cached evaluator; ADR-029 lands the sandbox + budget posture). |
+| 7 | P2.3 CLI / app install consolidation ✅ (2026-04-25) (`AppInstaller.install(manifestData:)` + CLI consumes `MercantisCore`; canonical schema everywhere; `FieldDefinition` decoder lenient on layout fields; expression indexes created uniformly). |
 
 P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 
