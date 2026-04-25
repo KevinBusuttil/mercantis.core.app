@@ -268,9 +268,11 @@ The evaluator parses expressions into a **typed AST** (`ExpressionNode`) before 
 - **Constant folding** — pure-literal subtrees collapse at parse time. `2 + 3 * 4` becomes a single `.literal(.number(14))`. Subtrees that throw (e.g. `10 / 0`) are deliberately left unfolded so the runtime error contract is preserved.
 - **Source-position errors** — every AST node carries a `[start, end)` UTF-8 range; parse errors lift through `EvaluatorError.parseError(ExpressionParseError)` whose `description` renders the source line and a `^` caret pointing at the offending byte.
 
-The evaluator operates with **no access to the file system, network, or arbitrary Swift APIs**.
+**Cross-document `lookup()` (ADR-029, P2.2)** — when the evaluator is constructed with a `DocumentLookupResolver`, expressions can call `lookup("DocType", id, "field")` to read a single field from a different document. Wrong arity / non-string args throw; missing documents / fields resolve to `null`; resolver throws are caught and surfaced as `null` so transient I/O does not crash a form's expression evaluation. A per-evaluation `lookupBudget` (default 32) caps cross-document reads per top-level evaluation. `DocumentEngine` is the reference resolver and exposes a pre-wired, per-save-invalidating `CachingDocumentLookupResolver` so list `whereExpression`s and automation rules that join through the same parent only fetch each parent once. Without an injected resolver, every `lookup(...)` call throws — opt-in, not silent.
 
-See [ADR-017](Docs/ADR/ADR-017-expression-engine-scope-sandboxing.md).
+The evaluator operates with **no access to the file system, network, or arbitrary Swift APIs** beyond the optional `DocumentLookupResolver` described above.
+
+See [ADR-017](Docs/ADR/ADR-017-expression-engine-scope-sandboxing.md), [ADR-029](Docs/ADR/ADR-029-cross-document-lookup.md).
 
 ---
 
@@ -415,13 +417,14 @@ The Public API Surface defines the Swift types and methods that app-layer code (
 
 Key API points:
 
-- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:whereExpression:sortBy:limit:offset:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)`
+- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:whereExpression:sortBy:limit:offset:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)`, `lookup(docType:name:field:)` (P2.2), `lookupCache`, `listExpressionEvaluator`
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
 - `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
 - `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
 - `SyncEngine` — `pushPendingMutations()`, `pullAndApplyRemoteMutations()`, `applyRemoteMutations(_:)`, `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)`
-- `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`, `parse(_:) -> ExpressionNode`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)` (P2.1)
+- `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`, `parse(_:) -> ExpressionNode`, `evaluateBool(parsed:context:)`, `evaluateFormula(parsed:context:)`, `referencedFields(in:)` (P2.1); optional `lookupResolver` + `lookupBudget` for cross-document `lookup(...)` (P2.2 / ADR-029)
+- `DocumentLookupResolver` — `lookup(docType:name:field:)` protocol; `CachingDocumentLookupResolver` is the read-through cache with per-save invalidation. (P2.2 / ADR-029)
 - `EventEmitter` — `subscribe(_:handler:)` → `SubscriptionToken`, `publish(_:)`
 - `AppInstaller` — `install(_:)`, `uninstall(appId:)`
 - *`AutomationActionRegistry` is planned (ADR-025) — not yet implemented.*
@@ -571,9 +574,10 @@ mercantis core/
 │   ├── DocumentVersion.swift     # DocumentVersion, FieldDiff (versioning/diff tracking)
 │   └── ValidationPipeline.swift  # ValidationStage protocol, pipeline, DocumentValidationError
 ├── ExpressionEngine/
-│   ├── ExpressionAST.swift       # ExpressionNode, LiteralValue, UnaryOperator, BinaryOperator, ExpressionSourceRange, lexer
-│   ├── ExpressionParser.swift    # Recursive-descent parser → ExpressionNode AST; referencedFields, isConstant
-│   └── ExpressionEvaluator.swift # Public façade: parse, evaluateBool/Formula (string + parsed), referencedFields, parse cache, constant folding
+│   ├── ExpressionAST.swift            # ExpressionNode, LiteralValue, UnaryOperator, BinaryOperator, ExpressionSourceRange, lexer
+│   ├── ExpressionParser.swift         # Recursive-descent parser → ExpressionNode AST; referencedFields, isConstant
+│   ├── ExpressionEvaluator.swift      # Public façade: parse, evaluateBool/Formula (string + parsed), referencedFields, parse cache, constant folding, optional lookup resolver
+│   └── DocumentLookupResolver.swift   # DocumentLookupResolver protocol + CachingDocumentLookupResolver (per-save invalidation, ADR-029)
 ├── Metadata/
 │   ├── BuiltInDocTypes.swift     # Registers system DocTypes (Module, DocTypeField, DocTypePermission, …)
 │   ├── DocType.swift             # DocType struct
@@ -669,3 +673,4 @@ mercantis core/
 | [ADR-026](Docs/ADR/ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model |
 | [ADR-027](Docs/ADR/ADR-027-doctype-creation-strategy.md) | DocType Creation Tooling — Phased Strategy |
 | [ADR-028](Docs/ADR/ADR-028-sync-queue-pruning.md) | Sync Queue Pruning Strategy |
+| [ADR-029](Docs/ADR/ADR-029-cross-document-lookup.md) | Cross-Document `lookup()` in the Expression Engine |

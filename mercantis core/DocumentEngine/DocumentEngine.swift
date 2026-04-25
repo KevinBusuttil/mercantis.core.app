@@ -63,6 +63,33 @@ public final class DocumentEngine {
         self.userId = userId
     }
 
+    // MARK: - Cross-document lookup (ADR-029, P2.2)
+
+    /// Read-through cache around the engine's own `lookup(docType:name:field:)`
+    /// (the `DocumentLookupResolver` conformance defined at the bottom of
+    /// this file). Cached entries are dropped automatically by the
+    /// resolver's `EventEmitter` subscriptions whenever the engine
+    /// publishes a save / delete / submit / cancel event for the
+    /// affected `(docType, id)` pair.
+    ///
+    /// Lazy because the cache holds `self`; the lazy initializer runs
+    /// only after the engine is fully constructed.
+    public private(set) lazy var lookupCache: CachingDocumentLookupResolver = {
+        CachingDocumentLookupResolver(base: self, eventEmitter: eventEmitter)
+    }()
+
+    /// Expression evaluator pre-wired with the engine's `lookupCache`.
+    /// `DocumentEngine.list`'s `whereExpression` runs against this
+    /// evaluator, so list expressions can call `lookup("DocType", id,
+    /// "field")` to filter on cross-document field values.
+    ///
+    /// Callers that want to share the same parse cache and lookup cache
+    /// across automation rules / form-level visibility expressions can
+    /// read this property and reuse it.
+    public private(set) lazy var listExpressionEvaluator: ExpressionEvaluator = {
+        ExpressionEvaluator(lookupResolver: lookupCache)
+    }()
+
     // MARK: - Save
 
     /// Create or update a document. Appends an `upsertDocument` mutation atomically.
@@ -601,7 +628,12 @@ public final class DocumentEngine {
         }
 
         if let expression = activeWhereExpression {
-            let evaluator = ExpressionEvaluator()
+            // Reuse the engine's lookup-enabled evaluator (P2.2): list
+            // expressions can call `lookup("DocType", id, "field")` and
+            // results are memoized via the engine's per-save-invalidating
+            // cache so a `whereExpression` over many rows that all join
+            // through the same parent only fetches each parent once.
+            let evaluator = listExpressionEvaluator
             documents = documents.filter { doc in
                 (try? evaluator.evaluateBool(expression: expression, context: doc.fields)) ?? false
             }
@@ -1296,4 +1328,26 @@ public final class DocumentEngine {
         case concurrencyConflict(documentId: String)
     }
 
+}
+
+// MARK: - DocumentLookupResolver conformance (ADR-029, P2.2)
+
+/// `DocumentEngine` satisfies the `DocumentLookupResolver` protocol so
+/// the sandboxed expression evaluator can answer cross-document
+/// `lookup("DocType", id, "field")` calls. The implementation is a
+/// thin adapter over `fetch(docType:id:)` — every read still flows
+/// through the same SQL path, so permission / index / soft-delete
+/// behaviour stays consistent.
+///
+/// Callers that want a per-save-invalidating cache layer wrap the
+/// engine in a `CachingDocumentLookupResolver` and pass the same
+/// `EventEmitter` the engine publishes on. The resolver subscribes to
+/// `DocumentSavedEvent` / `DocumentDeletedEvent` /
+/// `DocumentSubmittedEvent` / `DocumentCancelledEvent` and drops the
+/// cache entry for the affected `(docType, id)` pair.
+extension DocumentEngine: DocumentLookupResolver {
+    public func lookup(docType: String, name: String, field: String) throws -> FieldValue? {
+        guard let document = try fetch(docType: docType, id: name) else { return nil }
+        return document.fields[field]
+    }
 }

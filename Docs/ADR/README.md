@@ -36,6 +36,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-026](ADR-026-three-layer-extensibility-model.md) | Three-Layer Extensibility Model | Accepted |
 | [ADR-027](ADR-027-doctype-creation-strategy.md) | DocType Creation Tooling — Phased Strategy | Accepted |
 | [ADR-028](ADR-028-sync-queue-pruning.md) | Sync Queue Pruning Strategy | Accepted |
+| [ADR-029](ADR-029-cross-document-lookup.md) | Cross-Document `lookup()` in the Expression Engine | Accepted |
 
 ## How to Read an ADR
 
