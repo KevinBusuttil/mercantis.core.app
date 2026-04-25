@@ -43,8 +43,8 @@ Maximum expression length and maximum nesting depth are enforced to prevent deni
 
 **Neutral:**
 - The expression syntax is a subset of common expression languages. Migration from Frappe's `safe_eval` expressions is mostly mechanical for simple conditions.
-- A `lookup()` function for cross-document reads is a planned extension (not yet decided — see ARCHITECTURE-CHANGELOG.md).
+- A `lookup(docType, name, field)` call form for cross-document reads is shipped under [ADR-029](ADR-029-cross-document-lookup.md) (P2.2). It is opt-in via `ExpressionEvaluator(lookupResolver: ...)` and bounded by a per-evaluation `lookupBudget` so the sandbox posture of this ADR holds.
 
 ---
 
-*See also: [ADR-008 — No Arbitrary Downloaded Executable Plugins on iOS](ADR-008-no-executable-plugins-ios.md)*
+*See also: [ADR-008 — No Arbitrary Downloaded Executable Plugins on iOS](ADR-008-no-executable-plugins-ios.md), [ADR-029 — Cross-Document `lookup()`](ADR-029-cross-document-lookup.md)*

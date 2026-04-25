@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-25 (P2.5 — list filters / sorting / paging shipped)_
+_Last updated: 2026-04-25 (P2.2 — cross-document `lookup()` shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -526,9 +526,40 @@ The three "immediate wins" the proposal called out all landed:
 - Constant folding is conservative — it never folds `||` / `&&` when one side is constant and the other isn't (e.g. `true || x`). Adding short-circuit folding is a safe future tweak.
 - `IndexDefinition`-driven `whereExpression` push-down to SQL still requires the AST → SQL emitter that P2.5 deferred; the parser side of that work is now in place.
 
-### P2.2 — Cross-document `lookup(docType, name, field)` [M, medium risk] — ARCHITECTURE-CHANGELOG follow-up
+### P2.2 — Cross-document `lookup(docType, name, field)` [M, medium risk] — ADR-029 *(done — 2026-04-25)*
 
-Frequently requested Frappe feature. Requires a decision: cache-by-read, or force explicit fetch? Recommend cache-by-read with per-save invalidation (already how `MetaComposer` works). Needs an ADR.
+The sandboxed expression engine (ADR-017) now recognises one named call: `lookup(docType, name, field)`. Shape and semantics are documented in [ADR-029](ADR/ADR-029-cross-document-lookup.md); the short version:
+
+- `docType` and `field` must evaluate to non-empty strings (idiomatically string literals); `name` may evaluate to a string, `null`, or an undefined identifier (a missing/null name short-circuits to `null`, so `lookup("Item", optional_link, "rate")` is safe on draft documents).
+- A successful lookup returns the resolved field's `FieldValue`, mapped through the existing `fieldValueToRuntime` path so typed dates compare as epoch seconds and opaque values land as `.null`. A missing document or missing field both resolve to `.null`.
+- A `nil` resolver makes every call throw `unexpectedToken("call to 'lookup' is not supported in this evaluator")` — opt-in, not silent.
+- Wrong arity / non-string args throw typed errors; resolver throws are caught and surfaced as `.null` so transient I/O can't crash a form's expression evaluation.
+- A per-evaluation `lookupBudget` (default 32) caps the number of `lookup(...)` calls a single top-level evaluation may make; excess calls throw `EvaluatorError.lookupBudgetExceeded(limit:)`. Sets the ADR-008 sandbox posture for the new I/O capability.
+
+Resolver injection is a new `DocumentLookupResolver: AnyObject` protocol (`mercantis core/ExpressionEngine/DocumentLookupResolver.swift`). `DocumentEngine` is the reference resolver — conformance is via an extension that calls `fetch(docType:id:)`, so permission / soft-delete / index behaviour stays consistent with every other read.
+
+`CachingDocumentLookupResolver` is the read-through cache the proposal called for ("cache-by-read with per-save invalidation, already how `MetaComposer` works"):
+
+- Memoizes successful and absent reads in `[CacheKey: [String: FieldValue?]]` keyed by `(docType, name)`. The inner `FieldValue?` preserves the distinction between "looked up and the field is absent" and "never looked up".
+- Constructed with an `EventEmitter`, subscribes to `DocumentSavedEvent` / `DocumentDeletedEvent` / `DocumentSubmittedEvent` / `DocumentCancelledEvent` and drops the cache entry for `(docType, id)` on each. `DocumentAmendedEvent` is intentionally ignored — amends mint a new id with no entries to drop and leave the original unchanged.
+- Cross-device invalidation is implicit: a remote write that arrives via `SyncEngine` lands through `DocumentEngine.applyRemote(_:from:)` (P0.2), which fires the same `DocumentSavedEvent`.
+- Holds `base` weakly so engine-owns-cache-owns-engine ownership doesn't form a retain cycle.
+
+`DocumentEngine` exposes two new lazy public properties — `lookupCache: CachingDocumentLookupResolver` and `listExpressionEvaluator: ExpressionEvaluator` (pre-wired with the cache) — so callers can share the same parse cache and lookup cache across automation, list filtering, and form-level visibility expressions. `DocumentEngine.list`'s `whereExpression` now uses `listExpressionEvaluator`, so list filters can call `lookup(...)` and the join is memoized once per parent across the row scan.
+
+Coverage in `DocumentLookupResolverTests.swift` (24 tests):
+
+- Evaluator: lookup with concrete value / missing document / missing field / null name / undefined name / empty-string name; resolver-not-injected throws; wrong arity throws; non-string docType / field throws; resolver throw treated as null; unknown call name throws.
+- Lookup budget: budget-exceeded throws after the configured number of calls in one evaluation; `lookupBudget: 0` disables lookup entirely; budget is per-evaluation, not per-evaluator (refilled on every top-level call).
+- `CachingDocumentLookupResolver`: read-through hits base exactly once per `(docType, name, field)`; misses are cached as absence; field-key scoping; manual `invalidate(...)` / `clear()`; per-event invalidation for `DocumentSavedEvent` / `DocumentDeletedEvent` / `DocumentSubmittedEvent` / `DocumentCancelledEvent`; unrelated keys survive.
+- End-to-end via `DocumentEngine`: engine conformance to `DocumentLookupResolver`; `list(whereExpression:)` correctly filters via `lookup(...)` against parent-document fields; engine save fires `DocumentSavedEvent` and the engine's own `lookupCache` invalidates the affected entry.
+
+`ADR-017` was updated to reference ADR-029 for the new call form. The ADR README index was extended with ADR-029.
+
+**Known follow-ups (not scoped to P2.2):**
+- Static `referencedFields(in:)` analysis sees the `name` argument as a referenced field of the *current* DocType but does not record that the expression also reads `(docType, field)` from another DocType. A future enhancement could surface those cross-DocType dependencies for install-time validation.
+- The cache is unbounded today. Adding an LRU bound is a future tweak gated on real measurement; typical write patterns keep the working set small.
+- A second named call (e.g. a `has_role(...)` predicate to round out P1.7's role-membership story) is now a one-case extension to `evaluateCall`. The AST shape is forward-compatible.
 
 ### P2.3 — Consolidate `AppInstaller` and CLI `install-app` [M, medium risk] — CLI/app parity
 
@@ -712,6 +743,7 @@ A 4–6 week plan if one engineer is the target:
 | 7 | P2.6 MercantisCore library product ✅ (2026-04-25) (Hub-importable engine target; UI stays in the app). |
 | 7 | P2.5 list filters / sorting / paging ✅ (2026-04-25) (whereExpression, ListSort, limit/offset; IndexDefinition wired to SQLite expression indexes). |
 | 7 | P2.1 ExpressionEvaluator AST ✅ (2026-04-25) (Parser → typed `ExpressionNode`, source positions, `referencedFields` static analysis wired into `SchemaValidator`, parse-cache, constant folding). |
+| 7 | P2.2 cross-document `lookup()` ✅ (2026-04-25) (`DocumentLookupResolver` + read-through `CachingDocumentLookupResolver` with per-save invalidation; `DocumentEngine.list` `whereExpression` runs through the cached evaluator; ADR-029 lands the sandbox + budget posture). |
 
 P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 
