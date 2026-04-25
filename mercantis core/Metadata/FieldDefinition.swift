@@ -208,6 +208,40 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         self.column = column
         self.collapsible = collapsible
     }
+
+    enum CodingKeys: String, CodingKey {
+        case key, label, type, required, defaultValue, options
+        case linkedDocType, childDocType, validationRules
+        case visibilityExpression, readOnlyExpression, formulaExpression
+        case permissions, isSearchable, isSynced, allowOnSubmit
+        case section, column, collapsible
+    }
+
+    /// Lenient decoder so manifests authored by hand (or scaffolded by the
+    /// CLI's `new-doctype`) install cleanly. Newer layout-only fields fall
+    /// back to their `init` defaults when absent. (P2.3)
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = try c.decode(String.self, forKey: .label)
+        type = try c.decode(FieldType.self, forKey: .type)
+        required = try c.decode(Bool.self, forKey: .required)
+        defaultValue = try c.decodeIfPresent(FieldValue.self, forKey: .defaultValue)
+        options = try c.decodeIfPresent([String].self, forKey: .options)
+        linkedDocType = try c.decodeIfPresent(String.self, forKey: .linkedDocType)
+        childDocType = try c.decodeIfPresent(String.self, forKey: .childDocType)
+        validationRules = try c.decodeIfPresent([ValidationRule].self, forKey: .validationRules) ?? []
+        visibilityExpression = try c.decodeIfPresent(String.self, forKey: .visibilityExpression)
+        readOnlyExpression = try c.decodeIfPresent(String.self, forKey: .readOnlyExpression)
+        formulaExpression = try c.decodeIfPresent(String.self, forKey: .formulaExpression)
+        permissions = try c.decodeIfPresent(FieldPermission.self, forKey: .permissions)
+        isSearchable = try c.decodeIfPresent(Bool.self, forKey: .isSearchable) ?? false
+        isSynced = try c.decodeIfPresent(Bool.self, forKey: .isSynced) ?? true
+        allowOnSubmit = try c.decodeIfPresent(Bool.self, forKey: .allowOnSubmit) ?? false
+        section = try c.decodeIfPresent(String.self, forKey: .section)
+        column = try c.decodeIfPresent(Int.self, forKey: .column)
+        collapsible = try c.decodeIfPresent(Bool.self, forKey: .collapsible) ?? false
+    }
 }
 
 /// A validation rule for a field.

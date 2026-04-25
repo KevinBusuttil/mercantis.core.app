@@ -1,6 +1,11 @@
 import ArgumentParser
 import Foundation
+import MercantisCore
 
+/// CLI front-end for the same install pipeline the app uses (`AppInstaller`,
+/// `MercantisDatabase`, `MetadataRegistry`, `SchemaValidator`). The CLI no
+/// longer has its own raw-`sqlite3` install path; both surfaces share one
+/// schema, one validation pass, and one set of side-effects (P2.3).
 struct InstallApp: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "install-app",
@@ -20,88 +25,51 @@ struct InstallApp: ParsableCommand {
         let manifestURL = URL(fileURLWithPath: manifest)
         let data = try Data(contentsOf: manifestURL)
 
-        let decoded = try JSONDecoder().decode(InstallableManifest.self, from: data)
-        try validate(decoded)
+        // Pre-decode envelope checks: catch malformed id / version values
+        // before they reach the engine. The engine validates DocType
+        // structure; these regex checks cover the manifest envelope itself.
+        try validateEnvelope(in: data)
+
+        let dbURL = URL(fileURLWithPath: dbPath)
+        let database = try MercantisDatabase(databaseURL: dbURL)
+        let registry = MetadataRegistry(database: database)
+        let installer = AppInstaller(
+            database: database,
+            schemaValidator: SchemaValidator(),
+            registry: registry
+        )
 
         if dryRun {
-            printSuccess("Manifest validation passed for \(decoded.id) (dry-run).")
+            let manifest = try installer.validate(manifestData: data)
+            printSuccess("Manifest validation passed for \(manifest.id) (dry-run).")
             return
         }
 
-        guard let rawManifest = String(data: data, encoding: .utf8) else {
-            throw ValidationError("Failed to read manifest as UTF-8 JSON")
-        }
-
-        let db = try SQLiteDatabase(path: dbPath)
-        try ensureAppsTable(in: db)
-
-        let now = ISO8601DateFormatter().string(from: Date())
-        try db.execute(
-            "INSERT OR REPLACE INTO apps (id, title, version, installedAt, manifestJson) VALUES (?, ?, ?, ?, ?)",
-            parameters: [decoded.id, decoded.title, decoded.version, now, rawManifest]
-        )
-
-        printSuccess("Installed app \(decoded.id)@\(decoded.version)")
+        let manifest = try installer.install(manifestData: data)
+        printSuccess("Installed app \(manifest.id)@\(manifest.version)")
     }
 
-    private func validate(_ manifest: InstallableManifest) throws {
-        guard !manifest.id.isEmpty else { throw ValidationError("Manifest id is required") }
-        guard !manifest.title.isEmpty else { throw ValidationError("Manifest title is required") }
-        guard !manifest.version.isEmpty else { throw ValidationError("Manifest version is required") }
-        guard !manifest.minimumCoreVersion.isEmpty else { throw ValidationError("Manifest minimumCoreVersion is required") }
+    private func validateEnvelope(in data: Data) throws {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ValidationError("Manifest must be a JSON object")
+        }
 
-        guard isValidReverseDNS(manifest.id) else {
+        let id = (object["id"] as? String) ?? ""
+        let version = (object["version"] as? String) ?? ""
+        let minimumCoreVersion = (object["minimumCoreVersion"] as? String) ?? ""
+
+        guard !id.isEmpty else { throw ValidationError("Manifest id is required") }
+        guard !version.isEmpty else { throw ValidationError("Manifest version is required") }
+        guard !minimumCoreVersion.isEmpty else { throw ValidationError("Manifest minimumCoreVersion is required") }
+
+        guard isValidReverseDNS(id) else {
             throw ValidationError("Invalid id format. Expected reverse-DNS, e.g. app.mercantis.hub")
         }
-        guard isValidSemver(manifest.version) else {
+        guard isValidSemver(version) else {
             throw ValidationError("Invalid version format. Expected semver, e.g. 0.1.0")
         }
-        guard isValidSemver(manifest.minimumCoreVersion) else {
+        guard isValidSemver(minimumCoreVersion) else {
             throw ValidationError("Invalid minimumCoreVersion format. Expected semver, e.g. 1.0.0")
         }
-    }
-
-    private func ensureAppsTable(in db: SQLiteDatabase) throws {
-        try db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS apps (
-                id TEXT PRIMARY KEY NOT NULL,
-                title TEXT NOT NULL,
-                version TEXT NOT NULL,
-                installedAt TEXT NOT NULL,
-                manifestJson TEXT NOT NULL
-            )
-            """
-        )
-
-        let columns = Set(try db.query("PRAGMA table_info(apps)").compactMap { $0["name"] })
-        if !columns.contains("title") {
-            try db.execute("ALTER TABLE apps ADD COLUMN title TEXT")
-        }
-        if !columns.contains("manifestJson") {
-            try db.execute("ALTER TABLE apps ADD COLUMN manifestJson TEXT")
-        }
-
-        let updatedColumns = Set(try db.query("PRAGMA table_info(apps)").compactMap { $0["name"] })
-        let hasLegacyName = updatedColumns.contains("name")
-        let hasLegacyPayload = updatedColumns.contains("payload")
-        let hasTitle = updatedColumns.contains("title")
-        let hasManifestJSON = updatedColumns.contains("manifestJson")
-
-        if hasLegacyName && hasTitle {
-            try db.execute("UPDATE apps SET title = name WHERE COALESCE(title, '') = ''")
-        }
-        if hasLegacyPayload && hasManifestJSON {
-            try db.execute("UPDATE apps SET manifestJson = payload WHERE COALESCE(manifestJson, '') = ''")
-        }
-    }
-
-    private struct InstallableManifest: Codable {
-        let id: String
-        let title: String
-        let description: String?
-        let publisher: String?
-        let version: String
-        let minimumCoreVersion: String
     }
 }

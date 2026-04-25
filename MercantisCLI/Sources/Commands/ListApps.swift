@@ -1,5 +1,7 @@
 import ArgumentParser
 import Foundation
+import GRDB
+import MercantisCore
 
 struct ListApps: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -19,14 +21,24 @@ struct ListApps: ParsableCommand {
     var format: OutputFormat = .table
 
     mutating func run() throws {
-        let db = try SQLiteDatabase(path: dbPath)
+        let dbURL = URL(fileURLWithPath: dbPath)
+        let database = try MercantisDatabase(databaseURL: dbURL)
 
-        guard db.tableExists("apps") else {
-            printWarning("No apps table found in the database.")
-            return
+        let rows: [[String: String]] = try database.read { db in
+            let fetched = try Row.fetchAll(
+                db,
+                sql: "SELECT id, name, version, installedAt FROM apps ORDER BY id"
+            )
+            return fetched.map { row in
+                [
+                    "id": row["id"] as String? ?? "",
+                    "name": row["name"] as String? ?? "",
+                    "version": row["version"] as String? ?? "",
+                    "installedAt": row["installedAt"] as String? ?? ""
+                ]
+            }
         }
 
-        let rows = try db.query("SELECT * FROM apps")
         if rows.isEmpty {
             printWarning("No installed apps found.")
             return
@@ -34,26 +46,17 @@ struct ListApps: ParsableCommand {
 
         switch format {
         case .json:
-            let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted])
+            let data = try JSONSerialization.data(
+                withJSONObject: rows,
+                options: [.prettyPrinted, .sortedKeys]
+            )
             if let output = String(data: data, encoding: .utf8) {
                 print(output)
             }
         case .table:
-            let headers = try tableHeaders(from: db, fallback: rows)
-            let values = rows.map { row in
-                headers.map { row[$0] ?? "" }
-            }
+            let headers = ["id", "name", "version", "installedAt"]
+            let values = rows.map { row in headers.map { row[$0] ?? "" } }
             printTable(headers: headers, rows: values)
         }
-    }
-
-    private func tableHeaders(from db: SQLiteDatabase, fallback rows: [[String: String]]) throws -> [String] {
-        let pragmaRows = try db.query("PRAGMA table_info(apps)")
-        let ordered = pragmaRows.compactMap { $0["name"] }
-        if !ordered.isEmpty {
-            return ordered
-        }
-
-        return Array((rows.first ?? [:]).keys).sorted()
     }
 }

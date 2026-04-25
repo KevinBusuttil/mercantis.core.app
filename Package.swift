@@ -45,6 +45,7 @@ let package = Package(
             name: "mercantis",
             dependencies: [
                 "SQLite3",
+                "MercantisCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "MercantisCLI/Sources",
