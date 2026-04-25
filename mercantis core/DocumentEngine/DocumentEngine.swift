@@ -8,6 +8,27 @@
 import Foundation
 import GRDB
 
+/// One entry in a `DocumentEngine.list(...)` ORDER BY chain. (P2.5)
+///
+/// `fieldKey` may name either a `documents`-table system column (`id`,
+/// `status`, `createdAt`, `updatedAt`, `syncVersion`, `docStatus`, …) or a
+/// user-defined field key. System-column and indexed-field sorts are pushed
+/// to SQL; the remainder is sorted in memory after the row fetch.
+public struct ListSort: Sendable, Equatable {
+    public enum Direction: String, Sendable, Equatable {
+        case ascending
+        case descending
+    }
+
+    public let fieldKey: String
+    public let direction: Direction
+
+    public init(fieldKey: String, direction: Direction = .ascending) {
+        self.fieldKey = fieldKey
+        self.direction = direction
+    }
+}
+
 /// Handles all CRUD operations on documents.
 /// Every persistent write atomically appends a MutationRecord to the sync queue. (ADR-002, ADR-005)
 ///
@@ -475,39 +496,324 @@ public final class DocumentEngine {
 
     // MARK: - List
 
-    /// Fetch all documents of a given type, with optional field filters.
-    public func list(docType: String, filters: [String: FieldValue]? = nil) throws -> [Document] {
+    /// Fetch documents of a given type with optional filters, sort, paging, and a
+    /// boolean expression predicate. (P2.5)
+    ///
+    /// - `filters` — equality match per field. Pushed to SQL when the key is a
+    ///   system column or matches a `DocType.IndexDefinition`; otherwise applied
+    ///   in memory. Tagged `FieldValue` cases (`.date`, `.dateTime`, `.data`,
+    ///   `.array`) always fall back to in-memory comparison so legacy and
+    ///   tagged-envelope payloads round-trip correctly.
+    /// - `whereExpression` — `ExpressionEvaluator.evaluateBool` predicate run
+    ///   per row over `doc.fields`. Empty / whitespace expressions are ignored.
+    ///   Evaluation failures fail closed (the row is excluded), matching the
+    ///   convention `PermissionEngine.canAccessRow` (P1.7) established.
+    /// - `sortBy` — multi-key sort. Pushed to SQL when every key is a system
+    ///   column or an indexed field; otherwise the SQL fetch uses the default
+    ///   `updatedAt DESC` order and the final sort runs in memory. `nil` keeps
+    ///   the historical default of newest-first by `updatedAt`.
+    /// - `limit` / `offset` — applied in SQL only when no in-memory filtering,
+    ///   no `whereExpression`, and no in-memory sort is required; otherwise
+    ///   applied after the in-memory passes to preserve correctness.
+    public func list(
+        docType: String,
+        filters: [String: FieldValue]? = nil,
+        whereExpression: String? = nil,
+        sortBy: [ListSort]? = nil,
+        limit: Int? = nil,
+        offset: Int = 0
+    ) throws -> [Document] {
+        let resolvedDocType = registry.get(docType)
+        let indexedFieldKeys: Set<String> = resolvedDocType.map { Set($0.indexes.map(\.fieldKey)) } ?? []
+        // User-declared fields shadow system columns of the same name. Without
+        // this, a DocType that defines a custom `status` field would silently
+        // start filtering against the system `documents.status` column instead
+        // of the JSON payload, changing semantics for existing call sites.
+        let userDeclaredFieldKeys: Set<String> = resolvedDocType.map { Set($0.fields.map(\.key)) } ?? []
+
+        var sqlClauses: [String] = ["doctype = ?"]
+        var arguments: [any DatabaseValueConvertible] = [docType]
+        var inMemoryFilters: [String: FieldValue] = [:]
+
+        for (key, value) in filters ?? [:] {
+            if let fragment = sqlFilterFragment(
+                forKey: key,
+                value: value,
+                indexedFieldKeys: indexedFieldKeys,
+                userDeclaredFieldKeys: userDeclaredFieldKeys
+            ) {
+                sqlClauses.append(fragment.sql)
+                arguments.append(contentsOf: fragment.arguments)
+            } else {
+                inMemoryFilters[key] = value
+            }
+        }
+
+        let trimmedWhere = whereExpression?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeWhereExpression: String? = (trimmedWhere?.isEmpty ?? true) ? nil : trimmedWhere
+
+        let sortPushdown = sqlOrderByClause(
+            for: sortBy,
+            indexedFieldKeys: indexedFieldKeys,
+            userDeclaredFieldKeys: userDeclaredFieldKeys
+        )
+        let needsInMemoryWork = !inMemoryFilters.isEmpty
+            || activeWhereExpression != nil
+            || (sortBy != nil && sortPushdown == nil)
+        // SQL paging is correctness-safe only when no in-memory filtering or
+        // sorting will run; otherwise the slice has to wait until those passes
+        // shape the final list. `limit == nil` with an `offset` could push
+        // `LIMIT -1 OFFSET ?` to SQLite, but doing the slice in memory keeps
+        // the two paging branches in one place at no real cost for the row
+        // counts a single DocType is expected to hold.
+        let pagingPushedToSQL = !needsInMemoryWork && limit != nil
+
+        var sql = """
+            SELECT id, doctype, company, status, createdAt, updatedAt,
+                   syncVersion, syncState, docStatus, amendedFrom, payload
+            FROM documents
+            WHERE \(sqlClauses.joined(separator: " AND "))
+            ORDER BY \(sortPushdown ?? "updatedAt DESC")
+            """
+
+        if pagingPushedToSQL, let limit = limit {
+            sql += "\nLIMIT ? OFFSET ?"
+            arguments.append(limit)
+            arguments.append(offset)
+        }
+
         let rows = try database.read { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT id, doctype, company, status, createdAt, updatedAt,
-                           syncVersion, syncState, docStatus, amendedFrom, payload
-                    FROM documents
-                    WHERE doctype = ?
-                    ORDER BY updatedAt DESC
-                    """,
-                arguments: [docType]
-            )
+            try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
         }
 
         var documents = try rows.map { try documentFromRow($0) }
 
-        // Load child rows for each document.
         for i in documents.indices {
             documents[i].children = try fetchChildren(parentId: documents[i].id)
         }
 
-        // Apply in-memory filters on field values.
-        if let filters = filters {
+        if !inMemoryFilters.isEmpty {
             documents = documents.filter { doc in
-                filters.allSatisfy { (key, value) in
+                inMemoryFilters.allSatisfy { (key, value) in
                     doc.fields[key] == value
                 }
             }
         }
 
+        if let expression = activeWhereExpression {
+            let evaluator = ExpressionEvaluator()
+            documents = documents.filter { doc in
+                (try? evaluator.evaluateBool(expression: expression, context: doc.fields)) ?? false
+            }
+        }
+
+        if needsInMemoryWork, let sortBy = sortBy, !sortBy.isEmpty {
+            documents.sort { applySort(sortBy, lhs: $0, rhs: $1) }
+        }
+
+        if !pagingPushedToSQL, limit != nil || offset > 0 {
+            let start = min(max(offset, 0), documents.count)
+            let end: Int
+            if let limit = limit {
+                end = min(start + max(limit, 0), documents.count)
+            } else {
+                end = documents.count
+            }
+            documents = Array(documents[start..<end])
+        }
+
         return documents
+    }
+
+    // MARK: - List helpers (P2.5)
+
+    private struct SQLFilterFragment {
+        let sql: String
+        let arguments: [any DatabaseValueConvertible]
+    }
+
+    /// Map a system column / indexed JSON field filter to a SQL fragment, or
+    /// return `nil` to defer the filter to the in-memory pass. Tagged
+    /// `FieldValue` cases (date/dateTime/data/array) are always deferred — they
+    /// encode as `{"$type":...,"$value":...}` and would not match a flat
+    /// `json_extract` value.
+    private func sqlFilterFragment(
+        forKey key: String,
+        value: FieldValue,
+        indexedFieldKeys: Set<String>,
+        userDeclaredFieldKeys: Set<String>
+    ) -> SQLFilterFragment? {
+        if let column = systemColumn(for: key, userDeclaredFieldKeys: userDeclaredFieldKeys) {
+            // `doctype` is always pinned by the outer query; ignore a redundant filter.
+            if column == "doctype" { return SQLFilterFragment(sql: "doctype = ?", arguments: [databaseValue(for: value) ?? ""]) }
+            if case .null = value {
+                return SQLFilterFragment(sql: "\(column) IS NULL", arguments: [])
+            }
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(column) = ?", arguments: [arg])
+        }
+        if indexedFieldKeys.contains(key) {
+            if case .null = value {
+                return SQLFilterFragment(
+                    sql: "json_extract(payload, '$.\(key)') IS NULL",
+                    arguments: []
+                )
+            }
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(
+                sql: "json_extract(payload, '$.\(key)') = ?",
+                arguments: [arg]
+            )
+        }
+        return nil
+    }
+
+    /// Build a SQL ORDER BY clause when every sort key is SQL-pushable
+    /// (system column or indexed field). Returns `nil` when at least one key
+    /// requires an in-memory sort.
+    private func sqlOrderByClause(
+        for sortBy: [ListSort]?,
+        indexedFieldKeys: Set<String>,
+        userDeclaredFieldKeys: Set<String>
+    ) -> String? {
+        guard let sortBy = sortBy, !sortBy.isEmpty else { return nil }
+        var fragments: [String] = []
+        for sort in sortBy {
+            let direction = sort.direction == .ascending ? "ASC" : "DESC"
+            if let column = systemColumn(for: sort.fieldKey, userDeclaredFieldKeys: userDeclaredFieldKeys) {
+                fragments.append("\(column) \(direction)")
+            } else if indexedFieldKeys.contains(sort.fieldKey) {
+                fragments.append("json_extract(payload, '$.\(sort.fieldKey)') \(direction)")
+            } else {
+                return nil
+            }
+        }
+        return fragments.joined(separator: ", ")
+    }
+
+    /// Map a public field key to its `documents`-table column when the key is
+    /// a system column the engine already exposes. User-declared field keys
+    /// always win — a custom field named `status` keeps the JSON-payload
+    /// semantics it already had instead of being silently rerouted to the
+    /// system column.
+    private func systemColumn(for key: String, userDeclaredFieldKeys: Set<String>) -> String? {
+        guard !userDeclaredFieldKeys.contains(key) else { return nil }
+        switch key {
+        case "id", "doctype", "company", "status",
+             "createdAt", "updatedAt", "syncVersion", "syncState",
+             "docStatus", "amendedFrom":
+            return key
+        default:
+            return nil
+        }
+    }
+
+    /// Convert a primitive `FieldValue` to a SQL argument. Tagged cases
+    /// (date/dateTime/data/array) return `nil` so the caller defers the filter
+    /// to the in-memory pass.
+    private func databaseValue(for value: FieldValue) -> (any DatabaseValueConvertible)? {
+        switch value {
+        case .string(let s): return s
+        case .int(let i):    return i
+        case .double(let d): return d
+        case .bool(let b):   return b ? 1 : 0
+        case .null:          return nil
+        case .date, .dateTime, .data, .array:
+            return nil
+        }
+    }
+
+    /// In-memory comparator across an ordered `[ListSort]` chain. Stable on ties.
+    private func applySort(_ sortBy: [ListSort], lhs: Document, rhs: Document) -> Bool {
+        for sort in sortBy {
+            let lhsValue = sortValue(for: sort.fieldKey, in: lhs)
+            let rhsValue = sortValue(for: sort.fieldKey, in: rhs)
+            switch compareForSort(lhsValue, rhsValue) {
+            case .orderedAscending:  return sort.direction == .ascending
+            case .orderedDescending: return sort.direction == .descending
+            case .orderedSame:       continue
+            }
+        }
+        return false
+    }
+
+    /// Read a sortable value from a document. User-declared fields win over
+    /// system columns of the same name, so a DocType that declares a custom
+    /// `status` (or any other system-named) field stays sortable through the
+    /// JSON payload path that callers already expect.
+    private func sortValue(for key: String, in document: Document) -> FieldValue? {
+        if let userValue = document.fields[key] { return userValue }
+        switch key {
+        case "id":          return .string(document.id)
+        case "doctype":     return .string(document.docType)
+        case "company":     return .string(document.company)
+        case "status":      return .string(document.status)
+        case "createdAt":   return .dateTime(document.createdAt)
+        case "updatedAt":   return .dateTime(document.updatedAt)
+        case "syncVersion": return .int(Int(document.syncVersion))
+        case "syncState":   return .string(document.syncState.rawValue)
+        case "docStatus":   return .int(document.docStatus)
+        case "amendedFrom": return document.amendedFrom.map { .string($0) }
+        default:            return nil
+        }
+    }
+
+    /// Total ordering across `FieldValue` for sort purposes. `nil` and `.null`
+    /// sort last (they're treated as the largest value), so ascending sorts
+    /// place real values first.
+    private func compareForSort(_ a: FieldValue?, _ b: FieldValue?) -> ComparisonResult {
+        func isMissing(_ value: FieldValue?) -> Bool {
+            switch value {
+            case nil, .some(.null): return true
+            default: return false
+            }
+        }
+        let aMissing = isMissing(a)
+        let bMissing = isMissing(b)
+        if aMissing && bMissing { return .orderedSame }
+        if aMissing { return .orderedDescending }
+        if bMissing { return .orderedAscending }
+        guard let a = a, let b = b else { return .orderedSame }
+
+        // Numeric (including dates as epoch seconds).
+        if let an = numericForSort(a), let bn = numericForSort(b) {
+            if an < bn { return .orderedAscending }
+            if an > bn { return .orderedDescending }
+            return .orderedSame
+        }
+
+        // String fallback.
+        let aStr = stringForSort(a)
+        let bStr = stringForSort(b)
+        if aStr < bStr { return .orderedAscending }
+        if aStr > bStr { return .orderedDescending }
+        return .orderedSame
+    }
+
+    private func numericForSort(_ value: FieldValue) -> Double? {
+        switch value {
+        case .int(let i):    return Double(i)
+        case .double(let d): return d
+        case .bool(let b):   return b ? 1 : 0
+        case .date(let d), .dateTime(let d):
+            return d.timeIntervalSince1970
+        default:
+            return nil
+        }
+    }
+
+    private func stringForSort(_ value: FieldValue) -> String {
+        switch value {
+        case .string(let s): return s
+        case .int(let i):    return String(i)
+        case .double(let d): return String(d)
+        case .bool(let b):   return b ? "true" : "false"
+        case .null:          return ""
+        case .date(let d), .dateTime(let d):
+            return ISO8601DateFormatter().string(from: d)
+        case .data(let d):   return d.base64EncodedString()
+        case .array:         return ""
+        }
     }
 
     // MARK: - Versions (ADR-024, P0.8)

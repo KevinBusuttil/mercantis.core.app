@@ -114,7 +114,7 @@ Key responsibilities:
 - **`save(_:)`** — Run the `ValidationPipeline`, check optimistic concurrency, serialize to JSON, write to the `documents` table, compute and store a field-level diff as a `DocumentVersion`, and atomically append a `MutationRecord` to `sync_queue`. Fire a `DocumentSavedEvent` on the typed event bus.
 - **`delete(docType:id:)`** — Delete from `documents`, cascade-delete child rows from `document_children`, append a `deleteDocument` mutation, fire a `DocumentDeletedEvent`.
 - **`fetch(docType:id:)`** — Query `documents`, deserialize the JSON payload into a `Document`.
-- **`list(docType:filters:)`** — Query with optional WHERE clauses, return a list of `Document` objects.
+- **`list(docType:filters:whereExpression:sortBy:limit:offset:)`** — Query with optional equality filters, a sandboxed boolean `whereExpression` (run via `ExpressionEvaluator`), an ordered `[ListSort]` sort chain, and `limit` / `offset` paging. Filters and sort keys that match either a system column or a `DocType.IndexDefinition` are pushed to SQL via `json_extract`; the rest is finished in memory. (P2.5)
 
 **ValidationPipeline:** Document save runs a structured, ordered validation sequence. Each stage is a `ValidationStage` protocol conformance, independently testable, executed in declared order:
 1. `TypeCoercionStage` — field values match declared types.
@@ -410,7 +410,7 @@ The Public API Surface defines the Swift types and methods that app-layer code (
 
 Key API points:
 
-- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)` *(sort/limit on `list` are planned — see `Docs/ENHANCEMENT-PROPOSAL.md` P2.5)*
+- `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:whereExpression:sortBy:limit:offset:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)`
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
 - `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
 - `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`

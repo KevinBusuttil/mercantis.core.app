@@ -81,6 +81,15 @@ public final class MetadataRegistry: @unchecked Sendable {
                     arguments: StatementArguments(args)
                 )
             }
+
+            // P2.5: SQLite expression indexes for `IndexDefinition` rows. The
+            // index expression mirrors the SQL `DocumentEngine.list` emits when
+            // pushing an indexed-field filter or sort to the database, so a
+            // declared index actually accelerates queries instead of staying
+            // metadata-only. Stale indexes (fields removed from `indexes`) are
+            // dropped before recreating the current set so re-registering a
+            // DocType is idempotent.
+            try syncExpressionIndexes(db, for: docType)
         }
 
         lock.lock()
@@ -186,6 +195,59 @@ public final class MetadataRegistry: @unchecked Sendable {
                   let payloadData = payloadString.data(using: .utf8) else { return nil }
             return try decoder.decode(DocType.self, from: payloadData)
         }
+    }
+
+    // MARK: - Expression indexes (P2.5)
+
+    /// Reconcile SQLite expression indexes for a DocType's `IndexDefinition`
+    /// rows. Index names follow the pattern
+    /// `idx_doc_<sanitized-doctype>_<sanitized-fieldKey>` so all of a DocType's
+    /// indexes share a stable prefix the reconciler can scope to.
+    private func syncExpressionIndexes(_ db: Database, for docType: DocType) throws {
+        let docTypeSlug = sanitizeIdentifier(docType.id)
+        let prefix = "idx_doc_\(docTypeSlug)_"
+
+        let expectedIndexes: [(name: String, fieldKey: String)] = docType.indexes.map { def in
+            let name = "\(prefix)\(sanitizeIdentifier(def.fieldKey))"
+            return (name: name, fieldKey: def.fieldKey)
+        }
+        let expectedNames = Set(expectedIndexes.map(\.name))
+
+        let existingRows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT name FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'documents' AND name LIKE ?
+                """,
+            arguments: ["\(prefix)%"]
+        )
+        let existingNames = Set(existingRows.compactMap { $0["name"] as String? })
+
+        for staleName in existingNames.subtracting(expectedNames) {
+            try db.execute(sql: "DROP INDEX IF EXISTS \"\(staleName)\"")
+        }
+
+        for index in expectedIndexes where !existingNames.contains(index.name) {
+            // Composite expression: `(doctype, json_extract(payload, '$.<key>'))`.
+            // Including `doctype` as the leading column lets SQLite scope the
+            // index per DocType, matching the WHERE clause `DocumentEngine.list`
+            // always emits.
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS "\(index.name)"
+                ON documents(doctype, json_extract(payload, '$.\(index.fieldKey)'))
+                """)
+        }
+    }
+
+    /// Strip a string down to characters safe inside a SQLite identifier
+    /// (letters, digits, underscores). Used only for index names; the original
+    /// field key still flows through `json_extract` parameter binding.
+    private func sanitizeIdentifier(_ s: String) -> String {
+        let chars = s.map { ch -> Character in
+            if ch.isLetter || ch.isNumber || ch == "_" { return ch }
+            return "_"
+        }
+        return String(chars)
     }
 
     // MARK: - Errors

@@ -538,4 +538,339 @@ final class DocumentEngineTests: XCTestCase {
         XCTAssertNotEqual(amended.id, "orig")
         XCTAssertEqual(amended.fields["title"], .string("Original"))
     }
+
+    // MARK: - List filters / sorting / paging (P2.5)
+
+    /// Build a Note DocType with text/number/select fields and an optional
+    /// IndexDefinition on `priority` so tests can exercise both pushdown paths.
+    private func registerListDocType(indexed: Bool = false) throws {
+        let docType = TestSupport.makeDocType(
+            fields: [
+                TestSupport.textField("title", required: true),
+                TestSupport.numberField("priority"),
+                TestSupport.textField("category"),
+            ],
+            indexes: indexed ? [IndexDefinition(fieldKey: "priority", unique: false)] : []
+        )
+        try harness.registry.register(docType)
+    }
+
+    private func saveListFixture(
+        id: String,
+        title: String,
+        priority: Int,
+        category: String,
+        status: String = ""
+    ) throws {
+        var doc = TestSupport.makeDocument(
+            id: id,
+            fields: [
+                "title":    .string(title),
+                "priority": .int(priority),
+                "category": .string(category),
+            ]
+        )
+        doc.status = status
+        try harness.engine.save(doc)
+    }
+
+    func testListReturnsEveryDocumentForTheDocTypeWhenNoFiltersGiven() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 2, category: "y")
+
+        let docs = try harness.engine.list(docType: "Note")
+        XCTAssertEqual(Set(docs.map(\.id)), ["a", "b"])
+    }
+
+    func testListEqualityFilterOnNonIndexedFieldRunsInMemory() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 2, category: "y")
+        try saveListFixture(id: "c", title: "C", priority: 3, category: "y")
+
+        let docs = try harness.engine.list(docType: "Note", filters: ["category": .string("y")])
+        XCTAssertEqual(Set(docs.map(\.id)), ["b", "c"])
+    }
+
+    func testListEqualityFilterOnIndexedFieldIsPushedToSQL() throws {
+        try registerListDocType(indexed: true)
+        try saveListFixture(id: "low",  title: "Low",  priority: 1, category: "x")
+        try saveListFixture(id: "high", title: "High", priority: 9, category: "x")
+
+        let docs = try harness.engine.list(docType: "Note", filters: ["priority": .int(9)])
+        XCTAssertEqual(docs.map(\.id), ["high"])
+    }
+
+    func testListFilterOnSystemColumnIsPushedToSQL() throws {
+        try registerListDocType()
+        try saveListFixture(id: "open",   title: "Open",   priority: 1, category: "x", status: "Open")
+        try saveListFixture(id: "closed", title: "Closed", priority: 2, category: "x", status: "Closed")
+
+        let docs = try harness.engine.list(docType: "Note", filters: ["status": .string("Open")])
+        XCTAssertEqual(docs.map(\.id), ["open"])
+    }
+
+    func testListMixedFiltersCombineSQLAndInMemoryPasses() throws {
+        try registerListDocType(indexed: true)
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 1, category: "y")
+        try saveListFixture(id: "c", title: "C", priority: 2, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            filters: ["priority": .int(1), "category": .string("x")]
+        )
+        XCTAssertEqual(docs.map(\.id), ["a"])
+    }
+
+    func testListSortByIndexedFieldAscendingPushesToSQL() throws {
+        try registerListDocType(indexed: true)
+        try saveListFixture(id: "mid",  title: "Mid",  priority: 2, category: "x")
+        try saveListFixture(id: "high", title: "High", priority: 3, category: "x")
+        try saveListFixture(id: "low",  title: "Low",  priority: 1, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "priority", direction: .ascending)]
+        )
+        XCTAssertEqual(docs.map(\.id), ["low", "mid", "high"])
+    }
+
+    func testListSortByIndexedFieldDescendingPushesToSQL() throws {
+        try registerListDocType(indexed: true)
+        try saveListFixture(id: "mid",  title: "Mid",  priority: 2, category: "x")
+        try saveListFixture(id: "high", title: "High", priority: 3, category: "x")
+        try saveListFixture(id: "low",  title: "Low",  priority: 1, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "priority", direction: .descending)]
+        )
+        XCTAssertEqual(docs.map(\.id), ["high", "mid", "low"])
+    }
+
+    func testListSortByNonIndexedFieldFallsBackToInMemorySort() throws {
+        try registerListDocType()  // no indexes — `category` is not pushable
+        try saveListFixture(id: "b", title: "B", priority: 1, category: "beta")
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "alpha")
+        try saveListFixture(id: "c", title: "C", priority: 1, category: "gamma")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "category", direction: .ascending)]
+        )
+        XCTAssertEqual(docs.map(\.id), ["a", "b", "c"])
+    }
+
+    func testListSortBySystemColumnPushesToSQL() throws {
+        try registerListDocType()
+        try saveListFixture(id: "alpha", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "bravo", title: "B", priority: 1, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "id", direction: .ascending)]
+        )
+        XCTAssertEqual(docs.map(\.id), ["alpha", "bravo"])
+    }
+
+    func testListMultiKeySortAppliesTieBreakerOrder() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 1, category: "y")
+        try saveListFixture(id: "c", title: "C", priority: 2, category: "x")
+
+        // Priority ascending, then category descending to break ties.
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [
+                ListSort(fieldKey: "priority", direction: .ascending),
+                ListSort(fieldKey: "category", direction: .descending),
+            ]
+        )
+        XCTAssertEqual(docs.map(\.id), ["b", "a", "c"])
+    }
+
+    func testListMissingFieldValuesSortAfterPresentValuesAscending() throws {
+        try registerListDocType()
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "with-priority",
+            fields: ["title": .string("With"), "priority": .int(1)]
+        ))
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "no-priority",
+            fields: ["title": .string("Without")]
+        ))
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "priority", direction: .ascending)]
+        )
+        XCTAssertEqual(docs.map(\.id), ["with-priority", "no-priority"])
+    }
+
+    func testListWhereExpressionRunsPerRowAgainstFields() throws {
+        try registerListDocType()
+        try saveListFixture(id: "low",  title: "Low",  priority: 1, category: "x")
+        try saveListFixture(id: "mid",  title: "Mid",  priority: 5, category: "x")
+        try saveListFixture(id: "high", title: "High", priority: 9, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            whereExpression: "priority > 3"
+        )
+        XCTAssertEqual(Set(docs.map(\.id)), ["mid", "high"])
+    }
+
+    func testListWhereExpressionSupportsCompoundOperators() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 5, category: "y")
+        try saveListFixture(id: "c", title: "C", priority: 9, category: "x")
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            whereExpression: "priority >= 5 && category == \"x\""
+        )
+        XCTAssertEqual(docs.map(\.id), ["c"])
+    }
+
+    func testListWhereExpressionFailsClosedOnUndefinedField() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+
+        // `nonexistent` produces `.null` from the evaluator; comparing `.null`
+        // against `0` is not `==`, so the row is excluded — fail-closed.
+        let docs = try harness.engine.list(
+            docType: "Note",
+            whereExpression: "nonexistent == 0"
+        )
+        XCTAssertTrue(docs.isEmpty)
+    }
+
+    func testListWhereExpressionFailsClosedOnParseError() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+
+        // `*` in RHS position is an unexpected token — `parseValue` throws
+        // `EvaluatorError.unexpectedToken`. The fail-closed wrapper catches
+        // the throw and excludes the row.
+        let docs = try harness.engine.list(
+            docType: "Note",
+            whereExpression: "priority == *5"
+        )
+        XCTAssertTrue(docs.isEmpty)
+    }
+
+    func testListWhitespaceWhereExpressionShortCircuitsToAccept() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+        try saveListFixture(id: "b", title: "B", priority: 2, category: "y")
+
+        let docs = try harness.engine.list(docType: "Note", whereExpression: "   ")
+        XCTAssertEqual(Set(docs.map(\.id)), ["a", "b"])
+    }
+
+    func testListLimitTakesFirstNDocumentsInDefaultOrder() throws {
+        try registerListDocType()
+        for i in 0..<5 {
+            try saveListFixture(id: "doc-\(i)", title: "T\(i)", priority: i, category: "x")
+        }
+
+        let docs = try harness.engine.list(docType: "Note", limit: 2)
+        XCTAssertEqual(docs.count, 2)
+    }
+
+    func testListOffsetSkipsFirstNDocumentsEvenWithoutLimit() throws {
+        try registerListDocType(indexed: true)
+        for i in 0..<5 {
+            try saveListFixture(id: "doc-\(i)", title: "T\(i)", priority: i, category: "x")
+        }
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "priority", direction: .ascending)],
+            offset: 3
+        )
+        XCTAssertEqual(docs.map(\.id), ["doc-3", "doc-4"])
+    }
+
+    func testListLimitAndOffsetTogetherReturnSlice() throws {
+        try registerListDocType(indexed: true)
+        for i in 0..<5 {
+            try saveListFixture(id: "doc-\(i)", title: "T\(i)", priority: i, category: "x")
+        }
+
+        let docs = try harness.engine.list(
+            docType: "Note",
+            sortBy: [ListSort(fieldKey: "priority", direction: .ascending)],
+            limit: 2,
+            offset: 1
+        )
+        XCTAssertEqual(docs.map(\.id), ["doc-1", "doc-2"])
+    }
+
+    func testListOffsetBeyondResultCountReturnsEmpty() throws {
+        try registerListDocType()
+        try saveListFixture(id: "a", title: "A", priority: 1, category: "x")
+
+        let docs = try harness.engine.list(docType: "Note", limit: 5, offset: 100)
+        XCTAssertTrue(docs.isEmpty)
+    }
+
+    func testListNullEqualityFilterOnIndexedFieldMatchesMissingPayloadKey() throws {
+        try registerListDocType(indexed: true)
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "with",
+            fields: ["title": .string("With"), "priority": .int(7)]
+        ))
+        try harness.engine.save(TestSupport.makeDocument(
+            id: "without",
+            fields: ["title": .string("Without")]
+        ))
+
+        // Indexed field with `.null` filter pushes
+        // `json_extract(payload, '$.priority') IS NULL` to SQL; only the row
+        // whose payload omits the key matches.
+        let docs = try harness.engine.list(
+            docType: "Note",
+            filters: ["priority": .null]
+        )
+        XCTAssertEqual(docs.map(\.id), ["without"])
+    }
+
+    func testListIndexedFieldExpressionIndexExistsAfterRegister() throws {
+        try registerListDocType(indexed: true)
+
+        let indexExists: Bool = try harness.database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index' AND tbl_name = 'documents'
+                      AND name LIKE 'idx_doc_Note_%'
+                    """
+            ) != nil
+        }
+        XCTAssertTrue(indexExists, "register() should create idx_doc_Note_priority")
+    }
+
+    func testListExpressionIndexIsDroppedWhenRemovedFromDocType() throws {
+        try registerListDocType(indexed: true)
+        // Re-register with an empty `indexes` list.
+        try registerListDocType(indexed: false)
+
+        let indexExists: Bool = try harness.database.read { db in
+            try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index' AND tbl_name = 'documents'
+                      AND name LIKE 'idx_doc_Note_%'
+                    """
+            ) != nil
+        }
+        XCTAssertFalse(indexExists, "stale expression indexes must be dropped on re-register")
+    }
 }
