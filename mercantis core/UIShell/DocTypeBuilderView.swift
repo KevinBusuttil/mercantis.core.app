@@ -161,6 +161,10 @@ final class DocTypeToolingContext: ObservableObject {
             return "Title field '\(titleField)' does not exist in \(docType)."
         case .moduleNotFound(let docType, let module):
             return "Module '\(module)' does not exist. Create the module first or select an existing one when defining \(docType)."
+        case .expressionParseFailed(let docType, let fieldKey, let expressionKind, let message, _):
+            return "\(expressionKind) on '\(fieldKey)' in \(docType) failed to parse: \(message)."
+        case .unknownFieldInExpression(let docType, let fieldKey, let expressionKind, let referenced):
+            return "\(expressionKind) on '\(fieldKey)' in \(docType) references unknown field '\(referenced)'."
         }
     }
 
