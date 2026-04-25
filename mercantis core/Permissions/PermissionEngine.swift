@@ -65,24 +65,55 @@ public final class PermissionEngine {
 
     /// Check whether a user with the given roles can access a specific document row.
     ///
-    /// `rowFilter` is a dictionary of field key → required value pairs. The user can
-    /// access the row only if all filter conditions match (i.e. the document's field
-    /// values satisfy the row-level constraints for that user).
+    /// `rowExpression` is a sandboxed boolean expression evaluated by
+    /// `ExpressionEvaluator` (ADR-017, P1.7). The expression sees:
+    /// - every entry in `document.fields` at its declared key, and
+    /// - a `user.*` namespace populated from `userId`, `userRoles`, and any
+    ///   caller-supplied `userAttributes`.
     ///
-    /// Example: `rowFilter = ["warehouse": .string("WH-01")]` — the user can only see
-    /// documents whose `warehouse` field equals "WH-01".
+    /// Standard `user.*` entries:
+    /// - `user.id` — the caller's user id (empty string if `userId` is `""`).
+    /// - `user.roles` — the caller's role set as `.array([.string(role), ...])`,
+    ///   sorted for deterministic ordering.
     ///
-    /// Passing `nil` for `rowFilter` grants access (no row-level restriction).
+    /// `userAttributes` keys that already start with `"user."` are taken as-is;
+    /// any other key is namespaced by prefixing `"user."`. Entries provided this
+    /// way override the standard `user.id` / `user.roles` keys, and any `user.*`
+    /// key overrides a document field that happens to share the same name.
+    ///
+    /// A `nil`, empty, or whitespace-only `rowExpression` grants access (no
+    /// row-level restriction). An expression that fails to evaluate — parse error,
+    /// undefined identifier, type mismatch — fails closed: returns `false`.
+    ///
+    /// Examples:
+    /// - `"owner == user.id"` — only the document owner may read it.
+    /// - `"warehouse == user.warehouse"` with
+    ///   `userAttributes: ["warehouse": .string("WH-01")]`.
     public func canAccessRow(
         document: Document,
         userRoles: Set<String>,
-        rowFilter: [String: FieldValue]?
+        rowExpression: String?,
+        userId: String = "",
+        userAttributes: [String: FieldValue] = [:],
+        expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()
     ) -> Bool {
-        guard let rowFilter = rowFilter, !rowFilter.isEmpty else {
+        guard let expression = rowExpression?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !expression.isEmpty else {
             return true
         }
-        return rowFilter.allSatisfy { key, requiredValue in
-            document.fields[key] == requiredValue
+
+        var context = document.fields
+        context["user.id"] = .string(userId)
+        context["user.roles"] = .array(userRoles.sorted().map { .string($0) })
+        for (key, value) in userAttributes {
+            let namespaced = key.hasPrefix("user.") ? key : "user.\(key)"
+            context[namespaced] = value
+        }
+
+        do {
+            return try expressionEvaluator.evaluateBool(expression: expression, context: context)
+        } catch {
+            return false
         }
     }
 }

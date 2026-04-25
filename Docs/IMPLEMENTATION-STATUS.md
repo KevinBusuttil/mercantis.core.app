@@ -73,10 +73,10 @@ The goal is not to assign blame; it's to give future contributors an honest star
 
 ### 2.4 Permissions Engine — §4.4
 
-- **Shipped** — `PermissionEngine` exposes `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, and `canAccessRow(document:userRoles:rowFilter:)`. `ValidationPipeline`'s `PermissionStage` calls into `canPerform`.
+- **Shipped** — `PermissionEngine` exposes `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, and `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`. `ValidationPipeline`'s `PermissionStage` calls into `canPerform`.
 - **Aligned (P0.5 — 2026-04-23)** — §4.4 and ADR-011 now describe the flat method surface that actually ships. The earlier `PermissionEvaluator` / `PermissionDecision` evaluator-chain wording was removed from §4.4, ADR-011, ADR-025, and ADR-026.
-- **Partial vs. original intent** — `canAccessRow` is still an equality-only dictionary filter, not an expression predicate (expression-backed row filters are tracked as `Docs/ENHANCEMENT-PROPOSAL.md` P1.7).
-- **Not implemented** — There is no app-/module-level gate (nothing checks "is this role allowed to use this module at all?"). Workflow transition role checks live inside `WorkflowEngine.availableTransitions` and are not routed through `PermissionEngine`.
+- **Shipped (P1.7 — 2026-04-25)** — `canAccessRow` now evaluates a sandboxed boolean `rowExpression` via `ExpressionEvaluator` over the document's fields plus a `user.*` namespace (`user.id`, `user.roles`, plus arbitrary caller-supplied `userAttributes`). The previous equality-only dictionary filter was replaced (no callers existed). A `nil`/empty expression grants access; an expression that throws fails closed. Coverage in `PermissionEngineTests.swift`.
+- **Not implemented** — There is no app-/module-level gate (nothing checks "is this role allowed to use this module at all?"). Workflow transition role checks live inside `WorkflowEngine.availableTransitions` and are not routed through `PermissionEngine`. `DocumentEngine.list` does not yet apply `canAccessRow` automatically — callers must pass the row expression themselves.
 
 ### 2.5 Workflow Engine — §4.5
 
