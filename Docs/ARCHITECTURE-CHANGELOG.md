@@ -1,5 +1,40 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-25 (Row-level permission expressions shipped — P1.7)
+
+This revision replaces the equality-only `rowFilter` argument on `PermissionEngine.canAccessRow` with a sandboxed boolean `rowExpression` evaluated by `ExpressionEvaluator` (ADR-017) over the document's fields plus a `user.*` namespace. P1.6's typed `.date` / `.dateTime` cases land here as the comparison surface for deadline-style row predicates. No callers of the old signature existed in the codebase, so the swap was direct.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/Permissions/PermissionEngine.swift` | `canAccessRow` rewritten. New signature: `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`. Builds the evaluator context from `document.fields` plus a `user.*` namespace (`user.id` from `userId`, `user.roles` as a sorted `.array([.string])`, plus any `userAttributes` — caller-supplied keys without a `user.` prefix are namespaced automatically). Caller entries override the standard `user.*` keys; any `user.*` key overrides a document field of the same name. `nil` / empty / whitespace-only expression grants access; an evaluator throw fails closed. |
+
+### Code added
+
+| File | Summary |
+|---|---|
+| `mercantis coreTests/PermissionEngineTests.swift` | 20 tests: nil / empty / whitespace short-circuits, equality + compound + numeric + typed-date comparisons over document fields, `owner == user.id` matching, empty-`userId` fallback, `userAttributes` namespacing for prefixed and unprefixed keys, override semantics for both `userAttributes` ⇒ standard and `user.*` ⇒ document-field, three fail-closed paths (undefined identifier returning `.null`, malformed expression with missing RHS, typeMismatch throw via unary-minus on a string). Sanity coverage for `canPerform` (matching / non-matching role) and `canAccessField` (no permission block / restricted block). |
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `ARCHITECTURE.md` §4.4 Permissions Engine | Updated the `canAccessRow` signature in the snippet and rewrote its bullet to describe expression evaluation, the `user.*` namespace, override semantics, and fail-closed behaviour. |
+| `ARCHITECTURE.md` §4.15 Public API Surface | Refreshed the `PermissionEngine` line to list the new `canAccessRow` parameter set. |
+| `Docs/ADR/ADR-011-multi-level-permission-model.md` | Status bumped (revised 2026-04-25). Snippet updated. Row-level scope rewritten to describe expression evaluation, the `user.*` namespace, override rules, and fail-closed semantics. Out-of-scope list now records "no source-of-rowExpression wiring" instead of "no expression support". Negative consequence added covering fail-closed-on-typo. |
+| `Docs/IMPLEMENTATION-STATUS.md` §2.4 | Updated `canAccessRow` signature; added "Shipped (P1.7 — 2026-04-25)" row; removed the "Partial vs. original intent" entry; note added that `DocumentEngine.list` does not yet auto-apply row expressions. |
+| `Docs/ENHANCEMENT-PROPOSAL.md` P1.7 | Marked done. Detailed scope, signature, evaluator contract, coverage, and known follow-ups added. P0.5 cross-reference updated. Sequencing table extended with row 7. |
+| `mercantis coreTests/README.md` | Added a row for `PermissionEngineTests.swift`. Removed the "PermissionEngine — testing both shapes first is wasted effort" entry from the not-covered list. |
+
+### Known follow-ups
+
+- The engine accepts and evaluates an expression but does not decide *which* expression applies for a given (DocType, role, user) tuple. A `DocPerm`-style per-role row filter on metadata, plus `DocumentEngine.list` enforcement of those filters, are downstream items.
+- `ValidationPipeline`'s `PermissionStage` still only calls `canPerform`. Routing row-level checks through it at write time would require threading the row expression through `ValidationContext`.
+- Role membership is exposed as `.array([.string])`, but the evaluator's comparison rules treat `.array` as `.null`; `user.roles == "Admin"` is not directly expressible. A `has_role(...)` evaluator function (or per-role boolean attributes passed via `userAttributes`) is the workaround until the AST refactor in P2.1 introduces function calls.
+
+---
+
 ## Revision: 2026-04-24 (Extension-point resolution shipped — P1.3)
 
 This revision records the implementation of declarative extension-point resolution in `AppInstaller`. ADR-015 previously promised that installing a manifest would bind `documentEventSubscriptions` to `EventEmitter` and `schedulerEvents` to `SchedulerService`; with P1.1 complete, P1.3 became the next load-bearing piece and ships in this revision.

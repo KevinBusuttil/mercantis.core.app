@@ -1,7 +1,7 @@
 # ADR-011 — Multi-Level Permission Model
 
-**Status:** Accepted (revised 2026-04-23 to match shipped code; see §P0.5 in `Docs/ENHANCEMENT-PROPOSAL.md`)
-**Date:** 2026-04-14 · revised 2026-04-23
+**Status:** Accepted (revised 2026-04-25 — `canAccessRow` now takes a row expression evaluated over a `user.*` namespace; see §P1.7 in `Docs/ENHANCEMENT-PROPOSAL.md`)
+**Date:** 2026-04-14 · revised 2026-04-23, 2026-04-25
 
 ---
 
@@ -36,11 +36,15 @@ public final class PermissionEngine {
         operation: FieldOperation              // .read / .write
     ) -> Bool
 
-    // Row-level: equality filter over a `[String: FieldValue]` dictionary.
+    // Row-level: sandboxed boolean expression over the document's fields plus
+    // a `user.*` namespace. (P1.7 — 2026-04-25)
     public func canAccessRow(
         document: Document,
         userRoles: Set<String>,
-        rowFilter: [String: FieldValue]?
+        rowExpression: String?,
+        userId: String = "",
+        userAttributes: [String: FieldValue] = [:],
+        expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()
     ) -> Bool
 }
 ```
@@ -49,14 +53,19 @@ public final class PermissionEngine {
 
 - **DocType-level (`canPerform`)** — Iterates `docType.permissions` (`[PermissionRule]`), keeps rules whose `role` is in `userRoles`, and returns `true` on the first matching rule whose CRUD/lifecycle flag is set for the requested `DocumentOperation`. Returns `false` if no matching rule grants the operation.
 - **Field-level (`canAccessField`)** — Looks up the field by key. If the field has no `permissions: FieldPermission?` block, access is granted (DocType-level already gated the operation). If it does, membership of `readRoles` or `writeRoles` — depending on `FieldOperation` — decides.
-- **Row-level (`canAccessRow`)** — `rowFilter` is a `[String: FieldValue]` dictionary of required field values. Access is granted when every entry equals the document's value for the same key. A `nil` or empty `rowFilter` grants access. There is no expression support at this layer today.
+- **Row-level (`canAccessRow`)** — `rowExpression` is a sandboxed boolean expression evaluated by `ExpressionEvaluator` (ADR-017). The evaluator sees every entry in `document.fields` at its declared key plus a `user.*` namespace populated as follows:
+  - `user.id` — the caller's user id (empty string when `userId` is unset).
+  - `user.roles` — the caller's role set as `.array([.string(role), ...])`, sorted for determinism.
+  - Each `userAttributes` entry — the key is taken as-is when it already starts with `"user."`, otherwise it is namespaced by prefixing `"user."`. Caller-supplied entries override the standard `user.id` / `user.roles` keys; any `user.*` key overrides a document field that happens to share the same name (so a malicious `user.id` document field cannot impersonate the namespace).
+  
+  A `nil`, empty, or whitespace-only `rowExpression` grants access (no row-level restriction). An expression that fails to evaluate — parse error, undefined identifier, type mismatch — fails closed: returns `false`. Common patterns: `"owner == user.id"`, `"warehouse == user.warehouse"`, `"region == user.region && status == \"Submitted\""`.
 
 ### What is **not** in the shipped engine
 
 - No `PermissionEvaluator` protocol and no `PermissionDecision` enum. The earlier revision introduced both; neither exists in code.
 - No app-level / module-level check. Nothing today asks "is the user's role allowed to use this module at all?" — the engine has no opinion on it, and callers do not consult one.
 - No workflow-level evaluator. Workflow transition role gates live inside `WorkflowEngine.availableTransitions`, not behind `PermissionEngine`. That remains appropriate — they consult `WorkflowTransition.allowedRoles` directly.
-- No row-level expression support. `canAccessRow` compares literal `FieldValue`s; it does not evaluate a predicate via `ExpressionEvaluator`. Moving to an expression-backed row filter is tracked in `Docs/ENHANCEMENT-PROPOSAL.md` P1.7.
+- No source-of-rowExpression wiring. The engine accepts and evaluates an expression (P1.7); deciding *which* expression applies for a given (DocType, role, user) tuple is the caller's responsibility today. A `DocPerm`-style per-role row filter on the metadata side, and `DocumentEngine.list` enforcement of those filters, are downstream items not in this ADR.
 
 ### Integration
 
@@ -72,8 +81,8 @@ public final class PermissionEngine {
 
 **Negative:**
 - App/module-level gating and workflow-level gating are not part of this engine. Callers that need those checks must go elsewhere (workflow role checks are in `WorkflowEngine`; module gating is not enforced today).
-- Row-level filters are equality-only. Expression-based row filters are a P1 enhancement (`Docs/ENHANCEMENT-PROPOSAL.md` P1.7), not shipped.
 - The three methods are separate entry points rather than a single `evaluate(context:)` call, so a future migration to a chain-style evaluator (see below) is an API-surface change, not a purely internal refactor.
+- Row-level expressions fail closed on any evaluator error. A typo in a row predicate denies access rather than degrading to "no restriction"; the inverse choice is unsafe for a security check but means a broken expression is silently equivalent to "deny all" until the author notices.
 
 **Neutral:**
 - A chain-style design (a `PermissionEvaluator` protocol with an ordered list of concrete evaluators, short-circuiting on the first denial) is still on the table for a future ADR. It is appropriate when app-level and row-expression evaluators land and the number of concerns outgrows three hand-written methods. Until then, the flat surface matches what callers actually need.

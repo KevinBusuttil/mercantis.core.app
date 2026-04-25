@@ -1,6 +1,6 @@
 # Enhancement Proposal
 
-_Last updated: 2026-04-24 (P1.6 — FieldValue expansion shipped)_
+_Last updated: 2026-04-25 (P1.7 — row-level expression permissions shipped)_
 
 Companion document to [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). The status doc catalogues _what is_; this doc proposes _what to do next_. Each item is labelled with effort (S/M/L), risk, and the ADR or architecture section it closes.
 
@@ -80,7 +80,7 @@ Decisions are captured in ADR-028. Coverage in `SyncEngineTests.swift`:
 
 ### P0.5 — Align the Permissions doc with the code [S, medium risk] — ADR-011 *(done — option A, 2026-04-23)*
 
-Option A shipped: §4.4 and ADR-011 now describe the flat `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)` — that actually exists, and references to `PermissionEvaluator`, `PermissionDecision`, and the evaluator chain have been removed (or reframed as "not shipped" historical notes) from:
+Option A shipped: §4.4 and ADR-011 now describe the flat `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)` (later evolved by P1.7 to a `rowExpression`) — that actually exists, and references to `PermissionEvaluator`, `PermissionDecision`, and the evaluator chain have been removed (or reframed as "not shipped" historical notes) from:
 
 - `ARCHITECTURE.md` §3 (architecture diagram), §4.2 (ValidationPipeline `PermissionStage`), §4.4 (Permissions Engine — fully rewritten), §4.12 (Layer 3 extension protocols), §4.15 (Public API Surface), §7 (directory tree).
 - `Docs/ADR/ADR-011-multi-level-permission-model.md` — rewritten to describe the shipped flat surface and its out-of-scope checks (app / module gating; workflow-level role checks remain inside `WorkflowEngine`).
@@ -89,7 +89,7 @@ Option A shipped: §4.4 and ADR-011 now describe the flat `PermissionEngine` —
 - `Docs/IMPLEMENTATION-STATUS.md` §1, §2.4, §5 — removed "shape doesn't match" entries; §2.4 now reads as a regular Shipped / Partial breakdown.
 
 Option B (implement the chain — introduce a `PermissionEvaluator` protocol, five concrete evaluators, and a chain runner; replace `PermissionStage` to call the chain) remains the stated long-term direction, scheduled alongside:
-- **P1.7** — row-level expression support (`canAccessRow` predicate via `ExpressionEvaluator`).
+- ~~**P1.7** — row-level expression support (`canAccessRow` predicate via `ExpressionEvaluator`).~~ ✅ shipped 2026-04-25 — see P1.7.
 - **App-/module-level gating** — not yet in the engine; a future ADR.
 
 Until then, §4.4 / ADR-011 accurately document what ships.
@@ -419,13 +419,33 @@ Coverage in `FieldValueTests.swift` (24 tests): tagged-envelope encode/decode fo
 - `FieldType` does not yet expose a dedicated "array" type or "data" type surface in the form builder; the new `FieldValue` cases are a storage/expression-layer expansion. Rendering new control types is P2.8 work.
 - `TypeCoercionStage` allows `.date` ↔ `.dateTime` interchange today (either typed case satisfies either field type). A stricter separation can land once the UI picker treats the two as distinct; keeping them interchangeable now avoids a forced migration for existing rows that used `.string` indiscriminately.
 
-### P1.7 — Row-level permissions take a condition expression [M, medium risk] — ADR-011
+### P1.7 — Row-level permissions take a condition expression [M, medium risk] — ADR-011 *(done — 2026-04-25)*
 
-Today `canAccessRow` is an equality dict. Per the doc ("arbitrary condition filter"), it should accept an expression:
+`PermissionEngine.canAccessRow` now takes a sandboxed boolean `rowExpression` evaluated by `ExpressionEvaluator` (ADR-017) over the document's fields plus a `user.*` namespace. The previous equality-only `[String: FieldValue]` filter was replaced; nothing in the codebase consumed the old signature, so no callers needed migration.
+
 ```swift
-canAccessRow(document:, userRoles:, rowExpression: String?) -> Bool
+public func canAccessRow(
+    document: Document,
+    userRoles: Set<String>,
+    rowExpression: String?,
+    userId: String = "",
+    userAttributes: [String: FieldValue] = [:],
+    expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()
+) -> Bool
 ```
-…evaluated via `ExpressionEvaluator` over the document's fields plus a `user.*` namespace. Lands cleanly after P1.6 and gives real row-level security without writing new code per DocType.
+
+The evaluator sees:
+- every entry in `document.fields` at its declared key, and
+- a `user.*` namespace populated from `userId` (`user.id`), `userRoles` (`user.roles` as `.array([.string])`, sorted), and any `userAttributes`. Caller-supplied keys without a `user.` prefix are namespaced automatically; entries with the prefix are taken as-is. `userAttributes` overrides the standard entries; any `user.*` key overrides a document field of the same name (so a malicious `user.id` field cannot impersonate the namespace).
+
+A `nil`, empty, or whitespace-only expression grants access. An expression that fails to evaluate — parse error, undefined identifier, type mismatch — fails closed and returns `false`. Common patterns: `"owner == user.id"`, `"warehouse == user.warehouse"`, `"region == user.region && status == \"Submitted\""`. The P1.6 typed `.date` / `.dateTime` cases compare cleanly via the evaluator's epoch-seconds path, so deadline-style filters like `"expires_at > user.now"` work.
+
+Coverage in `PermissionEngineTests.swift` (20 tests): the three nil/empty/whitespace short-circuits, equality and compound expressions over document fields, numeric comparison, typed-date comparison (P1.6 dependency), `owner == user.id` matching, the empty-userId fallback, `userAttributes` namespacing for both prefixed and unprefixed keys, the `userAttributes`-overrides-`user.id` case, the `user.*`-overrides-document-field case (security-critical), three fail-closed paths (undefined identifier returning `.null`, malformed expression with missing RHS, and a typeMismatch throw via unary-minus on a string identifier), plus sanity coverage for `canPerform` (matching / non-matching role) and `canAccessField` (no permission block / restricted block).
+
+**Known follow-ups (not scoped to P1.7):**
+- The engine accepts and evaluates an expression but does not decide *which* expression applies for a given (DocType, role, user) tuple. A `DocPerm`-style per-role row filter on metadata, plus `DocumentEngine.list` enforcement of those filters, are downstream.
+- `ValidationPipeline`'s `PermissionStage` still only calls `canPerform`. Row-level checks at write time would require threading the row expression through `ValidationContext`.
+- Role membership is exposed as a `.array([.string])` for completeness, but the evaluator's comparison rules treat `.array` as `.null`, so `user.roles == "Admin"` is not directly expressible. A `has_role(...)` evaluator function or per-role boolean attributes (e.g. caller passes `userAttributes: ["is_admin": .bool(...)]`) is the workaround until the AST refactor in P2.1 introduces function calls.
 
 ---
 
@@ -623,8 +643,7 @@ A 4–6 week plan if one engineer is the target:
 | 6 | P1.2 Automation runtime ✅ (2026-04-24) (fills the `ExtensionActionDispatcher` seam). |
 | 6 | P1.4 Scheduler ✅ (2026-04-24) (fills the `ExtensionSchedulerRegistrar` seam). |
 | 6 | P1.6 FieldValue expansion ✅ (2026-04-24) (tagged envelope, backward-compatible decode). |
-
-P1.7 row-level expressions slots in as an individual PR alongside the above; it now has typed dates to compare against via `ExpressionEvaluator`.
+| 7 | P1.7 row-level expression permissions ✅ (2026-04-25) (`user.*` namespace, fail-closed). |
 
 P2.6 (Core library productization) should happen before Hub development begins in earnest — it is not large work but it is a prerequisite for the Core/Hub boundary being real. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 

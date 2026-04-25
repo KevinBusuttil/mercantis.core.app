@@ -179,13 +179,15 @@ public final class PermissionEngine {
     func canAccessField(fieldKey: String, on: DocType,
                         userRoles: Set<String>, operation: FieldOperation) -> Bool
     func canAccessRow(document: Document, userRoles: Set<String>,
-                      rowFilter: [String: FieldValue]?) -> Bool
+                      rowExpression: String?, userId: String = "",
+                      userAttributes: [String: FieldValue] = [:],
+                      expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()) -> Bool
 }
 ```
 
 - **DocType-level** (`canPerform`) — walks `DocType.permissions` (`[PermissionRule]`), keeps rules whose role is in `userRoles`, and returns `true` on the first rule that grants the requested `DocumentOperation` (`.read` / `.write` / `.create` / `.delete` / `.submit` / `.amend`).
 - **Field-level** (`canAccessField`) — consults `FieldDefinition.permissions` (`FieldPermission?`). A field with no `permissions` block is reachable by anyone who already passed the DocType check. If the block is present, membership of `readRoles` or `writeRoles` (per `FieldOperation`) decides.
-- **Row-level** (`canAccessRow`) — `rowFilter` is a `[String: FieldValue]` dictionary of required values; the user can see the document only if every entry equals the document's value for that key. A `nil` or empty filter grants access. Row-level filters are equality-only; expression-backed filters are tracked in `Docs/ENHANCEMENT-PROPOSAL.md` P1.7.
+- **Row-level** (`canAccessRow`) — `rowExpression` is a sandboxed boolean expression evaluated by `ExpressionEvaluator` (ADR-017) over the document's fields plus a `user.*` namespace populated from `userId`, `userRoles`, and any extra `userAttributes`. Standard entries are `user.id` (string) and `user.roles` (`.array([.string])`); `userAttributes` keys without a `user.` prefix are namespaced automatically and override the standard entries. Common expressions: `"owner == user.id"`, `"warehouse == user.warehouse"`. A `nil`, empty, or whitespace-only expression grants access; an expression that fails to evaluate (parse error, undefined identifier, type mismatch) fails closed. Wired in for P1.7.
 
 **Out of scope for `PermissionEngine` today:**
 - App / module gating — nothing in Core asks "is this role allowed to use this module at all?" A future evaluator (tracked as a P1 enhancement) may be added.
@@ -411,7 +413,7 @@ Key API points:
 - `DocumentEngine` — `save(_:)`, `delete(docType:id:)`, `fetch(docType:id:)`, `list(docType:filters:)`, `submit(_:)`, `cancel(_:)`, `amend(_:)` *(sort/limit on `list` are planned — see `Docs/ENHANCEMENT-PROPOSAL.md` P2.5)*
 - `MetadataRegistry` — `register(_:)`, `get(docType:)`, `all()`, `unregister(docType:)`
 - `MetaComposer` — `resolve(docType:)` → `ResolvedMeta`
-- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowFilter:)`
+- `PermissionEngine` — `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`
 - `WorkflowEngine` — `availableTransitions(...)`, `transition(...)`
 - `SyncEngine` — `pushPendingMutations()`, `pullAndApplyRemoteMutations()`, `applyRemoteMutations(_:)`, `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)`
 - `ExpressionEvaluator` — `evaluateBool(expression:context:)`, `evaluateFormula(expression:context:)`

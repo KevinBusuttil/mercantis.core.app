@@ -46,6 +46,7 @@ the command line.
 | `ExtensionPointsTests.swift` | `AppRuntime/` | Manifest decoding, install/uninstall lifecycle, reinstall idempotency, scheduler registrar round-trip, end-to-end event dispatch, restore on launch. |
 | `SchedulerTests.swift` | `Scheduling/` | Cron parser (wildcard / range / step / Sunday-as-zero-or-seven / errors), persistence round-trip + prefix-clear, due-check semantics for `.all` / `.hourly` / `.daily` / `.cron`, restart preserves cadence + fires backlog, handle-cancel preserves cadence for reinstall, `unregister(appId:)` wipes persistence, `ExtensionSchedulerRegistrar` conformance, end-to-end through `AppInstaller`. |
 | `FieldValueTests.swift` | `Metadata/` | Tagged-envelope encode/decode for the P1.6 cases (`.date`, `.dateTime`, `.data`, `.array`), untagged primitive round-trip (backward-compat), recursive `.array` equality, `TypeCoercionStage` / `RequiredFieldStage` behaviour on typed dates and inline data, `ExpressionEvaluator` comparing dates as epoch seconds, `FormatStrategy` / `FieldDerivedStrategy` stringification of dates and rejection of opaque values, `FieldValueDecoder` parsing `"date"` / `"data"` parameters in `set_value`. |
+| `PermissionEngineTests.swift` | `Permissions/` | `canAccessRow` short-circuits on nil/empty/whitespace expressions, evaluates equality and compound expressions over document fields, exposes `user.id` / `user.roles` and arbitrary `userAttributes` under the `user.*` namespace, lets caller-supplied attributes override standard entries and document fields of the same key, and fails closed on undefined identifiers / malformed expressions / typeMismatch throws. Sanity coverage for `canPerform` and `canAccessField`. |
 
 Shared fixtures live in `Support/TestSupport.swift`.
 
@@ -54,8 +55,6 @@ Shared fixtures live in `Support/TestSupport.swift`.
 - `SyncEngine.applyRemote*` paths — P0.2 in the enhancement proposal will
   re-route these through `DocumentEngine`; tests should land with that
   change rather than lock in the current shape.
-- `PermissionEngine` — P0.5 reconciles the ADR-011 chain with the flat
-  implementation; testing both shapes first is wasted effort.
 - `WorkflowEngine` — no persistence today (`WorkflowTransitionHistory` is
   returned but not stored). Covered once the caller contract settles.
 - UI code in `UIShell/` and `Views/DesignSystem/` — UI regression tests
