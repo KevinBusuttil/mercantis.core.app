@@ -42,7 +42,7 @@ Mercantis Core needs an extensibility model that allows domain-specific applicat
 - Expression language is necessarily limited (see [ADR-008](ADR-008-no-executable-plugins-ios.md)).
 
 **Neutral:**
-- Hub (`mercantis.app`) is simply an app manifest; it uses the same plugin model as any third-party application.
+- Hub (`mercantis.hub.app`) is simply an app manifest; it uses the same plugin model as any third-party application.
 
 ---
 

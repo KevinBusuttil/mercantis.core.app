@@ -6,7 +6,7 @@
 
 Mercantis Core is the general-purpose platform layer that provides the foundational infrastructure for any business application built on the Mercantis ecosystem. It handles documents, workflows, sync, permissions, and app installation — all without knowing anything about specific business domains.
 
-[Mercantis Hub](https://github.com/KevinBusuttil/mercantis.app) is the first-party ERP application built entirely on top of Core's public APIs.
+[Mercantis Hub](https://github.com/KevinBusuttil/mercantis.hub.app) is the first-party ERP application built entirely on top of Core's public APIs.
 
 ## Key Capabilities
 

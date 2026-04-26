@@ -7,7 +7,7 @@
 
 ## Context
 
-Mercantis Hub (`mercantis.app`) is the first-party ERP application built on Mercantis Core. There is a temptation when building a first-party app to take shortcuts: call internal Core methods, access the database directly, or add domain-specific hooks into Core's subsystems. These shortcuts create hidden coupling that makes it impossible to later separate Core from Hub.
+Mercantis Hub (`mercantis.hub.app`) is the first-party ERP application built on Mercantis Core. There is a temptation when building a first-party app to take shortcuts: call internal Core methods, access the database directly, or add domain-specific hooks into Core's subsystems. These shortcuts create hidden coupling that makes it impossible to later separate Core from Hub.
 
 ## Decision
 
@@ -34,7 +34,7 @@ If Hub needs functionality that Core does not yet provide, the correct approach 
 - Feature development sometimes requires coordinated changes in both Core and Hub.
 
 **Neutral:**
-- Mercantis Hub (`mercantis.app`) is structured as an Xcode project that imports Core as a Swift package or embedded framework. As of 2026-04-25 (P2.6) `Package.swift` exposes a `MercantisCore` library product covering the engine subsystems; the SwiftUI shell and `@main` entry stay in the Xcode app target. Hub can resolve and `import MercantisCore` from a standard `.package(url:from:)` dependency today.
+- Mercantis Hub (`mercantis.hub.app`) is structured as an Xcode project that imports Core as a Swift package or embedded framework. As of 2026-04-25 (P2.6) `Package.swift` exposes a `MercantisCore` library product covering the engine subsystems; the SwiftUI shell and `@main` entry stay in the Xcode app target. Hub can resolve and `import MercantisCore` from a standard `.package(url:from:)` dependency today.
 
 ---
 

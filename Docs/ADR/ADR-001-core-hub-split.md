@@ -19,7 +19,7 @@ Two concerns needed to be separated:
 We will maintain two separate repositories with a strict dependency direction:
 
 - **`mercantis.core.app`** — The platform layer. Contains the infrastructure subsystems (Storage, DocumentEngine, MetadataRegistry, SyncEngine, PermissionsEngine, WorkflowEngine, ExpressionEngine, AppRuntime, Notifications). It has **no knowledge** of any specific business domain.
-- **`mercantis.app`** (Mercantis Hub) — The first-party ERP application. Declares its domain entities entirely in app manifests (DocTypes, workflows, permissions, reports) and calls only Core's public APIs. It contains **no infrastructure code**.
+- **`mercantis.hub.app`** (Mercantis Hub) — The first-party ERP application. Declares its domain entities entirely in app manifests (DocTypes, workflows, permissions, reports) and calls only Core's public APIs. It contains **no infrastructure code**.
 
 ## Consequences
 
