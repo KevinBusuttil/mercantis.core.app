@@ -32,8 +32,9 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │                                                                             │
 │   ┌───────────┐   ┌─────────────┐   ┌────────────────────┐                 │
 │   │  UIShell  │   │ AppRuntime  │   │  ExpressionEngine  │                 │
-│   │ (planned) │   │  (manifest  │   │  (AST-based eval)  │                 │
-│   │           │   │  installer) │   │                    │                 │
+│   │ (Generic  │   │  (manifest  │   │  (AST-based eval,  │                 │
+│   │  Form/    │   │  installer) │   │   lookup() P2.2)   │                 │
+│   │  List)    │   │             │   │                    │                 │
 │   └─────┬─────┘   └──────┬──────┘   └─────────┬──────────┘                 │
 │         │                │                    │                             │
 │   ┌─────▼────────────────▼────────────────────▼────────────────────────┐   │
@@ -51,7 +52,7 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │         │                 │                                                 │
 │   ┌─────▼─────────────────▼──────────────────────────────────────────┐     │
 │   │                   Storage (GRDB / SQLite)                         │     │
-│   │   MercantisDatabase · MigrationRunner · CacheManager              │     │
+│   │   MercantisDatabase · MigrationRunner                             │     │
 │   └────────────────────────────┬─────────────────────────────────────┘     │
 │                                │                                            │
 │   ┌────────────────────────────▼─────────────────────────────────────┐     │
@@ -62,14 +63,14 @@ Core is deliberately domain-agnostic. It knows about *documents*, *DocTypes*, *w
 │                                                                             │
 │   ┌────────────────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────┐  │
 │   │  MetadataRegistry  │  │ ReportEngine │  │FileManager │  │PrintEngine│  │
-│   │  + MetaComposer    │  │  (planned)   │  │            │  │(planned) │  │
+│   │  + MetaComposer    │  │              │  │ (planned)  │  │(planned) │  │
 │   │  → ResolvedMeta    │  └──────────────┘  └────────────┘  └──────────┘  │
 │   └────────────────────┘                                                   │
 │                                                                             │
 │   ┌────────────────────────┐  ┌───────────────────────┐                   │
 │   │  CustomizationEngine   │  │    ImportExport        │                   │
 │   │  (Custom Fields, Props,│  │  (CSV/JSON import/     │                   │
-│   │   Client Scripts)      │  │   export, fixtures)    │                   │
+│   │   Client Scripts)      │  │   export — planned)    │                   │
 │   └────────────────────────┘  └───────────────────────┘                   │
 │                                                                             │
 │   ┌────────────────────────┐  ┌───────────────────────┐                   │
@@ -398,14 +399,15 @@ See [ADR-010](Docs/ADR/ADR-010-pure-client-side-architecture.md).
 
 ### 4.14 Caching Layer
 
-**Location:** `mercantis core/Cache/`
+**Location:** `mercantis core/Cache/` *(planned — not on disk; tracked as P3.4)*
 
-The Caching Layer minimises repeated database reads for hot data.
+A standalone `CacheManager` subsystem has been described historically but is not implemented. What ships today is per-subsystem caching where it matters:
 
-- **MetadataRegistry cache** — All DocType definitions are cached in-memory on first access. The cache is invalidated when a DocType is installed, updated, or uninstalled via `AppInstaller`.
-- **Document cache** — Frequently accessed single-instance documents (e.g. system settings) can be cached using `getOrCache(docType:id:)`. The cache is invalidated on any write to that document.
-- **Query result cache** — List queries are not cached by default (SQLite is fast enough for on-device data volumes). Apps can opt in to result caching for expensive computed reports.
-- **Cache invalidation** — All caches use a generation counter. Any schema change increments the generation, forcing a full reload.
+- **MetadataRegistry cache (shipped)** — All DocType definitions are cached in-memory on first access; the cache is invalidated when a DocType is installed, updated, or uninstalled via `AppInstaller`.
+- **MetaComposer `ResolvedMeta` cache (shipped)** — The composed runtime schema is memoised per DocType and invalidated when base / custom-field / property-setter inputs change (§4.1, ADR-021).
+- **ExpressionEvaluator parse cache (shipped)** — Bounded LRU of recently-parsed source strings (default 256 entries, thread-safe via `NSLock`); see §4.7 / P2.1.
+- **CachingDocumentLookupResolver (shipped)** — Read-through cache for cross-document `lookup(...)` calls with per-save invalidation via the typed event bus (§4.7 / ADR-029 / P2.2).
+- **Document / query-result caches (planned)** — A general-purpose `getOrCache(...)` API and opt-in result caching for expensive reports are not implemented. Defer until a profiling pass identifies a hot path that the existing caches don't cover (P3.4).
 
 ---
 
@@ -427,7 +429,10 @@ Key API points:
 - `DocumentLookupResolver` — `lookup(docType:name:field:)` protocol; `CachingDocumentLookupResolver` is the read-through cache with per-save invalidation. (P2.2 / ADR-029)
 - `EventEmitter` — `subscribe(_:handler:)` → `SubscriptionToken`, `publish(_:)`
 - `AppInstaller` — `install(_:)`, `install(manifestData:)`, `validate(manifestData:)`, `uninstall(appId:)`, `decodeManifest(from:)` (P2.3)
-- *`AutomationActionRegistry` is planned (ADR-025) — not yet implemented.*
+- `AutomationActionRegistry` — `register(_:)`, `unregister(actionType:)`, `handler(for:)`, `execute(actionType:document:parameters:context:)` (P1.2 / ADR-025)
+- `AutomationRunner` — Subscribes to `DocumentSavedEvent` / `DocumentSubmittedEvent` / `DocumentCancelledEvent` and dispatches matching `AppManifest.automationRules` through the registry (P1.2)
+- `SchedulerService` — `register(_:)` / `unregister(appId:)`, `start()` / `tick()`; `ExtensionSchedulerRegistrar` conformance (P1.4)
+- `NamingService` — `resolve(...)` plus pluggable `NamingStrategy` registry (P1.1 / ADR-014)
 
 See [ADR-007](Docs/ADR/ADR-007-hub-on-core-public-apis.md).
 

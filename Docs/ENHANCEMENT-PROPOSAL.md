@@ -98,13 +98,17 @@ Until then, §4.4 / ADR-011 accurately document what ships.
 
 `EventBus.swift` is gone; `EventEmitter(legacyBus:)` and the bridge are gone; `DocumentEngine.init` / `WorkflowEngine.init` no longer take an `eventBus` parameter. ADR-012's "superseded" status now matches the code.
 
-### P0.7 — Update ARCHITECTURE.md §7 directory tree [S, zero risk] — doc hygiene
+### P0.7 — Update ARCHITECTURE.md §7 directory tree [S, zero risk] — doc hygiene *(done — 2026-04-26)*
 
-- Remove directories that don't exist (`Automation/`, `Cache/`, `Files/`, `ImportExport/`, `Printing/`, `Scheduling/`) or clearly mark them "(planned — not on disk)". (`Naming/` now exists — see P1.1.)
-- Add `Views/DesignSystem/` to the tree with its "demo-only" caveat.
-- Correct the `DocumentEngine.list` signature in §4.15 to `list(docType:filters:)`.
-- Correct the `PermissionEngine.canPerform` signature in §4.15 to `canPerform(operation:on:userRoles:)`.
-- (Already done in this changeset: ADR-027 added to §8.)
+The §7 directory tree is now an accurate reflection of disk: `Automation/`, `Naming/`, and `Scheduling/` (all shipped via P1.1 / P1.2 / P1.4) are listed as on-disk subsystems; `Cache/`, `Files/`, `ImportExport/`, and `Printing/` (P3.1 / P3.2 / P3.3 / P3.4) are listed in the trailing "Planned, not on disk" block with their ADR / proposal references; `Views/DesignSystem/` is in the tree with its "demo-only" caveat. The `DocumentEngine.list` and `PermissionEngine.canPerform` signatures in §4.15 were already updated through P2.5 / P0.5 — `list(docType:filters:whereExpression:sortBy:limit:offset:)` and `canPerform(operation:on:userRoles:)` are now the canonical forms quoted there.
+
+Three additional drift fixes landed in the same pass:
+
+- **§3 architecture diagram** — UIShell is no longer marked `(planned)` (it ships); `ReportEngine (planned)` is no longer marked planned (it ships); `CacheManager` was removed from the Storage box (no `Cache/` subsystem on disk); `FileManager` and `ImportExport` are now explicitly marked `(planned)`.
+- **§4.14 Caching Layer** — Reframed to show the `Cache/` location as planned (P3.4) and to enumerate the per-subsystem caches that actually ship today: `MetadataRegistry`'s in-memory cache, `MetaComposer`'s `ResolvedMeta` cache (ADR-021), the `ExpressionEvaluator` parse-cache LRU (P2.1), and `CachingDocumentLookupResolver` (P2.2 / ADR-029). The standalone `CacheManager` API (`getOrCache(...)`, opt-in result caching) is correctly marked deferred until profiling identifies a hot path.
+- **§4.15 Public API Surface** — Removed the stale "AutomationActionRegistry is planned" line; added the `AutomationActionRegistry` (P1.2 / ADR-025), `AutomationRunner` (P1.2), `SchedulerService` (P1.4), and `NamingService` (P1.1 / ADR-014) entries that were missing.
+
+(Already done in earlier changesets: ADR-027 added to §8.)
 
 ### P0.8 — `DocumentVersion` stores the full old/new not just a diff summary [S, low risk] — ADR-024 *(done — 2026-04-23)*
 
