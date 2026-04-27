@@ -637,7 +637,12 @@ mercantis core/
 | `ImportExport/` — CSV/JSON importer + exporter + fixtures | §4.20 | — | P3.3 |
 | `Printing/` — `PrintFormat`, `PDFGenerator`, `LetterHead` | §4.17 | — | P3.2 |
 
-**SwiftPM module boundary.** `Package.swift` exposes a `MercantisCore` library product so Hub and third-party apps can `import MercantisCore` from a resolved package dependency (ADR-007, P2.6). The library target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]` — every engine subsystem above is part of the public package; the SwiftUI shell and `@main` entry stay in the Xcode app target. GRDB is declared as a SwiftPM dependency on the library target. The `mercantis` CLI executable now also depends on `MercantisCore` for its `install-app` / `list-apps` / `new-app` / `new-doctype` commands so both install surfaces share one schema and one `AppInstaller` pipeline (P2.3); the `SQLite3` system-library link is still wired for the patch commands (`migrate`, `create-patch`, `run-patch`), which operate on raw SQL patch files.
+**SwiftPM module boundary.** `Package.swift` exposes two library products so Hub and third-party apps can pick the surface they need (ADR-007, P2.6, P2.7):
+
+- `MercantisCore` — the headless engine. The target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]` — every engine subsystem above is part of the public package, with no SwiftUI / AppKit / UIKit imports anywhere in its transitive graph. CLI and server-side consumers depend on this product only.
+- `MercantisCoreUI` — the metadata-driven SwiftUI shell (`GenericFormView`, `GenericListView`, `NavigationShell`, `DocTypeBuilderView`, `FormBuilderView`, `CommandBarView`, `RecordCollectionHostView`, …). Sources live in `mercantis core/UIShell/`. Depends on `MercantisCore`. Apps that want the out-of-the-box renderer add this product on the app target; apps that don't need SwiftUI keep using `MercantisCore` alone (P2.7).
+
+GRDB is declared as a SwiftPM dependency on both library targets (`UIShell/DocTypeBuilderView.swift` queries `apps.payload` via GRDB to project installed `AppManifest`s into the builder context). The `mercantis` CLI executable depends on `MercantisCore` for its `install-app` / `list-apps` / `new-app` / `new-doctype` commands so both install surfaces share one schema and one `AppInstaller` pipeline (P2.3); the `SQLite3` system-library link is still wired for the patch commands (`migrate`, `create-patch`, `run-patch`), which operate on raw SQL patch files. A `MercantisCoreUITests` SwiftPM test target instantiates `GenericFormView` / `GenericListView` against an in-memory `DocumentEngine` so the new product can't bit-rot silently.
 
 ---
 

@@ -679,7 +679,33 @@ ADR-007's "public/internal boundary in Core is enforced by the Swift module syst
 - The XCTest files in `mercantis coreTests/` use `@testable import mercantis_core` (the Xcode app module name). They are not yet wired as a SwiftPM `testTarget` against `MercantisCore`. P0.1 already tracks the Xcode-side wire-up; mirroring as a SwiftPM test target would require `@testable import MercantisCore` and is left to follow up.
 - The CLI target consolidating onto `MercantisCore` (instead of its own raw-SQLite path) remains P2.3.
 
-### P2.7 — Hub-on-Core readiness: what is sufficient vs. what is still missing [S, low risk] — ADR-007
+### P2.7 — Promote `UIShell/` to a public library product (`MercantisCoreUI`) [S, low risk] — ADR-007 / ADR-016 *(done — 2026-04-27)*
+
+`UIShell/GenericFormView` and `UIShell/GenericListView` were `exclude:`'d from the `MercantisCore` SwiftPM library, so downstream apps importing `MercantisCore` couldn't render DocType-driven forms or lists — they had to hand-roll SwiftUI per DocType against `DocumentEngine` directly. Hub hit this on the very first DocType (Customer): `engine.save(_:)` worked end-to-end (validation, naming, versioning, sync queue) but the UI was a single `TextField` + `Save Customer` button.
+
+`Package.swift` now declares a second library product:
+
+```swift
+products: [
+    .library(name: "MercantisCore",   targets: ["MercantisCore"]),
+    .library(name: "MercantisCoreUI", targets: ["MercantisCoreUI"]),
+    .executable(name: "mercantis",    targets: ["mercantis"])
+]
+```
+
+The `MercantisCoreUI` target points at `mercantis core/UIShell/` and declares `MercantisCore` + GRDB as dependencies. `MercantisCore`'s `exclude:` list still carries `"UIShell"` so the two targets don't fight over the same source directory (SwiftPM rejects overlapping source paths between targets); the exclude is now load-bearing for the partition rather than for "UI is out of scope". `MercantisCore`'s transitive graph still does not import SwiftUI / AppKit / UIKit, and the `mercantis` CLI executable depends on `MercantisCore` only — so headless consumers (CLI, server-side, tests) still don't pull SwiftUI.
+
+`GenericFormView` and `GenericListView` were already `public struct` with `public init`s (the engine-side API surface was already designed for cross-module consumption); only the SwiftPM target geometry needed to change. The other UIShell types (`NavigationShell`, `DocTypeBuilderView`, `FormBuilderView`, `CommandBarView`, `RecordCollectionHostView`, `RecordWorkspaceToolbarContent`, `SelectedRecordHeader`, `DocTypeListView`, `RecordViewMode`, `RecordCollectionViewConfiguration`) ride along as part of the same product. Theme / style helpers (`MercantisTheme`, button styles, view modifiers) are deliberately internal to the UI library — they're implementation detail of the renderer.
+
+A `MercantisCoreUITests` SwiftPM test target instantiates `GenericFormView` and `GenericListView` against an in-memory `DocumentEngine` so the new product can't bit-rot silently when engine-side public types shift.
+
+**Hub-side follow-up (already prepped):** Hub's `mercantis hub/UI/CustomerFormView.swift` already has a `#if canImport(MercantisCoreUI)` block; activating it is now a Hub-side package-graph change (tick `MercantisCoreUI` on the Hub app target) plus matching the actual `GenericFormView` init signature (`docType: DocType, document: Binding<Document>` — not the speculative `(docType: String, engine: DocumentEngine)` the prep file used).
+
+**Known follow-ups (not scoped to P2.7):**
+- The Xcode app target still compiles `UIShell/` via project membership rather than via the `MercantisCoreUI` SwiftPM product. Same situation as the engine target — shipping the library declaration is sufficient for Hub today; the `.pbxproj` migration is a separate item.
+- `DocTypeBuilderView` does `fatalError` when its metadata DB won't open. That's a pre-existing footgun documented in §2.17 of `IMPLEMENTATION-STATUS.md`, not introduced by this change.
+
+### P2.7a — Hub-on-Core readiness: what is sufficient vs. what is still missing [S, low risk] — ADR-007
 
 This is a gap-analysis item, not a criticism of ADR-007. The direction in ADR-007 is correct. The question is: *how much of it is already true?*
 
@@ -783,7 +809,7 @@ A 4–6 week plan if one engineer is the target:
 | 7 | P2.2 cross-document `lookup()` ✅ (2026-04-25) (`DocumentLookupResolver` + read-through `CachingDocumentLookupResolver` with per-save invalidation; `DocumentEngine.list` `whereExpression` runs through the cached evaluator; ADR-029 lands the sandbox + budget posture). |
 | 7 | P2.3 CLI / app install consolidation ✅ (2026-04-25) (`AppInstaller.install(manifestData:)` + CLI consumes `MercantisCore`; canonical schema everywhere; `FieldDefinition` decoder lenient on layout fields; expression indexes created uniformly). |
 
-P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
+P2.6 (Core library productization) ✅ shipped 2026-04-25 — the `MercantisCore` library product now exists, so Hub development can start importing Core via `.package(url: ...)`. P2.7 (`MercantisCoreUI` library product) ✅ shipped 2026-04-27 — `GenericFormView` / `GenericListView` are now reachable from any package consumer; Hub can drive its DocType-driven forms off Core without hand-rolling per-DocType SwiftUI. P2.7a (Hub readiness gap analysis) is a documentation item that can run in parallel with any P1 work. P2.4 (dashboard runtime) and P2.8 (richer field/control model) are both medium-term items best driven by Hub's concrete needs rather than by speculative pre-design.
 
 P3.6 (POS platform) should not begin until P1.1, P3.2, P2.8, and P1.2/P1.3 are substantially complete. The sequencing dependency is real: a POS without naming, printing, richer controls, and automation is not a POS.
 
@@ -815,4 +841,4 @@ This is not pessimism. It is roadmap clarity.
 - **Rich dashboards** — `DashboardDefinition` decodes; nothing renders. Module home pages fall back to flat lists.
 - **POS** — requires Naming, Printing, richer field/control model, Automation runtime, and likely a purpose-built cart surface. None of these are done.
 - **Polished ERP-grade control richness** — `FieldType` covers CRUD adequately; it does not cover child-table editing UX, barcode input, image fields, or link search pickers at the level an ERP demands.
-- **Fully proven Core → Hub public API sufficiency** — Core is strong enough to start Hub. It is not yet strong enough to claim that all subsystems a production ERP needs are in place and accessible through the public API. That claim becomes true as the missing subsystems in P2.7's gap table are closed.
+- **Fully proven Core → Hub public API sufficiency** — Core is strong enough to start Hub. It is not yet strong enough to claim that all subsystems a production ERP needs are in place and accessible through the public API. That claim becomes true as the missing subsystems in P2.7a's gap table are closed.

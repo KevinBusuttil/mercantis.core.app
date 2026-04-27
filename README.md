@@ -27,6 +27,22 @@ Mercantis Core is the general-purpose platform layer that provides the foundatio
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture document, including subsystem descriptions, design principles, and an ASCII diagram.
 
+## SwiftPM products
+
+`Package.swift` exposes two library products:
+
+- **`MercantisCore`** — the headless engine. No SwiftUI / AppKit / UIKit anywhere in its transitive graph; safe for CLI and server-side consumers.
+- **`MercantisCoreUI`** — the metadata-driven SwiftUI shell that renders any registered `DocType`. Depends on `MercantisCore`.
+
+```swift
+import MercantisCore
+import MercantisCoreUI
+
+GenericFormView(docType: customerDocType, document: $document)
+```
+
+`GenericFormView` and `GenericListView` are driven entirely by `DocType` metadata, so adding a new entity to your app means registering a `DocType` — not writing a new SwiftUI form. See `mercantis core/UIShell/GenericFormView.swift` for the public init signature.
+
 ## Runtime UX Boundary
 
 - The default app runtime launches into the domain-neutral `NavigationShell` (`mercantis core/UIShell/NavigationShell.swift`).
