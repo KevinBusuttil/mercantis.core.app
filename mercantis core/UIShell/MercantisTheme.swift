@@ -1,4 +1,5 @@
 import SwiftUI
+import MercantisCore
 #if os(macOS)
 import AppKit
 #elseif os(iOS)

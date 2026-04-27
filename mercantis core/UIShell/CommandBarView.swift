@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MercantisCore
 
 public struct CommandBarAction: Identifiable {
     public let id: String

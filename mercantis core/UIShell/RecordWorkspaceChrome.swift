@@ -1,4 +1,5 @@
 import SwiftUI
+import MercantisCore
 
 public struct RecordWorkspaceToolbarContent: ToolbarContent {
     let statusText: String

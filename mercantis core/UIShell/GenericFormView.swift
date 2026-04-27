@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MercantisCore
 
 /// A SwiftUI view that renders a form dynamically from a `DocType` and a `Document`.
 public struct GenericFormView: View {
