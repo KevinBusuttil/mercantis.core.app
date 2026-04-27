@@ -923,6 +923,7 @@ private enum RecentDestination: Hashable, Identifiable {
         }
     }
 
+    @MainActor
     func title(using tooling: DocTypeToolingContext) -> String {
         switch self {
         case .docType(let id):
