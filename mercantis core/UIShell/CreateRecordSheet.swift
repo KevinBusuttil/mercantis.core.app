@@ -1,4 +1,5 @@
 import SwiftUI
+import MercantisCore
 
 /// Modal sheet used to create a new record of a given `DocType`.
 ///

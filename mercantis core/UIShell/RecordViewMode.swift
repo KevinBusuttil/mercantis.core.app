@@ -1,4 +1,5 @@
 import Foundation
+import MercantisCore
 
 public enum RecordViewMode: String, CaseIterable, Codable, Hashable, Identifiable {
     case list

@@ -1,4 +1,5 @@
 import SwiftUI
+import MercantisCore
 
 public struct RecordCollectionHostView: View {
     let preferenceKey: String

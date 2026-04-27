@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import MercantisCore
 #if os(macOS)
 import AppKit
 #elseif os(iOS)

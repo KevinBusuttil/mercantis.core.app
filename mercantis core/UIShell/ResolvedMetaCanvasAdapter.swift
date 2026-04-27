@@ -1,4 +1,5 @@
 import Foundation
+import MercantisCore
 
 struct CanvasSectionViewModel: Identifiable, Hashable {
     let id: String
