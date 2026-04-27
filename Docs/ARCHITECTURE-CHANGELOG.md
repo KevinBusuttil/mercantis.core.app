@@ -1,5 +1,39 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-04-27 (MercantisCoreUI library product shipped — P2.7)
+
+This revision promotes `mercantis core/UIShell/` to its own SwiftPM library product (`MercantisCoreUI`) so downstream apps that `import MercantisCore` can also `import MercantisCoreUI` and reach `GenericFormView` / `GenericListView` directly, instead of hand-rolling a SwiftUI form per DocType.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `Package.swift` | Added `.library(name: "MercantisCoreUI", targets: ["MercantisCoreUI"])` product. New `MercantisCoreUI` target points at `mercantis core/UIShell/` and depends on `MercantisCore` + GRDB. `MercantisCore`'s `exclude:` list still carries `"UIShell"` — the exclude is now load-bearing for the target partition (SwiftPM rejects overlapping source paths), not for "UI is out of scope". CLI executable target remains on `MercantisCore` only, so SwiftUI stays out of the CLI's transitive graph. New `MercantisCoreUITests` SwiftPM test target. |
+| `Tests/MercantisCoreUITests/GenericFormViewSmokeTests.swift` *(new)* | Smoke tests that build an in-memory `DocumentEngine`, register a `Customer` DocType, and instantiate `GenericFormView` / `GenericListView` against it. Catches bit-rot when engine-side public types drift. |
+
+### Boundary established
+
+- `MercantisCore` — engine library, no SwiftUI / AppKit / UIKit anywhere in its transitive graph. CLI / server-side / headless consumers depend on this only.
+- `MercantisCoreUI` — SwiftUI shell library. Sources: `mercantis core/UIShell/` (`GenericFormView`, `GenericListView`, `NavigationShell`, `DocTypeBuilderView`, `FormBuilderView`, `CommandBarView`, `RecordCollectionHostView`, `RecordWorkspaceToolbarContent`, `SelectedRecordHeader`, `DocTypeListView`, `RecordViewMode`, `RecordCollectionViewConfiguration`, plus internal theme / modifier scaffolding).
+- `GenericFormView` / `GenericListView` were already `public struct` with `public init`s — only the SwiftPM target geometry needed to change.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ENHANCEMENT-PROPOSAL.md` | New P2.7 entry (UIShell promotion, marked shipped). The previous P2.7 (Hub-on-Core readiness gap analysis) renamed to P2.7a; cross-references updated. Sequencing footer updated. |
+| `Docs/IMPLEMENTATION-STATUS.md` §4 | "SwiftPM products" expanded to three products (added `MercantisCoreUI` row). UIShell row in §1 directory table cross-references the new product. |
+| `ARCHITECTURE.md` §7 | "SwiftPM module boundary" rewritten to describe both library products and the CLI's `MercantisCore`-only dependency. |
+| `README.md` | New "SwiftPM products" section with a one-line `GenericFormView` usage snippet under `import MercantisCoreUI`. |
+
+### Known follow-ups
+
+- The Xcode app target still compiles `UIShell/` via project membership rather than via the `MercantisCoreUI` SwiftPM product. Same situation as the engine target — shipping the library declaration is sufficient for Hub today; the `.pbxproj` migration is a separate item.
+- Hub's `mercantis hub/UI/CustomerFormView.swift` already has a `#if canImport(MercantisCoreUI)` block; activating it is now a Hub-side package-graph change plus matching `GenericFormView`'s actual init signature (`docType: DocType, document: Binding<Document>`, not `(docType: String, engine: DocumentEngine)`).
+- `DocTypeBuilderView`'s `fatalError`-on-DB-open-failure is a pre-existing footgun (§2.17 of `IMPLEMENTATION-STATUS.md`), not introduced by this change.
+
+---
+
 ## Revision: 2026-04-25 (ExpressionEvaluator AST shipped — P2.1)
 
 This revision records the long-promised lift of `ExpressionEngine/` from a string-walking evaluator to a typed-AST parser + interpreter, plus the install-time static-analysis wiring it unlocks.

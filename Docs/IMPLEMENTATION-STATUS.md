@@ -37,7 +37,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 | `Scheduling/` | Yes | Ships `ScheduledTask`, `CronExpression`, `SchedulerPersistence`, `SchedulerService` (P1.4 / §4.13, 2026-04-24). `SchedulerService` conforms to `ExtensionSchedulerRegistrar` so manifest-declared `schedulerEvents` are registered through `ExtensionPointResolver` exactly like document-event subscriptions. Cadence is persisted in the v6 `scheduler_state` table. |
 | `Storage/` | Yes | Matches §4.3. |
 | `SyncEngine/` | Yes | Also contains `CloudAdapter.swift` with a `NoOpCloudAdapter` — not listed in §7 but referenced elsewhere (ADR-018). |
-| `UIShell/` | Yes (much larger than §7) | See §4 "UIShell reality" below. |
+| `UIShell/` | Yes (much larger than §7) | See §4 "UIShell reality" below. Now its own SwiftPM library product `MercantisCoreUI` (P2.7). |
 | `Workflows/` | Yes | Matches §4.5. |
 | `Views/DesignSystem/` | **On disk, not in §7** | 14 files of demo/design-lab surfaces. Mentioned in prose in §5.1 but not in the tree. |
 
@@ -189,13 +189,16 @@ Both `Modules` and `DocTypes` route through `RecordCollectionHostView`, so all s
 
 ## 4. SwiftPM products
 
-`Package.swift` declares two products:
+`Package.swift` declares three products:
 
 - `.library(name: "MercantisCore", targets: ["MercantisCore"])` — the engine, importable via `.package(url:from:)`. The target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]`, so SwiftUI / app-shell code is deliberately not part of the library. GRDB (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) is declared on the library target. Shipped in P2.6 (2026-04-25).
-- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Now depends on `MercantisCore` (P2.3) for `install-app` / `list-apps` / `new-app` / `new-doctype`. The `SQLite3` system-library link is still wired for the patch commands (`migrate`, `create-patch`, `run-patch`), which operate on `patch_log` and arbitrary SQL deltas rather than the engine schema.
+- `.library(name: "MercantisCoreUI", targets: ["MercantisCoreUI"])` — the SwiftUI shell. The target points at `mercantis core/UIShell/` and depends on `MercantisCore` + GRDB. Ships `GenericFormView`, `GenericListView`, `NavigationShell`, `DocTypeBuilderView`, `FormBuilderView`, `CommandBarView`, `RecordCollectionHostView`, and supporting view types as the public renderer surface. Hub and any third-party app that wants the out-of-the-box metadata-driven UI imports this product; headless consumers stick with `MercantisCore`. Shipped in P2.7 (2026-04-27).
+- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Depends on `MercantisCore` (P2.3) for `install-app` / `list-apps` / `new-app` / `new-doctype`, and intentionally does **not** depend on `MercantisCoreUI`, so SwiftUI stays out of the CLI's transitive graph. The `SQLite3` system-library link is still wired for the patch commands (`migrate`, `create-patch`, `run-patch`), which operate on `patch_log` and arbitrary SQL deltas rather than the engine schema.
+
+A SwiftPM `MercantisCoreUITests` test target instantiates `GenericFormView` / `GenericListView` against an in-memory `DocumentEngine` so the new product can't bit-rot silently.
 
 Notes on consumers:
-- The Xcode app target (`mercantis core`) still compiles the engine source via project membership rather than via the SwiftPM library. The `.library` declaration is sufficient for Hub to consume Core today; migrating the Xcode app to consume the SwiftPM library is a `.pbxproj` change best done in Xcode itself.
+- The Xcode app target (`mercantis core`) still compiles the engine source via project membership rather than via the SwiftPM library. The `.library` declarations are sufficient for Hub to consume Core today; migrating the Xcode app to consume the SwiftPM libraries is a `.pbxproj` change best done in Xcode itself.
 - The XCTest files in `mercantis coreTests/` use `@testable import mercantis_core` (the Xcode app module name) and are not yet wired as a SwiftPM test target. P0.1 tracks the Xcode-side wire-up.
 
 ## 5. The MercantisCLI target
