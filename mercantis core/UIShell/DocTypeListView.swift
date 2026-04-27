@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 public struct DocTypeListView: View {
     @EnvironmentObject private var tooling: DocTypeToolingContext

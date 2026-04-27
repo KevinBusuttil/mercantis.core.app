@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 public enum RecordViewMode: String, CaseIterable, Codable, Hashable, Identifiable {
     case list

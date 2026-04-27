@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 struct CanvasSectionViewModel: Identifiable, Hashable {
     let id: String

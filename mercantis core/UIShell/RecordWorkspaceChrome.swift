@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 public struct RecordWorkspaceToolbarContent: ToolbarContent {
     let statusText: String

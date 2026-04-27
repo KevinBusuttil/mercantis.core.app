@@ -6,7 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 public struct CommandBarAction: Identifiable {
     public let id: String
