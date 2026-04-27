@@ -203,7 +203,7 @@ public struct DocTypeListView: View {
 
     private func openVisualBuilder(for docType: DocType) {
         #if os(macOS)
-        openWindow(id: mercantis_coreApp.visualBuilderWindowID, value: docType.id)
+        openWindow(id: MercantisShellWindow.visualBuilderID, value: docType.id)
         #else
         selectedDocTypeForBuilder = docType
         #endif

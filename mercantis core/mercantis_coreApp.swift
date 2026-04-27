@@ -9,8 +9,6 @@ import SwiftUI
 
 @main
 struct mercantis_coreApp: App {
-    static let visualBuilderWindowID = "visual-builder"
-
     @StateObject private var docTypeTooling = DocTypeToolingContext()
     @StateObject private var shellRouter = UIShellRouter()
 
@@ -51,7 +49,7 @@ struct mercantis_coreApp: App {
 
     #if os(macOS)
     private var visualBuilderWindow: some Scene {
-        WindowGroup("Visual Builder", id: Self.visualBuilderWindowID, for: String.self) { $docTypeID in
+        WindowGroup("Visual Builder", id: MercantisShellWindow.visualBuilderID, for: String.self) { $docTypeID in
             NavigationStack {
                 if let selectedDocTypeID = docTypeID {
                     FormBuilderView(initialDocTypeID: selectedDocTypeID) {

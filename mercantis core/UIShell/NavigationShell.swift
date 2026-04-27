@@ -943,6 +943,13 @@ extension Notification.Name {
     static let mercantisOpenCommandBar = Notification.Name("mercantis.openCommandBar")
 }
 
+/// Stable identifiers for windows surfaced by `MercantisCoreUI`. Hoisted out of
+/// the app entry point so library consumers (e.g. `mercantis.hub.app`) can
+/// open these windows without depending on the standalone Xcode app target.
+public enum MercantisShellWindow {
+    public static let visualBuilderID = "visual-builder"
+}
+
 struct WorkspaceDefinition: Identifiable, Hashable {
     enum Placement: Hashable {
         case primary
