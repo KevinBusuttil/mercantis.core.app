@@ -6,7 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 /// A SwiftUI view that renders a sortable, filterable list of documents
 /// driven entirely by `DocType` metadata.

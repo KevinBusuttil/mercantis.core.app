@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 private struct BuilderPaletteGroup: Identifiable {
     let id: String

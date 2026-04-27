@@ -1,7 +1,9 @@
 import SwiftUI
 import Combine
 import GRDB
+#if canImport(MercantisCore)
 import MercantisCore
+#endif
 
 @MainActor
 final class DocTypeToolingContext: ObservableObject {
