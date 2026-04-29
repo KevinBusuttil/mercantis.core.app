@@ -123,12 +123,14 @@ public struct LinkPickerField: View {
                 }
             }
             .listStyle(.plain)
-            .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search \(targetDocType)")
+            .searchable(text: $searchQuery, placement: .automatic, prompt: "Search \(targetDocType)")
             .onChange(of: searchQuery) { _, query in
                 searchResults = runSearch(query: query)
             }
             .navigationTitle("Select \(targetDocType)")
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { isPickerPresented = false }
