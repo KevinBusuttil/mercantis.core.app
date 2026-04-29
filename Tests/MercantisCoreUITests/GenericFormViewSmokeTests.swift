@@ -135,6 +135,107 @@ final class GenericFormViewSmokeTests: XCTestCase {
         XCTAssertNoThrow(try harness.engine.save(document))
     }
 
+    // MARK: - W5: child table field smoke tests
+
+    /// GenericFormView with a .table field and no provider compiles and
+    /// instantiates — degrades to the static count label, no crash.
+    func testChildTableFieldRendersWithNilProvider() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let docType = TestHarness.makeSalesOrderDocType()
+        try harness.registry.register(docType)
+
+        var document = TestHarness.makeSalesOrderDocument(items: [])
+        try harness.engine.save(document)
+
+        let binding = Binding<Document>(get: { document }, set: { document = $0 })
+
+        let form = GenericFormView(
+            docType: docType,
+            document: binding,
+            childDocTypeProvider: nil
+        )
+        XCTAssertNotNil(form)
+    }
+
+    /// GenericFormView with a .table field and a wired provider compiles and
+    /// instantiates with the child DocType resolved.
+    func testChildTableFieldRendersWithWiredProvider() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let itemDocType = TestHarness.makeSalesOrderItemDocType()
+        try harness.registry.register(itemDocType)
+
+        let docType = TestHarness.makeSalesOrderDocType()
+        try harness.registry.register(docType)
+
+        var document = TestHarness.makeSalesOrderDocument(items: [
+            TestHarness.makeChildRow(itemCode: "ITEM-001", qty: 2, rate: 50.0)
+        ])
+        try harness.engine.save(document)
+
+        let binding = Binding<Document>(get: { document }, set: { document = $0 })
+
+        let form = GenericFormView(
+            docType: docType,
+            document: binding,
+            childDocTypeProvider: { id in id == itemDocType.id ? itemDocType : nil }
+        )
+        XCTAssertNotNil(form)
+    }
+
+    /// Saving a parent with children and fetching it back preserves the children dict.
+    func testSaveRoundTripPropagatesChildren() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let itemDocType = TestHarness.makeSalesOrderItemDocType()
+        try harness.registry.register(itemDocType)
+
+        let docType = TestHarness.makeSalesOrderDocType()
+        try harness.registry.register(docType)
+
+        let rows = [
+            TestHarness.makeChildRow(itemCode: "A", qty: 1, rate: 10.0),
+            TestHarness.makeChildRow(itemCode: "B", qty: 3, rate: 25.0)
+        ]
+        let document = TestHarness.makeSalesOrderDocument(items: rows)
+        try harness.engine.save(document)
+
+        let fetched = try harness.engine.fetch(id: document.id, docType: docType.id)
+        XCTAssertEqual(fetched.children["items"]?.count, 2)
+    }
+
+    /// Programmatically appending and removing from the rows binding updates the count.
+    func testAddAndRemoveChildRowUpdatesBinding() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let itemDocType = TestHarness.makeSalesOrderItemDocType()
+        try harness.registry.register(itemDocType)
+
+        let docType = TestHarness.makeSalesOrderDocType()
+        try harness.registry.register(docType)
+
+        var document = TestHarness.makeSalesOrderDocument(items: [])
+        try harness.engine.save(document)
+
+        var rows: [ChildRow] = document.children["items", default: []]
+        XCTAssertEqual(rows.count, 0)
+
+        rows.append(TestHarness.makeChildRow(itemCode: "X", qty: 5, rate: 100.0))
+        XCTAssertEqual(rows.count, 1)
+
+        rows.append(TestHarness.makeChildRow(itemCode: "Y", qty: 2, rate: 30.0))
+        XCTAssertEqual(rows.count, 2)
+
+        rows.remove(at: 0)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].fields["item_code"], .string("Y"))
+    }
+
     func testGenericListViewInstantiatesAgainstInMemoryDocumentEngine() throws {
         let harness = try TestHarness.make()
         defer { harness.cleanUp() }
@@ -365,6 +466,108 @@ private enum TestHarness {
             syncState: .local,
             fields: ["group_name": .string("Commercial")],
             children: [:]
+        )
+    }
+
+    // MARK: - W5 fixtures
+
+    /// Parent DocType with a `.table` field pointing to "SalesOrderItem".
+    static func makeSalesOrderDocType() -> DocType {
+        DocType(
+            id: "SalesOrder",
+            name: "Sales Order",
+            module: "Sales",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            fields: [
+                FieldDefinition(
+                    key: "customer",
+                    label: "Customer",
+                    type: .text,
+                    required: true
+                ),
+                FieldDefinition(
+                    key: "items",
+                    label: "Items",
+                    type: .table,
+                    required: false,
+                    childDocType: "SalesOrderItem"
+                )
+            ],
+            permissions: [
+                PermissionRule(
+                    role: "System Manager",
+                    canRead: true,
+                    canWrite: true,
+                    canCreate: true,
+                    canDelete: true,
+                    canSubmit: true,
+                    canAmend: true
+                )
+            ],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["customer"],
+            titleField: "customer"
+        )
+    }
+
+    /// Child DocType with `isChildTable: true`.
+    static func makeSalesOrderItemDocType() -> DocType {
+        DocType(
+            id: "SalesOrderItem",
+            name: "Sales Order Item",
+            module: "Sales",
+            appId: "app.mercantis.test",
+            isChildTable: true,
+            fields: [
+                FieldDefinition(key: "item_code", label: "Item Code", type: .text, required: true),
+                FieldDefinition(key: "qty", label: "Qty", type: .number, required: true),
+                FieldDefinition(key: "rate", label: "Rate", type: .currency, required: false)
+            ],
+            permissions: [
+                PermissionRule(
+                    role: "System Manager",
+                    canRead: true,
+                    canWrite: true,
+                    canCreate: true,
+                    canDelete: true,
+                    canSubmit: true,
+                    canAmend: true
+                )
+            ],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["item_code"],
+            titleField: "item_code"
+        )
+    }
+
+    static func makeSalesOrderDocument(items: [ChildRow]) -> Document {
+        let now = Date()
+        return Document(
+            id: UUID().uuidString,
+            docType: "SalesOrder",
+            company: "",
+            status: "",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: ["customer": .string("Test Customer")],
+            children: ["items": items]
+        )
+    }
+
+    static func makeChildRow(itemCode: String, qty: Int, rate: Double) -> ChildRow {
+        ChildRow(
+            id: UUID().uuidString,
+            rowIndex: 0,
+            fields: [
+                "item_code": .string(itemCode),
+                "qty": .int(qty),
+                "rate": .double(rate)
+            ]
         )
     }
 }

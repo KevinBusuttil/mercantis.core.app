@@ -17,6 +17,11 @@ import MercantisCore
 /// it typically wraps `engine.list(docType:whereExpression:)`. When `nil` (the
 /// default), link fields fall back to plain text entry so existing callers are
 /// unaffected. (W4 / ADR-030)
+///
+/// Pass `childDocTypeProvider` to enable inline editing of `.table` fields. The
+/// closure receives a child DocType id and returns the resolved `DocType`. When
+/// `nil` (the default), table fields degrade to the static row-count label so
+/// existing callers are unaffected. (W5 / ADR-031)
 public struct GenericFormView: View {
 
     let docType: DocType
@@ -24,19 +29,22 @@ public struct GenericFormView: View {
     let userRoles: Set<String>
     let expressionEvaluator: ExpressionEvaluator
     let linkSearchProvider: ((String, String) -> [Document])?
+    let childDocTypeProvider: ((String) -> DocType?)?
 
     public init(
         docType: DocType,
         document: Binding<Document>,
         userRoles: Set<String> = [],
         expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
-        linkSearchProvider: ((String, String) -> [Document])? = nil
+        linkSearchProvider: ((String, String) -> [Document])? = nil,
+        childDocTypeProvider: ((String) -> DocType?)? = nil
     ) {
         self.docType = docType
         self._document = document
         self.userRoles = userRoles
         self.expressionEvaluator = expressionEvaluator
         self.linkSearchProvider = linkSearchProvider
+        self.childDocTypeProvider = childDocTypeProvider
     }
 
     public var body: some View {
@@ -261,15 +269,16 @@ public struct GenericFormView: View {
     }
 
     private func tableField(field: FieldDefinition) -> some View {
-        let rows = document.children[field.key, default: []]
-        return HStack {
-            Text("\(rows.count) row\(rows.count == 1 ? "" : "s")")
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("Table")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
+        let childDocType = field.childDocType.flatMap { childDocTypeProvider?($0) }
+        return ChildTableField(
+            field: field,
+            childDocType: childDocType,
+            rows: Binding(
+                get: { document.children[field.key, default: []] },
+                set: { document.children[field.key] = $0 }
+            ),
+            isReadOnly: false
+        )
     }
 
     private func attachmentField(field: FieldDefinition, isReadOnly: Bool) -> some View {
