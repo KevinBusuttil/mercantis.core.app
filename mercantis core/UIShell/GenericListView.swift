@@ -130,6 +130,8 @@ public struct GenericListView: View {
                                     .foregroundStyle(.secondary)
                                 Text(value)
                                     .font(.subheadline)
+                                    .lineLimit(field.type == .richText ? 1 : nil)
+                                    .truncationMode(.tail)
                             }
                         }
                     }
@@ -193,8 +195,11 @@ public struct GenericListView: View {
     }
 
     private func displayValue(for key: String, in doc: Document) -> String {
+        let fieldType = docType.fields.first(where: { $0.key == key })?.type
         switch doc.fields[key] {
-        case .string(let s): return s.isEmpty ? "—" : s
+        case .string(let s):
+            let value = fieldType == .richText ? plainText(fromMarkdown: s) : s
+            return value.isEmpty ? "—" : value
         case .int(let i): return "\(i)"
         case .double(let d): return String(format: "%.2f", d)
         case .bool(let b): return b ? "Yes" : "No"
@@ -203,6 +208,14 @@ public struct GenericListView: View {
         case .array(let xs): return "[\(xs.count) items]"
         case .null, nil: return "—"
         }
+    }
+
+    private func plainText(fromMarkdown markdown: String) -> String {
+        let characters = ((try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)).characters
+        return characters
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .joined(separator: " ")
     }
 
     private func statusBadge(for status: String) -> some View {

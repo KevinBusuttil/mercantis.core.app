@@ -126,6 +126,8 @@ public struct GenericFormView: View {
             textField(field: field, isReadOnly: isReadOnly)
         case .longText:
             longTextField(field: field, isReadOnly: isReadOnly)
+        case .richText:
+            richTextField(field: field, isReadOnly: isReadOnly)
         case .number, .decimal, .currency:
             numberField(field: field, isReadOnly: isReadOnly)
         case .boolean:
@@ -172,6 +174,10 @@ public struct GenericFormView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    private func richTextField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        RichTextField(value: stringBinding(for: field), isReadOnly: isReadOnly)
     }
 
     private func numberField(field: FieldDefinition, isReadOnly: Bool) -> some View {
