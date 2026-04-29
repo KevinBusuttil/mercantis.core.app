@@ -198,13 +198,17 @@ public struct GenericListView: View {
         let fieldType = docType.fields.first(where: { $0.key == key })?.type
         switch doc.fields[key] {
         case .string(let s):
+            if fieldType == .image {
+                return s.isEmpty ? "—" : "<image>"
+            }
             let value = fieldType == .richText ? plainText(fromMarkdown: s) : s
             return value.isEmpty ? "—" : value
         case .int(let i): return "\(i)"
         case .double(let d): return String(format: "%.2f", d)
         case .bool(let b): return b ? "Yes" : "No"
         case .date(let d), .dateTime(let d): return ISO8601DateFormatter().string(from: d)
-        case .data(let d): return "<\(d.count) bytes>"
+        case .data(let d):
+            return fieldType == .image ? "<image>" : "<\(d.count) bytes>"
         case .array(let xs): return "[\(xs.count) items]"
         case .null, nil: return "—"
         }

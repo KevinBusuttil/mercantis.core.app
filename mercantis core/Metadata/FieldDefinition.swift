@@ -25,6 +25,7 @@ public enum FieldType: String, Codable, Sendable, CaseIterable {
     case link
     case table
     case attachment
+    case image
     case status
     case formula
 }

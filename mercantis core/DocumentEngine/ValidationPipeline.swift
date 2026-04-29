@@ -252,7 +252,7 @@ public struct TypeCoercionStage: ValidationStage {
         case .text, .longText, .richText, .email, .phone, .select, .status, .multiselect, .link:
             if case .string = value { return true }
             return false
-        case .attachment:
+        case .attachment, .image:
             // Attachments identify a blob — string id today, P1.6 `.data` inline path.
             switch value {
             case .string, .data: return true
