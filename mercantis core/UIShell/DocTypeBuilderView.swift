@@ -1015,6 +1015,7 @@ public struct DocTypeBuilderView: View {
         case .table:                    return "tablecells"
         case .formula:                  return "function"
         case .attachment:               return "paperclip"
+        case .image:                    return "photo"
         case .status:                   return "flag"
         }
     }

@@ -146,6 +146,8 @@ public struct GenericFormView: View {
             tableField(field: field)
         case .attachment:
             attachmentField(field: field, isReadOnly: isReadOnly)
+        case .image:
+            imageField(field: field, isReadOnly: isReadOnly)
         }
     }
 
@@ -298,6 +300,19 @@ public struct GenericFormView: View {
                     .mercantisInput()
             }
         }
+    }
+
+    private func imageField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let binding = Binding<Data?>(
+            get: {
+                if case .data(let d) = document.fields[field.key] { return d }
+                return nil
+            },
+            set: { newValue in
+                document.fields[field.key] = newValue.map(FieldValue.data) ?? .null
+            }
+        )
+        return ImageField(value: binding, isReadOnly: isReadOnly)
     }
 
     private func formulaField(field: FieldDefinition) -> some View {

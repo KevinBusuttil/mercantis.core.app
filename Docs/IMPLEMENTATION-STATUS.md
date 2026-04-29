@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-29 (W7 — rich text field type)_
+_Last updated: 2026-04-29 (W8 — image field type)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -159,6 +159,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 - **Link picker (W4 / ADR-030, 2026-04-29)** — `LinkPickerField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `linkSearchProvider: ((String, String) -> [Document])?` closure; when supplied the form renders a search-as-you-type picker sheet for `FieldType.link` fields. When `nil` (the default), the form falls back to plain `TextField` — fully backwards-compatible.
 - **Inline child-table editor (W5 / ADR-031, 2026-04-29)** — `ChildTableField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `childDocTypeProvider: ((String) -> DocType?)?` closure; when supplied the form renders an editable inline grid for `FieldType.table` fields, with columns derived from the child DocType's field schema. When `nil` (the default), the form falls back to the static row-count label. Children persist atomically through the existing `Document.children` / `ChildRow` plumbing — no engine change required.
 - **Rich text field (W7 / ADR-033, 2026-04-29)** — `FieldType.richText` persists Markdown as a plain `String`. `RichTextField` adds an edit/preview toggle backed by `AttributedString(markdown:)`, `GenericFormView` renders it natively, `ValidationPipeline` accepts `.string` values for the type, and `GenericListView` strips Markdown to a single-line plain-text summary.
+- **Image field (W8 / ADR-034, 2026-04-29)** — `FieldType.image` persists as `.data(...)` (with legacy `.string(...)` URLs still accepted by validation). `ImageField` adds an inline thumbnail preview plus a native chooser (`PhotosPicker` on iOS, `NSOpenPanel` on macOS); `GenericFormView` writes cleared values back as `.null`, `DocTypeBuilderView` maps the type to `photo`, and `GenericListView` renders inline blobs as `<image>` instead of byte counts.
 
 #### Metadata workspace UX contract (shipped 2026-04-23)
 
