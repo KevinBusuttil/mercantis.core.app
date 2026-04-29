@@ -119,7 +119,8 @@ public final class SyncEngine {
         }
 
         // Opportunistic, throttled prune of acknowledged rows. (ADR-028 / P0.4)
-        try? pruneSyncQueue(force: false)
+        // Result intentionally discarded — pruning is best-effort.
+        _ = try? pruneSyncQueue(force: false)
     }
 
     // MARK: - Receive & Apply
@@ -141,7 +142,8 @@ public final class SyncEngine {
         }
 
         // Opportunistic, throttled prune of acknowledged rows. (ADR-028 / P0.4)
-        try? pruneSyncQueue(force: false)
+        // Result intentionally discarded — pruning is best-effort.
+        _ = try? pruneSyncQueue(force: false)
     }
 
     /// Receive and apply remote mutations from the cloud adapter.

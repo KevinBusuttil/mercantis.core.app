@@ -258,7 +258,7 @@ public struct GenericFormView: View {
         // picker falls back to plain text entry (no behaviour change for callers
         // that haven't wired a provider yet).
         let provider: ((String, String) -> [Document])? = linkSearchProvider.map { base in
-            { query in base(field.linkedDocType ?? "", query) }
+            { _, query in base(field.linkedDocType ?? "", query) }
         }
         return LinkPickerField(
             targetDocType: field.linkedDocType ?? "Link",

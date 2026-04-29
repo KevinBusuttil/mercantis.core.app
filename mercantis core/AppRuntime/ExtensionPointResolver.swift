@@ -118,6 +118,13 @@ public final class RecordingExtensionSchedulerRegistrar: ExtensionSchedulerRegis
     public struct Entry: Sendable, Equatable {
         public let appId: String
         public let declarationId: String
+
+        // Explicit nonisolated `==` so the synthesized Equatable conformance
+        // doesn't pick up actor isolation from the enclosing context under
+        // Swift 6 strict concurrency.
+        nonisolated public static func == (lhs: Entry, rhs: Entry) -> Bool {
+            lhs.appId == rhs.appId && lhs.declarationId == rhs.declarationId
+        }
     }
 
     private let lock = NSLock()
