@@ -45,6 +45,96 @@ final class GenericFormViewSmokeTests: XCTestCase {
         XCTAssertNotNil(form)
     }
 
+    // MARK: - W4: link field smoke tests
+
+    /// GenericFormView with a link field and no provider compiles and
+    /// instantiates — existing callers that haven't wired a provider yet
+    /// are unaffected.
+    func testLinkFieldRendersWithNilProvider() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let docType = TestHarness.makeDocTypeWithLinkField()
+        try harness.registry.register(docType)
+
+        var document = TestHarness.makeDocumentWithLinkField()
+        try harness.engine.save(document)
+
+        let binding = Binding<Document>(get: { document }, set: { document = $0 })
+
+        let form = GenericFormView(
+            docType: docType,
+            document: binding,
+            linkSearchProvider: nil
+        )
+        XCTAssertNotNil(form)
+    }
+
+    /// GenericFormView with a link field and a wired provider compiles and
+    /// instantiates. The provider closure is the same shape Hub will use:
+    /// `engine.list(docType:)` wrapped in a try?.
+    func testLinkFieldRendersWithWiredProvider() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        // Register the target DocType (CustomerGroup) so the provider can list it.
+        let groupDocType = TestHarness.makeCustomerGroupDocType()
+        try harness.registry.register(groupDocType)
+        let groupDoc = TestHarness.makeCustomerGroupDocument(id: "CG-001")
+        try harness.engine.save(groupDoc)
+
+        let docType = TestHarness.makeDocTypeWithLinkField()
+        try harness.registry.register(docType)
+
+        var document = TestHarness.makeDocumentWithLinkField(linkedId: "CG-001")
+        try harness.engine.save(document)
+
+        let binding = Binding<Document>(get: { document }, set: { document = $0 })
+
+        let form = GenericFormView(
+            docType: docType,
+            document: binding,
+            linkSearchProvider: { targetDocType, _ in
+                (try? harness.engine.list(docType: targetDocType)) ?? []
+            }
+        )
+        XCTAssertNotNil(form)
+    }
+
+    /// The save-time link validation rejects a reference to a non-existent document.
+    func testLinkValidationRejectsUnknownTarget() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let docType = TestHarness.makeDocTypeWithLinkField()
+        try harness.registry.register(docType)
+
+        let document = TestHarness.makeDocumentWithLinkField(linkedId: "DOES-NOT-EXIST")
+        XCTAssertThrowsError(try harness.engine.save(document)) { error in
+            guard case DocumentEngine.DocumentEngineError.validationFailed(let errors) = error else {
+                XCTFail("Expected validationFailed, got \(error)"); return
+            }
+            XCTAssertTrue(errors.contains { $0.stage == "LinkValidation" })
+        }
+    }
+
+    /// The save-time link validation passes when the referenced document exists.
+    func testLinkValidationPassesWithKnownTarget() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let groupDocType = TestHarness.makeCustomerGroupDocType()
+        try harness.registry.register(groupDocType)
+        let groupDoc = TestHarness.makeCustomerGroupDocument(id: "CG-002")
+        try harness.engine.save(groupDoc)
+
+        let docType = TestHarness.makeDocTypeWithLinkField()
+        try harness.registry.register(docType)
+
+        let document = TestHarness.makeDocumentWithLinkField(linkedId: "CG-002")
+        XCTAssertNoThrow(try harness.engine.save(document))
+    }
+
     func testGenericListViewInstantiatesAgainstInMemoryDocumentEngine() throws {
         let harness = try TestHarness.make()
         defer { harness.cleanUp() }
@@ -162,6 +252,118 @@ private enum TestHarness {
                 "customer_name": .string("Acme Co"),
                 "email": .string("info@acme.example")
             ],
+            children: [:]
+        )
+    }
+
+    // MARK: - W4 fixtures
+
+    /// A DocType that contains a `customer_group` link field targeting "CustomerGroup".
+    static func makeDocTypeWithLinkField() -> DocType {
+        DocType(
+            id: "Contact",
+            name: "Contact",
+            module: "CRM",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            fields: [
+                FieldDefinition(
+                    key: "full_name",
+                    label: "Full Name",
+                    type: .text,
+                    required: true
+                ),
+                FieldDefinition(
+                    key: "customer_group",
+                    label: "Customer Group",
+                    type: .link,
+                    required: false,
+                    linkedDocType: "CustomerGroup"
+                )
+            ],
+            permissions: [
+                PermissionRule(
+                    role: "System Manager",
+                    canRead: true,
+                    canWrite: true,
+                    canCreate: true,
+                    canDelete: true,
+                    canSubmit: true,
+                    canAmend: true
+                )
+            ],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["full_name"],
+            titleField: "full_name"
+        )
+    }
+
+    static func makeDocumentWithLinkField(linkedId: String = "") -> Document {
+        let now = Date()
+        var fields: [String: FieldValue] = ["full_name": .string("Jane Smith")]
+        if !linkedId.isEmpty {
+            fields["customer_group"] = .string(linkedId)
+        }
+        return Document(
+            id: UUID().uuidString,
+            docType: "Contact",
+            company: "",
+            status: "",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: fields,
+            children: [:]
+        )
+    }
+
+    static func makeCustomerGroupDocType() -> DocType {
+        DocType(
+            id: "CustomerGroup",
+            name: "Customer Group",
+            module: "Setup",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            fields: [
+                FieldDefinition(
+                    key: "group_name",
+                    label: "Group Name",
+                    type: .text,
+                    required: true
+                )
+            ],
+            permissions: [
+                PermissionRule(
+                    role: "System Manager",
+                    canRead: true,
+                    canWrite: true,
+                    canCreate: true,
+                    canDelete: true,
+                    canSubmit: true,
+                    canAmend: true
+                )
+            ],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["group_name"],
+            titleField: "group_name"
+        )
+    }
+
+    static func makeCustomerGroupDocument(id: String) -> Document {
+        let now = Date()
+        return Document(
+            id: id,
+            docType: "CustomerGroup",
+            company: "",
+            status: "",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: ["group_name": .string("Commercial")],
             children: [:]
         )
     }
