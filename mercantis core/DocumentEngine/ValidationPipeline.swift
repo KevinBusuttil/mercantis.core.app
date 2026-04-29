@@ -249,7 +249,7 @@ public struct TypeCoercionStage: ValidationStage {
 
     private func isTypeCompatible(value: FieldValue, fieldType: FieldType) -> Bool {
         switch fieldType {
-        case .text, .longText, .richText, .email, .phone, .select, .status, .multiselect, .link:
+        case .text, .longText, .richText, .email, .phone, .select, .status, .multiselect, .link, .barcode:
             if case .string = value { return true }
             return false
         case .attachment, .image:

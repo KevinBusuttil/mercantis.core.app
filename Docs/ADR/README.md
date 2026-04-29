@@ -42,6 +42,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-032](ADR-032-typed-fieldvalue-roundtrip.md) | Typed `FieldValue` Round-Trip Persistence | Accepted |
 | [ADR-033](ADR-033-rich-text-field.md) | Rich Text Field Type | Accepted |
 | [ADR-034](ADR-034-image-field-type.md) | Image Field Type | Accepted |
+| [ADR-035](ADR-035-barcode-field-type.md) | Barcode / QR Field Type | Accepted |
 
 ## How to Read an ADR
 

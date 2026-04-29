@@ -148,6 +148,8 @@ public struct GenericFormView: View {
             attachmentField(field: field, isReadOnly: isReadOnly)
         case .image:
             imageField(field: field, isReadOnly: isReadOnly)
+        case .barcode:
+            barcodeField(field: field, isReadOnly: isReadOnly)
         }
     }
 
@@ -313,6 +315,10 @@ public struct GenericFormView: View {
             }
         )
         return ImageField(value: binding, isReadOnly: isReadOnly)
+    }
+
+    private func barcodeField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        BarcodeField(value: stringBinding(for: field), isReadOnly: isReadOnly)
     }
 
     private func formulaField(field: FieldDefinition) -> some View {
