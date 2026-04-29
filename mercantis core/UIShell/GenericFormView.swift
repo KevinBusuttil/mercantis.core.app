@@ -11,23 +11,32 @@ import MercantisCore
 #endif
 
 /// A SwiftUI view that renders a form dynamically from a `DocType` and a `Document`.
+///
+/// Pass `linkSearchProvider` to enable search-and-pick for `FieldType.link` fields.
+/// The closure receives `(targetDocType, query)` and returns matching documents;
+/// it typically wraps `engine.list(docType:whereExpression:)`. When `nil` (the
+/// default), link fields fall back to plain text entry so existing callers are
+/// unaffected. (W4 / ADR-030)
 public struct GenericFormView: View {
 
     let docType: DocType
     @Binding var document: Document
     let userRoles: Set<String>
     let expressionEvaluator: ExpressionEvaluator
+    let linkSearchProvider: ((String, String) -> [Document])?
 
     public init(
         docType: DocType,
         document: Binding<Document>,
         userRoles: Set<String> = [],
-        expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()
+        expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
+        linkSearchProvider: ((String, String) -> [Document])? = nil
     ) {
         self.docType = docType
         self._document = document
         self.userRoles = userRoles
         self.expressionEvaluator = expressionEvaluator
+        self.linkSearchProvider = linkSearchProvider
     }
 
     public var body: some View {
@@ -237,19 +246,18 @@ public struct GenericFormView: View {
     }
 
     private func linkField(field: FieldDefinition, isReadOnly: Bool) -> some View {
-        let strBinding = stringBinding(for: field)
-        return Group {
-            if isReadOnly {
-                Text(strBinding.wrappedValue).foregroundStyle(.secondary)
-            } else {
-                HStack {
-                    TextField(field.linkedDocType ?? "Link", text: strBinding)
-                        .mercantisInput()
-                    Image(systemName: "arrow.up.right.square")
-                        .foregroundStyle(.secondary)
-                }
-            }
+        // W4: delegate to LinkPickerField. When linkSearchProvider is nil the
+        // picker falls back to plain text entry (no behaviour change for callers
+        // that haven't wired a provider yet).
+        let provider: ((String, String) -> [Document])? = linkSearchProvider.map { base in
+            { query in base(field.linkedDocType ?? "", query) }
         }
+        return LinkPickerField(
+            targetDocType: field.linkedDocType ?? "Link",
+            value: stringBinding(for: field),
+            isReadOnly: isReadOnly,
+            searchProvider: provider
+        )
     }
 
     private func tableField(field: FieldDefinition) -> some View {
