@@ -201,7 +201,15 @@ public struct GenericListView: View {
             if fieldType == .image {
                 return s.isEmpty ? "—" : "<image>"
             }
-            let value = fieldType == .richText ? plainText(fromMarkdown: s) : s
+            let value: String
+            switch fieldType {
+            case .richText?:
+                value = plainText(fromMarkdown: s)
+            case .barcode?:
+                value = s
+            default:
+                value = s
+            }
             return value.isEmpty ? "—" : value
         case .int(let i): return "\(i)"
         case .double(let d): return String(format: "%.2f", d)
