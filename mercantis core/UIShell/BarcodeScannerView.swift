@@ -55,7 +55,7 @@ public struct BarcodeScannerView: UIViewControllerRepresentable {
         }
 
         required init?(coder: NSCoder) {
-            fatalError()
+            fatalError("init(coder:) is not supported for BarcodeScannerView.ScannerVC")
         }
 
         public override func viewDidLoad() {

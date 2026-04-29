@@ -205,8 +205,6 @@ public struct GenericListView: View {
             switch fieldType {
             case .richText?:
                 value = plainText(fromMarkdown: s)
-            case .barcode?:
-                value = s
             default:
                 value = s
             }
