@@ -211,12 +211,10 @@ public struct GenericListView: View {
     }
 
     private func plainText(fromMarkdown markdown: String) -> String {
-        let rendered = (try? AttributedString(markdown: markdown))?.characters
+        let characters = ((try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)).characters
+        return characters
+            .split(whereSeparator: \.isWhitespace)
             .map(String.init)
-            .joined() ?? markdown
-        return rendered
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
             .joined(separator: " ")
     }
 
