@@ -1002,6 +1002,7 @@ public struct DocTypeBuilderView: View {
     private func fieldIcon(for type: FieldType) -> String {
         switch type {
         case .text, .longText:          return "character.textbox"
+        case .richText:                 return "text.alignleft"
         case .number, .decimal:         return "number"
         case .currency:                 return "dollarsign"
         case .boolean:                  return "checkmark.square"

@@ -11,6 +11,7 @@ import Foundation
 public enum FieldType: String, Codable, Sendable, CaseIterable {
     case text
     case longText
+    case richText
     case number
     case decimal
     case currency

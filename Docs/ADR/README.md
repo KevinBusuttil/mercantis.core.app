@@ -40,6 +40,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-030](ADR-030-link-field-search-picker.md) | Link Field Search Picker | Accepted |
 | [ADR-031](ADR-031-child-table-inline-editor.md) | Child-Table Inline Editor | Accepted |
 | [ADR-032](ADR-032-typed-fieldvalue-roundtrip.md) | Typed `FieldValue` Round-Trip Persistence | Accepted |
+| [ADR-033](ADR-033-rich-text-field.md) | Rich Text Field Type | Accepted |
 
 ## How to Read an ADR
 

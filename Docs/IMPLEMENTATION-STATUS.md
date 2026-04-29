@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-29 (W6 — typed FieldValue round-trip persistence)_
+_Last updated: 2026-04-29 (W7 — rich text field type)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -158,6 +158,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 - **Footgun** — `DocTypeBuilderView.swift` does `fatalError` when the metadata DB won't open. Acceptable for a builder surface, but it's the only `fatalError` in the codebase.
 - **Link picker (W4 / ADR-030, 2026-04-29)** — `LinkPickerField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `linkSearchProvider: ((String, String) -> [Document])?` closure; when supplied the form renders a search-as-you-type picker sheet for `FieldType.link` fields. When `nil` (the default), the form falls back to plain `TextField` — fully backwards-compatible.
 - **Inline child-table editor (W5 / ADR-031, 2026-04-29)** — `ChildTableField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `childDocTypeProvider: ((String) -> DocType?)?` closure; when supplied the form renders an editable inline grid for `FieldType.table` fields, with columns derived from the child DocType's field schema. When `nil` (the default), the form falls back to the static row-count label. Children persist atomically through the existing `Document.children` / `ChildRow` plumbing — no engine change required.
+- **Rich text field (W7 / ADR-033, 2026-04-29)** — `FieldType.richText` persists Markdown as a plain `String`. `RichTextField` adds an edit/preview toggle backed by `AttributedString(markdown:)`, `GenericFormView` renders it natively, `ValidationPipeline` accepts `.string` values for the type, and `GenericListView` strips Markdown to a single-line plain-text summary.
 
 #### Metadata workspace UX contract (shipped 2026-04-23)
 
