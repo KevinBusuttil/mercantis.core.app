@@ -39,6 +39,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-029](ADR-029-cross-document-lookup.md) | Cross-Document `lookup()` in the Expression Engine | Accepted |
 | [ADR-030](ADR-030-link-field-search-picker.md) | Link Field Search Picker | Accepted |
 | [ADR-031](ADR-031-child-table-inline-editor.md) | Child-Table Inline Editor | Accepted |
+| [ADR-032](ADR-032-typed-fieldvalue-roundtrip.md) | Typed `FieldValue` Round-Trip Persistence | Accepted |
 
 ## How to Read an ADR
 

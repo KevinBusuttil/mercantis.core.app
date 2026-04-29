@@ -1,6 +1,6 @@
 # Implementation Status
 
-_Last updated: 2026-04-29 (W4/W5 — UIShell field renderers)_
+_Last updated: 2026-04-29 (W6 — typed FieldValue round-trip persistence)_
 
 A candid map between `ARCHITECTURE.md` / the ADR set and what is actually present in `mercantis core/`. Each entry is graded:
 
@@ -90,6 +90,7 @@ The goal is not to assign blame; it's to give future contributors an honest star
 - **Shipped (P0.2)** — Remote upserts are now routed through `DocumentEngine.applyRemote(_:from:)`, so `ValidationPipeline`, submit-immutability guard, and `DocumentVersion` diff recording all fire on sync-received writes. `UpsertPayload` has been replaced by encoding the full `Document` into the mutation, so push carries a round-trippable payload.
 - **Shipped (P0.3)** — `lastServerSequence` now persists in a v4 `sync_state` key/value table. `SyncEngine` loads the bookmark at init and writes it back on every advance, so a process restart no longer re-pulls already-applied remote mutations.
 - **Shipped (P0.4 / ADR-028)** — `SyncEngine.pruneSyncQueue(force:)` deletes acknowledged `.pushed` and `.applied` rows once they fall outside the retention window (default 30 days each). `.pending` and `.conflicted` rows are retained indefinitely. Pruning is throttled by a persisted `syncQueuePrunedAt` watermark in `sync_state` (default 24h) and is invoked opportunistically at the end of `pushPendingMutations()` / `pullAndApplyRemoteMutations()`.
+- **Shipped (W6, 2026-04-29)** — typed `FieldValue` coercion + round-trip: `DocumentEngine.save` / `fetch` preserve the tagged JSON envelope for `.date`, `.dateTime`, `.data`, and `.array`; `ValidationPipeline` now coerces ISO8601 strings into typed `.date` / `.dateTime` values for manifest-declared date fields before persistence, and invalid strings fail validation instead of silently degrading to `.string`.
 - **Partial** — `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)` appends a `resolveConflict` mutation but does not load the chosen version's payload — the document row is left as whatever the last write set it to.
 
 ### 2.7 Expression Engine — §4.7 / ADR-017

@@ -103,8 +103,17 @@ public protocol ValidationStage {
     /// The human-readable name of this stage (used in error attribution).
     var stageName: String { get }
 
+    /// Mutate a document before validation when a safe coercion is available.
+    func coerce(document: inout Document, context: ValidationContext) -> [DocumentValidationError]
+
     /// Validate a document and return any errors found.
     func validate(document: Document, context: ValidationContext) -> [DocumentValidationError]
+}
+
+public extension ValidationStage {
+    func coerce(document: inout Document, context: ValidationContext) -> [DocumentValidationError] {
+        []
+    }
 }
 
 // MARK: - Validation Pipeline
@@ -139,7 +148,19 @@ public final class ValidationPipeline {
     /// Execute all stages in order. Returns the first set of errors encountered,
     /// or an empty array if validation passes.
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
+        var document = document
+        return validate(document: &document, context: context)
+    }
+
+    /// Execute all stages in order, allowing them to coerce the document in place
+    /// before validation.
+    public func validate(document: inout Document, context: ValidationContext) -> [DocumentValidationError] {
         for stage in stages {
+            let coercionErrors = stage.coerce(document: &document, context: context)
+            if !coercionErrors.isEmpty {
+                return coercionErrors
+            }
+
             let errors = stage.validate(document: document, context: context)
             if !errors.isEmpty {
                 return errors
@@ -158,7 +179,52 @@ public final class ValidationPipeline {
 public struct TypeCoercionStage: ValidationStage {
     public let stageName = "TypeCoercion"
 
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        return formatter
+    }()
+
+    private static let dateTimeFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let fractionalDateTimeFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     public init() {}
+
+    public func coerce(document: inout Document, context: ValidationContext) -> [DocumentValidationError] {
+        var errors: [DocumentValidationError] = []
+
+        for field in context.docType.fields {
+            guard let value = document.fields[field.key] else { continue }
+
+            switch (field.type, value) {
+            case (.date, .string(let raw)):
+                guard let parsed = Self.parseDate(raw) else {
+                    errors.append(invalidValueError(for: field, expected: "ISO8601 date"))
+                    continue
+                }
+                document.fields[field.key] = .date(parsed)
+            case (.datetime, .string(let raw)):
+                guard let parsed = Self.parseDateTime(raw) else {
+                    errors.append(invalidValueError(for: field, expected: "ISO8601 date-time"))
+                    continue
+                }
+                document.fields[field.key] = .dateTime(parsed)
+            default:
+                continue
+            }
+        }
+
+        return errors
+    }
 
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
         var errors: [DocumentValidationError] = []
@@ -208,14 +274,15 @@ public struct TypeCoercionStage: ValidationStage {
             if case .bool = value { return true }
             return false
         case .date:
-            // P1.6: typed `.date`; ISO8601 string retained for legacy payloads.
             switch value {
-            case .date, .dateTime, .string: return true
+            case .date, .dateTime: return true
+            case .string(let s): return Self.parseDate(s) != nil
             default: return false
             }
         case .datetime:
             switch value {
-            case .dateTime, .date, .string: return true
+            case .dateTime, .date: return true
+            case .string(let s): return Self.parseDateTime(s) != nil
             default: return false
             }
         case .formula:
@@ -225,6 +292,22 @@ public struct TypeCoercionStage: ValidationStage {
             // Table fields are stored in children, not in the fields dictionary.
             return true
         }
+    }
+
+    private func invalidValueError(for field: FieldDefinition, expected: String) -> DocumentValidationError {
+        DocumentValidationError(
+            stage: stageName,
+            field: field.key,
+            message: "Field '\(field.label)' must be a valid \(expected)."
+        )
+    }
+
+    private static func parseDate(_ raw: String) -> Date? {
+        dateFormatter.date(from: raw) ?? parseDateTime(raw)
+    }
+
+    private static func parseDateTime(_ raw: String) -> Date? {
+        fractionalDateTimeFormatter.date(from: raw) ?? dateTimeFormatter.date(from: raw)
     }
 }
 

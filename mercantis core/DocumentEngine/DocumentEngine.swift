@@ -107,7 +107,7 @@ public final class DocumentEngine {
         // see the final ID; NamingSeries counters increment here, so a subsequent
         // validation failure leaves a sequence gap (documented in ADR-014 and in
         // NamingSeriesStrategy).
-        let document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
+        var document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
 
         // ADR-023: Optimistic concurrency check via updatedAt.
         // ADR-024: Load existing fields for diff computation.
@@ -116,7 +116,7 @@ public final class DocumentEngine {
 
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
-            try runValidationPipeline(on: document, docType: docType, isNew: existing == nil)
+            document = try runValidationPipeline(on: document, docType: docType, isNew: existing == nil)
 
             // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
@@ -273,7 +273,7 @@ public final class DocumentEngine {
 
         if let docType = registry.get(doc.docType) {
             try validator.validate(docType)
-            try runValidationPipeline(on: doc, docType: docType, isNew: existing == nil)
+            doc = try runValidationPipeline(on: doc, docType: docType, isNew: existing == nil)
             if doc.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: doc, docType: docType)
             }
@@ -906,7 +906,8 @@ public final class DocumentEngine {
         on document: Document,
         docType: DocType,
         isNew: Bool
-    ) throws {
+    ) throws -> Document {
+        var document = document
         let ctx = ValidationContext(
             docType: docType,
             userId: userId,
@@ -932,10 +933,11 @@ public final class DocumentEngine {
                 return try? self.loadStatus(docType: docTypeName, id: docId)
             }
         )
-        let errors = validationPipeline.validate(document: document, context: ctx)
+        let errors = validationPipeline.validate(document: &document, context: ctx)
         if !errors.isEmpty {
             throw DocumentEngineError.validationFailed(errors: errors)
         }
+        return document
     }
 
     /// Load just the persisted `status` column for a document. Returns nil for
