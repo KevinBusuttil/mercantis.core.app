@@ -128,15 +128,10 @@ public struct GenericListView: View {
                                 Text(field.label)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                if field.type == .richText {
-                                    Text(value)
-                                        .font(.subheadline)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                } else {
-                                    Text(value)
-                                        .font(.subheadline)
-                                }
+                                Text(value)
+                                    .font(.subheadline)
+                                    .lineLimit(field.type == .richText ? 1 : nil)
+                                    .truncationMode(.tail)
                             }
                         }
                     }
