@@ -303,6 +303,9 @@ public struct TypeCoercionStage: ValidationStage {
     }
 
     private static func parseDate(_ raw: String) -> Date? {
+        // Legacy payloads sometimes stored date-only fields as full ISO8601
+        // timestamps. Prefer a strict yyyy-mm-dd parse, but accept that older
+        // shape so save() can coerce it back to the typed `.date` case.
         dateFormatter.date(from: raw) ?? parseDateTime(raw)
     }
 
