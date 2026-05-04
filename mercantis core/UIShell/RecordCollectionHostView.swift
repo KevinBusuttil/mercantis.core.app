@@ -7,6 +7,8 @@ public struct RecordCollectionHostView: View {
     let preferenceKey: String
     let docType: DocType
     let workspaceTitle: String
+    let workspaceSubtitle: String?
+    let workspaceSymbol: String
     let workspaceStatusText: String?
     let documents: [Document]
     let configuration: RecordCollectionViewConfiguration
@@ -30,6 +32,8 @@ public struct RecordCollectionHostView: View {
         preferenceKey: String,
         docType: DocType,
         workspaceTitle: String? = nil,
+        workspaceSubtitle: String? = nil,
+        workspaceSymbol: String? = nil,
         workspaceStatusText: String? = nil,
         documents: [Document],
         configuration: RecordCollectionViewConfiguration = RecordCollectionViewConfiguration(),
@@ -46,6 +50,8 @@ public struct RecordCollectionHostView: View {
         self.preferenceKey = preferenceKey
         self.docType = docType
         self.workspaceTitle = workspaceTitle ?? docType.name
+        self.workspaceSubtitle = workspaceSubtitle
+        self.workspaceSymbol = workspaceSymbol ?? "rectangle.stack"
         self.workspaceStatusText = workspaceStatusText
         self.documents = documents
         self.configuration = configuration
@@ -62,7 +68,10 @@ public struct RecordCollectionHostView: View {
     }
 
     public var body: some View {
-        contentPane
+        VStack(spacing: 0) {
+            heroHeader
+            contentPane
+        }
         .navigationTitle(workspaceTitle)
         .toolbar(content: workspaceToolbar)
         .sheet(item: $createSheetDraft) { _ in
@@ -94,6 +103,27 @@ public struct RecordCollectionHostView: View {
         .onChange(of: externalCreateTrigger?.wrappedValue ?? false) { _, requested in
             if requested { consumeExternalCreateTrigger() }
         }
+    }
+
+    private var heroHeader: some View {
+        WorkspaceHeroHeader(
+            symbol: workspaceSymbol,
+            title: workspaceTitle,
+            subtitle: workspaceSubtitle,
+            badges: heroBadges,
+            primaryActionTitle: createDocumentAction != nil ? primaryCreateActionTitle : nil,
+            primaryAction: createDocumentAction
+        )
+    }
+
+    private var heroBadges: [WorkspaceHeroHeader.Badge] {
+        var badges: [WorkspaceHeroHeader.Badge] = [
+            .init("\(documents.count) records")
+        ]
+        if !docType.module.isEmpty {
+            badges.append(.init(docType.module, tone: .info))
+        }
+        return badges
     }
 
     @ViewBuilder
