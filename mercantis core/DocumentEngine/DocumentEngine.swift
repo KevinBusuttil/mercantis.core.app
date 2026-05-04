@@ -8,10 +8,21 @@
 import Foundation
 import GRDB
 
+/// A node in a tree-structured DocType's hierarchy. (W8)
+public struct TreeNode: Sendable {
+    public let document: Document
+    public let children: [TreeNode]
+
+    public init(document: Document, children: [TreeNode]) {
+        self.document = document
+        self.children = children
+    }
+}
+
 /// One entry in a `DocumentEngine.list(...)` ORDER BY chain. (P2.5)
 ///
 /// `fieldKey` may name either a `documents`-table system column (`id`,
-/// `status`, `createdAt`, `updatedAt`, `syncVersion`, `docStatus`, …) or a
+/// `status`, `createdAt`, `updatedAt`, `syncVersion`, `docStatus`, ...) or a
 /// user-defined field key. System-column and indexed-field sorts are pushed
 /// to SQL; the remainder is sorted in memory after the row fetch.
 public struct ListSort: Sendable, Equatable {
@@ -65,27 +76,15 @@ public final class DocumentEngine {
 
     // MARK: - Cross-document lookup (ADR-029, P2.2)
 
-    /// Read-through cache around the engine's own `lookup(docType:name:field:)`
-    /// (the `DocumentLookupResolver` conformance defined at the bottom of
-    /// this file). Cached entries are dropped automatically by the
-    /// resolver's `EventEmitter` subscriptions whenever the engine
-    /// publishes a save / delete / submit / cancel event for the
-    /// affected `(docType, id)` pair.
-    ///
-    /// Lazy because the cache holds `self`; the lazy initializer runs
-    /// only after the engine is fully constructed.
+    /// Read-through cache around the engine's own `lookup(docType:name:field:)`.
+    /// Cached entries are dropped whenever the engine publishes a save/delete/submit/cancel
+    /// event for the affected `(docType, id)` pair.
     public private(set) lazy var lookupCache: CachingDocumentLookupResolver = {
         CachingDocumentLookupResolver(base: self, eventEmitter: eventEmitter)
     }()
 
     /// Expression evaluator pre-wired with the engine's `lookupCache`.
-    /// `DocumentEngine.list`'s `whereExpression` runs against this
-    /// evaluator, so list expressions can call `lookup("DocType", id,
-    /// "field")` to filter on cross-document field values.
-    ///
-    /// Callers that want to share the same parse cache and lookup cache
-    /// across automation rules / form-level visibility expressions can
-    /// read this property and reuse it.
+    /// `DocumentEngine.list`'s `whereExpression` runs against this evaluator.
     public private(set) lazy var listExpressionEvaluator: ExpressionEvaluator = {
         ExpressionEvaluator(lookupResolver: lookupCache)
     }()
@@ -94,31 +93,18 @@ public final class DocumentEngine {
 
     /// Create or update a document. Appends an `upsertDocument` mutation atomically.
     ///
-    /// If the document belongs to a submittable DocType and has `docStatus == 1` (Submitted),
-    /// only fields marked `allowOnSubmit: true` can be changed. (ADR-013)
-    ///
     /// If `document.id` is empty, `NamingService` resolves it from the DocType's
-    /// `autoname` (defaulting to UUIDv7). Callers can capture the returned
-    /// `Document` to observe the resolved ID. (P1.1 / ADR-014)
+    /// `autoname` (defaulting to UUIDv7). (P1.1 / ADR-014)
     @discardableResult
     public func save(_ document: Document, userSuppliedName: String? = nil) throws -> Document {
-        // P1.1 / ADR-014: Resolve the document ID from DocType.autoname when the
-        // caller hasn't provided one. Runs before validation so downstream stages
-        // see the final ID; NamingSeries counters increment here, so a subsequent
-        // validation failure leaves a sequence gap (documented in ADR-014 and in
-        // NamingSeriesStrategy).
         var document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
 
-        // ADR-023: Optimistic concurrency check via updatedAt.
-        // ADR-024: Load existing fields for diff computation.
-        // P1.5: isNew drives `DocumentOperation.create` vs `.write` in the pipeline.
         let existing = try loadExistingState(docType: document.docType, id: document.id)
 
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
             document = try runValidationPipeline(on: document, docType: docType, isNew: existing == nil)
 
-            // ADR-013: Immutability enforcement for submitted documents.
             if document.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: document, docType: docType)
             }
@@ -180,12 +166,7 @@ public final class DocumentEngine {
     // MARK: - Naming (P1.1 / ADR-014)
 
     /// If `document.id` is empty, resolve it via `NamingService` and return a
-    /// copy of the document with the assigned ID. Otherwise returns the input
-    /// unchanged.
-    ///
-    /// `applyRemote` deliberately does **not** call this — remote mutations
-    /// always arrive pre-named, and running naming on the remote side would
-    /// burn counter values on every synced document.
+    /// copy of the document with the assigned ID. Otherwise returns the input unchanged.
     private func assigningNameIfNeeded(
         _ document: Document,
         userSuppliedName: String?
@@ -217,15 +198,13 @@ public final class DocumentEngine {
             syncState: document.syncState,
             docStatus: document.docStatus,
             amendedFrom: document.amendedFrom,
+            parentID: document.parentID,
             fields: document.fields,
             children: document.children
         )
     }
 
     /// Atomically increment and return the next counter value for a naming-series key.
-    ///
-    /// Runs in its own short write transaction so concurrent saves don't read
-    /// the same value. Gap behaviour on save failure is intentional (ADR-014).
     private static func reserveCounter(
         in database: MercantisDatabase,
         seriesKey: String
@@ -250,20 +229,8 @@ public final class DocumentEngine {
 
     // MARK: - Apply Remote (ADR-005, P0.2)
 
-    /// Apply a remote upsert received via the sync engine. (ADR-005)
-    ///
-    /// Unlike `save(_:)`:
-    /// - **No new `MutationRecord` is appended** to `sync_queue` — the remote
-    ///   mutation is the record; the `SyncEngine` marks it applied separately.
-    /// - **No optimistic-concurrency check** — conflict detection is the
-    ///   `SyncEngine`'s responsibility via `ConflictResolver` (ADR-006).
-    /// - `syncState` is forced to `.synced` and `syncVersion` is taken from
-    ///   the remote mutation.
-    ///
-    /// The `ValidationPipeline` (ADR-022), submit-immutability guard (ADR-013),
-    /// and `DocumentVersion` diff recording (ADR-024) all fire as they do for
-    /// local saves. A `DocumentSavedEvent` is emitted on completion so UI
-    /// observers refresh.
+    /// Apply a remote upsert received via the sync engine. Does not append a new
+    /// MutationRecord; forces syncState to .synced. (ADR-005)
     public func applyRemote(_ document: Document, from mutation: MutationRecord) throws {
         var doc = document
         doc.syncVersion = mutation.syncVersion
@@ -338,7 +305,6 @@ public final class DocumentEngine {
         let mutationTimestamp = ISO8601DateFormatter().string(from: mutation.localTimestamp)
 
         try database.write { db in
-            // Cascade delete children (enforced by FK constraint, but explicit here for clarity).
             try db.execute(sql: "DELETE FROM document_children WHERE parentId = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM documents WHERE id = ? AND doctype = ?", arguments: [id, docType])
 
@@ -370,10 +336,6 @@ public final class DocumentEngine {
     // MARK: - Submit (ADR-013)
 
     /// Submit a document, transitioning it from Draft (docStatus 0) to Submitted (docStatus 1).
-    ///
-    /// - The DocType must have `isSubmittable: true`.
-    /// - The document must currently be in Draft state (`docStatus == 0`).
-    /// - After submission, the document becomes immutable except for `allowOnSubmit` fields.
     public func submit(_ document: inout Document) throws {
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
@@ -399,12 +361,8 @@ public final class DocumentEngine {
 
     // MARK: - Cancel (ADR-013)
 
-    /// Cancel a submitted document, transitioning it from Submitted (docStatus 1) to
-    /// Cancelled (docStatus 2).
-    ///
-    /// Before cancelling, checks for linked submitted documents that reference this one.
-    /// If any downstream submitted document holds a Link field pointing to this document,
-    /// the cancel is rejected. (ADR-013)
+    /// Cancel a submitted document, transitioning it from Submitted (1) to Cancelled (2).
+    /// Rejects if any downstream submitted document holds a Link field pointing here. (ADR-013)
     public func cancel(_ document: inout Document) throws {
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
@@ -418,7 +376,6 @@ public final class DocumentEngine {
             )
         }
 
-        // Check for linked submitted documents that reference this one.
         let blockingDocuments = try findLinkedSubmittedDocuments(documentId: document.id)
         if !blockingDocuments.isEmpty {
             throw DocumentEngineError.cancelBlockedByLinks(
@@ -439,14 +396,8 @@ public final class DocumentEngine {
 
     // MARK: - Amend (ADR-013)
 
-    /// Amend a cancelled document by creating a new Draft copy. (ADR-013)
-    ///
-    /// - All fields are copied from the cancelled document.
-    /// - `docStatus` is reset to 0 (Draft).
-    /// - `amendedFrom` is set to the cancelled document's ID.
-    /// - A new document ID is generated.
-    ///
-    /// Returns the new amended document. The caller must save it via `save()`.
+    /// Amend a cancelled document by creating a new Draft copy. `parentID` is not
+    /// inherited — the amended copy is placed at the tree root. (ADR-013)
     public func amend(_ document: Document) throws -> Document {
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
@@ -474,6 +425,7 @@ public final class DocumentEngine {
             syncState: .local,
             docStatus: 0,
             amendedFrom: document.id,
+            parentID: nil,
             fields: document.fields,
             children: document.children
         )
@@ -507,7 +459,7 @@ public final class DocumentEngine {
                 db,
                 sql: """
                     SELECT id, doctype, company, status, createdAt, updatedAt,
-                           syncVersion, syncState, docStatus, amendedFrom, payload
+                           syncVersion, syncState, docStatus, amendedFrom, parentId, payload
                     FROM documents
                     WHERE id = ? AND doctype = ?
                     LIMIT 1
@@ -525,23 +477,6 @@ public final class DocumentEngine {
 
     /// Fetch documents of a given type with optional filters, sort, paging, and a
     /// boolean expression predicate. (P2.5)
-    ///
-    /// - `filters` — equality match per field. Pushed to SQL when the key is a
-    ///   system column or matches a `DocType.IndexDefinition`; otherwise applied
-    ///   in memory. Tagged `FieldValue` cases (`.date`, `.dateTime`, `.data`,
-    ///   `.array`) always fall back to in-memory comparison so legacy and
-    ///   tagged-envelope payloads round-trip correctly.
-    /// - `whereExpression` — `ExpressionEvaluator.evaluateBool` predicate run
-    ///   per row over `doc.fields`. Empty / whitespace expressions are ignored.
-    ///   Evaluation failures fail closed (the row is excluded), matching the
-    ///   convention `PermissionEngine.canAccessRow` (P1.7) established.
-    /// - `sortBy` — multi-key sort. Pushed to SQL when every key is a system
-    ///   column or an indexed field; otherwise the SQL fetch uses the default
-    ///   `updatedAt DESC` order and the final sort runs in memory. `nil` keeps
-    ///   the historical default of newest-first by `updatedAt`.
-    /// - `limit` / `offset` — applied in SQL only when no in-memory filtering,
-    ///   no `whereExpression`, and no in-memory sort is required; otherwise
-    ///   applied after the in-memory passes to preserve correctness.
     public func list(
         docType: String,
         filters: [String: FieldValue]? = nil,
@@ -552,10 +487,6 @@ public final class DocumentEngine {
     ) throws -> [Document] {
         let resolvedDocType = registry.get(docType)
         let indexedFieldKeys: Set<String> = resolvedDocType.map { Set($0.indexes.map(\.fieldKey)) } ?? []
-        // User-declared fields shadow system columns of the same name. Without
-        // this, a DocType that defines a custom `status` field would silently
-        // start filtering against the system `documents.status` column instead
-        // of the JSON payload, changing semantics for existing call sites.
         let userDeclaredFieldKeys: Set<String> = resolvedDocType.map { Set($0.fields.map(\.key)) } ?? []
 
         var sqlClauses: [String] = ["doctype = ?"]
@@ -587,17 +518,11 @@ public final class DocumentEngine {
         let needsInMemoryWork = !inMemoryFilters.isEmpty
             || activeWhereExpression != nil
             || (sortBy != nil && sortPushdown == nil)
-        // SQL paging is correctness-safe only when no in-memory filtering or
-        // sorting will run; otherwise the slice has to wait until those passes
-        // shape the final list. `limit == nil` with an `offset` could push
-        // `LIMIT -1 OFFSET ?` to SQLite, but doing the slice in memory keeps
-        // the two paging branches in one place at no real cost for the row
-        // counts a single DocType is expected to hold.
         let pagingPushedToSQL = !needsInMemoryWork && limit != nil
 
         var sql = """
             SELECT id, doctype, company, status, createdAt, updatedAt,
-                   syncVersion, syncState, docStatus, amendedFrom, payload
+                   syncVersion, syncState, docStatus, amendedFrom, parentId, payload
             FROM documents
             WHERE \(sqlClauses.joined(separator: " AND "))
             ORDER BY \(sortPushdown ?? "updatedAt DESC")
@@ -628,11 +553,6 @@ public final class DocumentEngine {
         }
 
         if let expression = activeWhereExpression {
-            // Reuse the engine's lookup-enabled evaluator (P2.2): list
-            // expressions can call `lookup("DocType", id, "field")` and
-            // results are memoized via the engine's per-save-invalidating
-            // cache so a `whereExpression` over many rows that all join
-            // through the same parent only fetches each parent once.
             let evaluator = listExpressionEvaluator
             documents = documents.filter { doc in
                 (try? evaluator.evaluateBool(expression: expression, context: doc.fields)) ?? false
@@ -657,6 +577,30 @@ public final class DocumentEngine {
         return documents
     }
 
+    // MARK: - Tree (W8)
+
+    /// Fetch all documents of a tree DocType structured as a forest.
+    /// Root nodes are documents whose `parentID` is nil.
+    public func fetchTree(docType: String) throws -> [TreeNode] {
+        let all = try list(docType: docType)
+        return buildTree(from: all)
+    }
+
+    /// Fetch immediate children of a document in a tree DocType.
+    public func children(of parentID: String, in docType: String) throws -> [Document] {
+        try list(docType: docType, filters: ["parentID": .string(parentID)])
+    }
+
+    private func buildTree(from documents: [Document]) -> [TreeNode] {
+        let byParent = Dictionary(grouping: documents) { $0.parentID ?? "" }
+        func nodes(under parentID: String) -> [TreeNode] {
+            (byParent[parentID] ?? []).map { doc in
+                TreeNode(document: doc, children: nodes(under: doc.id))
+            }
+        }
+        return nodes(under: "")
+    }
+
     // MARK: - List helpers (P2.5)
 
     private struct SQLFilterFragment {
@@ -665,10 +609,7 @@ public final class DocumentEngine {
     }
 
     /// Map a system column / indexed JSON field filter to a SQL fragment, or
-    /// return `nil` to defer the filter to the in-memory pass. Tagged
-    /// `FieldValue` cases (date/dateTime/data/array) are always deferred — they
-    /// encode as `{"$type":...,"$value":...}` and would not match a flat
-    /// `json_extract` value.
+    /// return `nil` to defer the filter to the in-memory pass.
     private func sqlFilterFragment(
         forKey key: String,
         value: FieldValue,
@@ -676,7 +617,6 @@ public final class DocumentEngine {
         userDeclaredFieldKeys: Set<String>
     ) -> SQLFilterFragment? {
         if let column = systemColumn(for: key, userDeclaredFieldKeys: userDeclaredFieldKeys) {
-            // `doctype` is always pinned by the outer query; ignore a redundant filter.
             if column == "doctype" { return SQLFilterFragment(sql: "doctype = ?", arguments: [databaseValue(for: value) ?? ""]) }
             if case .null = value {
                 return SQLFilterFragment(sql: "\(column) IS NULL", arguments: [])
@@ -700,9 +640,8 @@ public final class DocumentEngine {
         return nil
     }
 
-    /// Build a SQL ORDER BY clause when every sort key is SQL-pushable
-    /// (system column or indexed field). Returns `nil` when at least one key
-    /// requires an in-memory sort.
+    /// Build a SQL ORDER BY clause when every sort key is SQL-pushable.
+    /// Returns `nil` when at least one key requires an in-memory sort.
     private func sqlOrderByClause(
         for sortBy: [ListSort]?,
         indexedFieldKeys: Set<String>,
@@ -723,11 +662,8 @@ public final class DocumentEngine {
         return fragments.joined(separator: ", ")
     }
 
-    /// Map a public field key to its `documents`-table column when the key is
-    /// a system column the engine already exposes. User-declared field keys
-    /// always win — a custom field named `status` keeps the JSON-payload
-    /// semantics it already had instead of being silently rerouted to the
-    /// system column.
+    /// Map a public field key to its `documents`-table column. User-declared field
+    /// keys always win over system columns of the same name.
     private func systemColumn(for key: String, userDeclaredFieldKeys: Set<String>) -> String? {
         guard !userDeclaredFieldKeys.contains(key) else { return nil }
         switch key {
@@ -735,14 +671,14 @@ public final class DocumentEngine {
              "createdAt", "updatedAt", "syncVersion", "syncState",
              "docStatus", "amendedFrom":
             return key
+        case "parentID":
+            return "parentId"
         default:
             return nil
         }
     }
 
-    /// Convert a primitive `FieldValue` to a SQL argument. Tagged cases
-    /// (date/dateTime/data/array) return `nil` so the caller defers the filter
-    /// to the in-memory pass.
+    /// Convert a primitive `FieldValue` to a SQL argument. Tagged cases return `nil`.
     private func databaseValue(for value: FieldValue) -> (any DatabaseValueConvertible)? {
         switch value {
         case .string(let s): return s
@@ -769,10 +705,7 @@ public final class DocumentEngine {
         return false
     }
 
-    /// Read a sortable value from a document. User-declared fields win over
-    /// system columns of the same name, so a DocType that declares a custom
-    /// `status` (or any other system-named) field stays sortable through the
-    /// JSON payload path that callers already expect.
+    /// Read a sortable value from a document. User-declared fields win over system columns.
     private func sortValue(for key: String, in document: Document) -> FieldValue? {
         if let userValue = document.fields[key] { return userValue }
         switch key {
@@ -786,13 +719,11 @@ public final class DocumentEngine {
         case "syncState":   return .string(document.syncState.rawValue)
         case "docStatus":   return .int(document.docStatus)
         case "amendedFrom": return document.amendedFrom.map { .string($0) }
+        case "parentID":    return document.parentID.map { .string($0) }
         default:            return nil
         }
     }
 
-    /// Total ordering across `FieldValue` for sort purposes. `nil` and `.null`
-    /// sort last (they're treated as the largest value), so ascending sorts
-    /// place real values first.
     private func compareForSort(_ a: FieldValue?, _ b: FieldValue?) -> ComparisonResult {
         func isMissing(_ value: FieldValue?) -> Bool {
             switch value {
@@ -807,14 +738,12 @@ public final class DocumentEngine {
         if bMissing { return .orderedAscending }
         guard let a = a, let b = b else { return .orderedSame }
 
-        // Numeric (including dates as epoch seconds).
         if let an = numericForSort(a), let bn = numericForSort(b) {
             if an < bn { return .orderedAscending }
             if an > bn { return .orderedDescending }
             return .orderedSame
         }
 
-        // String fallback.
         let aStr = stringForSort(a)
         let bStr = stringForSort(b)
         if aStr < bStr { return .orderedAscending }
@@ -851,10 +780,6 @@ public final class DocumentEngine {
     // MARK: - Versions (ADR-024, P0.8)
 
     /// Return the full append-only version history for a document, oldest first.
-    ///
-    /// Each `DocumentVersion` captures the field-level diff that was applied by a single
-    /// `DocumentEngine.save` (or `applyRemote`). Saves that produce no field changes do not
-    /// write a version row, so consecutive timestamps need not imply a visible change.
     public func versions(of documentId: String) throws -> [DocumentVersion] {
         let rows = try database.read { db in
             try Row.fetchAll(
@@ -871,9 +796,7 @@ public final class DocumentEngine {
         return try rows.map { try documentVersionFromRow($0) }
     }
 
-    /// Return the document version that was in effect at `timestamp` — i.e. the most
-    /// recent version whose `savedAt` is less than or equal to `timestamp`. Returns `nil`
-    /// if no version was recorded at or before that instant.
+    /// Return the document version in effect at `timestamp`.
     public func version(of documentId: String, at timestamp: Date) throws -> DocumentVersion? {
         let cutoff = ISO8601DateFormatter().string(from: timestamp)
         let row = try database.read { db in
@@ -895,13 +818,6 @@ public final class DocumentEngine {
 
     // MARK: - Private Helpers
 
-    /// Run the full ValidationPipeline for a document under its DocType. (ADR-022)
-    ///
-    /// `isNew` selects the `DocumentOperation` used by `PermissionStage`:
-    /// `.create` when the document has never been persisted, `.write` otherwise.
-    /// Callers that explicitly change `docStatus` (submit / cancel / amend) are
-    /// still enforced by the ADR-013 guards; `.write` is used for the save path
-    /// that piggybacks on those transitions.
     private func runValidationPipeline(
         on document: Document,
         docType: DocType,
@@ -940,8 +856,6 @@ public final class DocumentEngine {
         return document
     }
 
-    /// Load just the persisted `status` column for a document. Returns nil for
-    /// brand-new documents (no row yet). Used by `WorkflowGuardStage`.
     private func loadStatus(docType: String, id: String) throws -> String? {
         try database.read { db in
             try Row.fetchOne(
@@ -952,8 +866,6 @@ public final class DocumentEngine {
         }
     }
 
-    /// Load a `WorkflowDefinition` from the `workflows` table by id. Returns nil
-    /// if the workflow has not been installed. Used by `WorkflowGuardStage`.
     private func loadWorkflowDefinition(workflowId: String) throws -> WorkflowDefinition? {
         let row = try database.read { db in
             try Row.fetchOne(
@@ -972,9 +884,6 @@ public final class DocumentEngine {
         return try decoder.decode(WorkflowDefinition.self, from: payloadData)
     }
 
-    /// Read the currently-stored `updatedAt` string and field payload for a document, if any.
-    /// Used by `save(_:)` for the optimistic-concurrency check and by both save paths for
-    /// computing `DocumentVersion` diffs.
     private func loadExistingState(
         docType: String,
         id: String
@@ -1009,8 +918,8 @@ public final class DocumentEngine {
         try db.execute(
             sql: """
                 INSERT INTO documents
-                    (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, payload)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, doctype, company, status, createdAt, updatedAt, syncVersion, syncState, docStatus, amendedFrom, parentId, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     company     = excluded.company,
                     status      = excluded.status,
@@ -1019,6 +928,7 @@ public final class DocumentEngine {
                     syncState   = excluded.syncState,
                     docStatus   = excluded.docStatus,
                     amendedFrom = excluded.amendedFrom,
+                    parentId    = excluded.parentId,
                     payload     = excluded.payload
                 """,
             arguments: [
@@ -1032,6 +942,7 @@ public final class DocumentEngine {
                 syncState.rawValue,
                 document.docStatus,
                 document.amendedFrom,
+                document.parentID,
                 payloadString
             ]
         )
@@ -1105,7 +1016,6 @@ public final class DocumentEngine {
         )
     }
 
-    /// Compute field-level diffs and insert a `DocumentVersion` row when fields changed. (ADR-024)
     private func recordDocumentVersion(
         _ db: Database,
         document: Document,
@@ -1146,7 +1056,6 @@ public final class DocumentEngine {
         )
     }
 
-    /// Decode a `DocumentVersion` from a `document_versions` row. (ADR-024, P0.8)
     private func documentVersionFromRow(_ row: Row) throws -> DocumentVersion {
         let id: String = row["id"] ?? ""
         let documentId: String = row["documentId"] ?? ""
@@ -1170,17 +1079,12 @@ public final class DocumentEngine {
         )
     }
 
-    /// ADR-013: Check that only `allowOnSubmit` fields have been modified on a submitted document.
     private func enforceSubmitImmutability(document: Document, docType: DocType) throws {
-        guard let existing = try fetch(docType: document.docType, id: document.id) else {
-            // New document — no immutability check needed.
-            return
-        }
+        guard let existing = try fetch(docType: document.docType, id: document.id) else { return }
         guard existing.docStatus == 1 else { return }
 
         let allowedKeys = Set(docType.fields.filter { $0.allowOnSubmit }.map { $0.key })
 
-        // Check all keys from both old and new to detect additions, changes, and removals.
         let allKeys = Set(document.fields.keys).union(existing.fields.keys)
         for key in allKeys {
             let oldValue = existing.fields[key]
@@ -1193,25 +1097,16 @@ public final class DocumentEngine {
         }
     }
 
-    /// ADR-013: Find submitted documents that link to the given document ID.
-    ///
-    /// Checks all registered DocTypes for Link fields, then queries only those DocTypes
-    /// for submitted documents whose link field values match the target ID using
-    /// JSON extraction for precision.
     private func findLinkedSubmittedDocuments(documentId: String) throws -> [String] {
-        // Gather DocTypes that have Link fields (potential linkers).
         let allDocTypes = registry.all()
         let linkingDocTypes = allDocTypes
             .filter { dt in dt.fields.contains(where: { $0.type == .link }) }
 
         guard !linkingDocTypes.isEmpty else { return [] }
 
-        // Query each linking DocType for submitted documents whose link field values
-        // match the target documentId using JSON extraction for precision.
         var blockingIds: [String] = []
         for dt in linkingDocTypes {
             let linkFieldKeys = dt.fields.filter { $0.type == .link }.map { $0.key }
-            // Build a condition that checks each link field with json_extract.
             let conditions = linkFieldKeys.map { key in
                 "json_extract(payload, '$.\(key)') = ?"
             }.joined(separator: " OR ")
@@ -1253,6 +1148,7 @@ public final class DocumentEngine {
         let syncState = SyncState(rawValue: syncStateRaw) ?? .local
         let docStatus: Int = row["docStatus"] ?? 0
         let amendedFrom: String? = row["amendedFrom"]
+        let parentID: String? = row["parentId"]
         let payloadString: String = row["payload"] ?? "{}"
 
         var fields: [String: FieldValue] = [:]
@@ -1273,6 +1169,7 @@ public final class DocumentEngine {
             syncState: syncState,
             docStatus: docStatus,
             amendedFrom: amendedFrom,
+            parentID: parentID,
             fields: fields,
             children: [:]
         )
@@ -1283,7 +1180,6 @@ public final class DocumentEngine {
         return ISO8601DateFormatter().date(from: string)
     }
 
-    /// Load child rows for a given parent document from the database.
     private func fetchChildren(parentId: String) throws -> [String: [ChildRow]] {
         let childRows = try database.read { db in
             try Row.fetchAll(
@@ -1334,19 +1230,6 @@ public final class DocumentEngine {
 
 // MARK: - DocumentLookupResolver conformance (ADR-029, P2.2)
 
-/// `DocumentEngine` satisfies the `DocumentLookupResolver` protocol so
-/// the sandboxed expression evaluator can answer cross-document
-/// `lookup("DocType", id, "field")` calls. The implementation is a
-/// thin adapter over `fetch(docType:id:)` — every read still flows
-/// through the same SQL path, so permission / index / soft-delete
-/// behaviour stays consistent.
-///
-/// Callers that want a per-save-invalidating cache layer wrap the
-/// engine in a `CachingDocumentLookupResolver` and pass the same
-/// `EventEmitter` the engine publishes on. The resolver subscribes to
-/// `DocumentSavedEvent` / `DocumentDeletedEvent` /
-/// `DocumentSubmittedEvent` / `DocumentCancelledEvent` and drops the
-/// cache entry for the affected `(docType, id)` pair.
 extension DocumentEngine: DocumentLookupResolver {
     public func lookup(docType: String, name: String, field: String) throws -> FieldValue? {
         guard let document = try fetch(docType: docType, id: name) else { return nil }

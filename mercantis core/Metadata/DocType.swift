@@ -17,6 +17,8 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var isChildTable: Bool                  // true if used only as a child table
     public var isSubmittable: Bool                 // true if this DocType uses the Submit/Cancel/Amend lifecycle (ADR-013)
     public var isSingle: Bool                      // true if this DocType represents a singleton record
+    public var isTree: Bool                        // true if documents form a parent-child tree hierarchy (W8)
+    public var treeRootName: String?               // display label for the implicit root node (W8)
     public var fields: [FieldDefinition]
     public var permissions: [PermissionRule]
     public var workflowId: String?
@@ -35,6 +37,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         isChildTable: Bool,
         isSubmittable: Bool = false,
         isSingle: Bool = false,
+        isTree: Bool = false,
+        treeRootName: String? = nil,
         fields: [FieldDefinition],
         permissions: [PermissionRule],
         workflowId: String? = nil,
@@ -52,6 +56,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.isChildTable = isChildTable
         self.isSubmittable = isSubmittable
         self.isSingle = isSingle
+        self.isTree = isTree
+        self.treeRootName = treeRootName
         self.fields = fields
         self.permissions = permissions
         self.workflowId = workflowId
@@ -71,6 +77,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         case isChildTable
         case isSubmittable
         case isSingle
+        case isTree
+        case treeRootName
         case fields
         case permissions
         case workflowId
@@ -91,6 +99,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         isChildTable = try container.decode(Bool.self, forKey: .isChildTable)
         isSubmittable = try container.decode(Bool.self, forKey: .isSubmittable)
         isSingle = try container.decodeIfPresent(Bool.self, forKey: .isSingle) ?? false
+        isTree = try container.decodeIfPresent(Bool.self, forKey: .isTree) ?? false
+        treeRootName = try container.decodeIfPresent(String.self, forKey: .treeRootName)
         fields = try container.decode([FieldDefinition].self, forKey: .fields)
         permissions = try container.decode([PermissionRule].self, forKey: .permissions)
         workflowId = try container.decodeIfPresent(String.self, forKey: .workflowId)
