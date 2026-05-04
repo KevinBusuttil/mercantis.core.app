@@ -28,6 +28,7 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var searchFields: [String]
     public var titleField: String
     public var isCustom: Bool
+    public var formLayout: FormLayout?
 
     public init(
         id: String,
@@ -47,7 +48,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         indexes: [IndexDefinition],
         searchFields: [String],
         titleField: String,
-        isCustom: Bool = false
+        isCustom: Bool = false,
+        formLayout: FormLayout? = nil
     ) {
         self.id = id
         self.name = name
@@ -67,6 +69,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.searchFields = searchFields
         self.titleField = titleField
         self.isCustom = isCustom
+        self.formLayout = formLayout
     }
 
     enum CodingKeys: String, CodingKey {
@@ -88,6 +91,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         case searchFields
         case titleField
         case isCustom
+        case formLayout
     }
 
     public init(from decoder: any Decoder) throws {
@@ -111,5 +115,6 @@ public struct DocType: Codable, Identifiable, Sendable {
         titleField = try container.decode(String.self, forKey: .titleField)
         // Older payloads don't include `isCustom`; treat them as system/non-custom by default.
         isCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
+        formLayout = try container.decodeIfPresent(FormLayout.self, forKey: .formLayout)
     }
 }

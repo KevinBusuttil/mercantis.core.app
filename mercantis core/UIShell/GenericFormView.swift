@@ -12,6 +12,15 @@ import MercantisCore
 
 /// A SwiftUI view that renders a form dynamically from a `DocType` and a `Document`.
 ///
+/// Layout follows native macOS HIG (`Docs/UX-DIRECTION.md` §5.4 / §6).
+/// Sections render as native `Form` sections; field rows render as
+/// `LabeledContent` (label-left, control-right) for narrow controls and as
+/// stacked label/control pairs for tall controls (`longText`, `richText`,
+/// `table`, `multiselect`, `image`). The renderer reads
+/// `docType.formLayout` when present and otherwise falls back to grouping
+/// by `FieldDefinition.section`, so DocTypes that haven't declared a
+/// FormLayout keep working unchanged.
+///
 /// Pass `linkSearchProvider` to enable search-and-pick for `FieldType.link` fields.
 /// The closure receives `(targetDocType, query)` and returns matching documents;
 /// it typically wraps `engine.list(docType:whereExpression:)`. When `nil` (the
@@ -48,79 +57,67 @@ public struct GenericFormView: View {
     }
 
     public var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(sectionGroups) { section in
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(section.title)
-                                .font(.headline)
-
-                            LazyVGrid(columns: gridColumns(for: proxy.size.width), alignment: .leading, spacing: 12) {
-                                ForEach(section.fields) { field in
-                                    fieldCard(for: field)
-                                }
-                            }
-                        }
-                        .mercantisCard()
-                    }
-                }
-                .padding()
+        Form {
+            ForEach(resolvedSections) { section in
+                formSection(for: section)
             }
-            .background(MercantisTheme.background)
         }
+        #if os(macOS)
+        .formStyle(.grouped)
+        #endif
         .navigationTitle(docType.name)
     }
 
-    private func gridColumns(for width: CGFloat) -> [GridItem] {
-        width > 900
-            ? [GridItem(.flexible()), GridItem(.flexible())]
-            : [GridItem(.flexible())]
-    }
-
-    private var sectionGroups: [FieldSectionGroup] {
-        let grouped = Dictionary(grouping: visibleFields) { field in
-            field.section?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                ? field.section!
-                : "Main"
-        }
-
-        return grouped.keys.sorted().map { key in
-            let fields = grouped[key, default: []].sorted { lhs, rhs in
-                (lhs.column ?? .max) < (rhs.column ?? .max)
-            }
-            return FieldSectionGroup(title: key, fields: fields)
-        }
-    }
-
-    private var visibleFields: [FieldDefinition] {
-        docType.fields.filter { field in
-            guard let expr = field.visibilityExpression, !expr.isEmpty else { return true }
-            return (try? expressionEvaluator.evaluateBool(
-                expression: expr,
-                context: document.fields
-            )) ?? true
-        }
-    }
+    // MARK: - Section rendering
 
     @ViewBuilder
-    private func fieldCard(for field: FieldDefinition) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(field.label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            fieldRow(for: field)
+    private func formSection(for section: ResolvedSection) -> some View {
+        Section {
+            ForEach(section.fields) { field in
+                fieldRow(for: field)
+            }
+        } header: {
+            if let title = section.title, !title.isEmpty {
+                Text(title)
+            }
+        } footer: {
+            if let help = section.helpText, !help.isEmpty {
+                Text(help)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(MercantisTheme.surfaceMuted)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder
     private func fieldRow(for field: FieldDefinition) -> some View {
         let isReadOnly = isReadOnly(field: field)
 
+        if usesStackedLayout(field) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(field.label)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                fieldControl(for: field, isReadOnly: isReadOnly)
+            }
+        } else {
+            LabeledContent(field.label) {
+                fieldControl(for: field, isReadOnly: isReadOnly)
+            }
+        }
+    }
+
+    private func usesStackedLayout(_ field: FieldDefinition) -> Bool {
+        switch field.type {
+        case .longText, .richText, .table, .multiselect, .image:
+            return true
+        default:
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private func fieldControl(for field: FieldDefinition, isReadOnly: Bool) -> some View {
         switch field.type {
         case .text, .email, .phone:
             textField(field: field, isReadOnly: isReadOnly)
@@ -153,6 +150,75 @@ public struct GenericFormView: View {
         }
     }
 
+    // MARK: - Layout resolution
+
+    private struct ResolvedSection: Identifiable {
+        let id: String
+        let title: String?
+        let helpText: String?
+        let fields: [FieldDefinition]
+    }
+
+    private var resolvedSections: [ResolvedSection] {
+        if let layout = docType.formLayout, !layout.sections.isEmpty {
+            return resolveDeclared(layout: layout)
+        }
+        return resolveLegacy()
+    }
+
+    /// Resolve a DocType-declared FormLayout into renderable sections.
+    /// Field keys not present on the DocType are skipped silently.
+    private func resolveDeclared(layout: FormLayout) -> [ResolvedSection] {
+        let visible = visibleFields
+        let fieldByKey = Dictionary(uniqueKeysWithValues: visible.map { ($0.key, $0) })
+
+        return layout.sections.compactMap { section in
+            let resolvedFields = section.fieldKeys.compactMap { fieldByKey[$0] }
+            guard !resolvedFields.isEmpty else { return nil }
+            return ResolvedSection(
+                id: section.key,
+                title: section.title,
+                helpText: section.helpText,
+                fields: resolvedFields
+            )
+        }
+    }
+
+    /// Fallback grouping for DocTypes without a declared FormLayout — keeps
+    /// the prior behavior of bucketing by `FieldDefinition.section` and
+    /// ordering within a section by `column`.
+    private func resolveLegacy() -> [ResolvedSection] {
+        let grouped = Dictionary(grouping: visibleFields) { field in
+            (field.section?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? "Main"
+        }
+
+        return grouped.keys.sorted().map { key in
+            let fields = grouped[key, default: []].sorted { lhs, rhs in
+                (lhs.column ?? .max) < (rhs.column ?? .max)
+            }
+            return ResolvedSection(
+                id: key,
+                title: key,
+                helpText: nil,
+                fields: fields
+            )
+        }
+    }
+
+    private var visibleFields: [FieldDefinition] {
+        docType.fields.filter { field in
+            guard let expr = field.visibilityExpression, !expr.isEmpty else { return true }
+            return (try? expressionEvaluator.evaluateBool(
+                expression: expr,
+                context: document.fields
+            )) ?? true
+        }
+    }
+
+    // MARK: - Field controls
+
     private func textField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let binding = stringBinding(for: field)
         return Group {
@@ -160,7 +226,8 @@ public struct GenericFormView: View {
                 Text(binding.wrappedValue).foregroundStyle(.secondary)
             } else {
                 TextField(field.label, text: binding)
-                    .mercantisInput()
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
             }
         }
     }
@@ -173,9 +240,10 @@ public struct GenericFormView: View {
             } else {
                 TextEditor(text: binding)
                     .frame(minHeight: 90)
-                    .padding(6)
-                    .background(MercantisTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.separator, lineWidth: 1)
+                    )
             }
         }
     }
@@ -191,7 +259,9 @@ public struct GenericFormView: View {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
                 TextField(field.label, text: strBinding)
-                    .mercantisInput()
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
 #if os(iOS)
                     .keyboardType(.decimalPad)
 #endif
@@ -200,17 +270,15 @@ public struct GenericFormView: View {
     }
 
     private func toggleField(field: FieldDefinition, isReadOnly: Bool) -> some View {
-        let binding = boolBinding(for: field)
-        return Toggle("", isOn: binding)
+        Toggle("", isOn: boolBinding(for: field))
             .labelsHidden()
             .disabled(isReadOnly)
     }
 
     private func dateField(field: FieldDefinition, isReadOnly: Bool) -> some View {
-        let binding = dateBinding(for: field)
-        return DatePicker(
+        DatePicker(
             "",
-            selection: binding,
+            selection: dateBinding(for: field),
             displayedComponents: field.type == .datetime ? [.date, .hourAndMinute] : [.date]
         )
         .labelsHidden()
@@ -222,7 +290,8 @@ public struct GenericFormView: View {
         let strBinding = stringBinding(for: field)
         return Group {
             if isReadOnly {
-                Text(strBinding.wrappedValue).foregroundStyle(.secondary)
+                Text(strBinding.wrappedValue.isEmpty ? "—" : strBinding.wrappedValue)
+                    .foregroundStyle(.secondary)
             } else {
                 Picker(field.label, selection: strBinding) {
                     Text("—").tag("")
@@ -230,9 +299,7 @@ public struct GenericFormView: View {
                         Text(opt).tag(opt)
                     }
                 }
-                .pickerStyle(.menu)
                 .labelsHidden()
-                .mercantisPicker()
             }
         }
     }
@@ -254,11 +321,9 @@ public struct GenericFormView: View {
                     }
                     selection.wrappedValue = values.sorted().joined(separator: ",")
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(isSelected ? MercantisTheme.primary.opacity(0.2) : MercantisTheme.surface)
-                .clipShape(Capsule())
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(isSelected ? .accentColor : .secondary)
             }
         }
     }
@@ -299,7 +364,8 @@ public struct GenericFormView: View {
                     .foregroundStyle(.secondary)
             } else {
                 TextField("Attachment reference", text: binding)
-                    .mercantisInput()
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
             }
         }
     }
@@ -334,6 +400,8 @@ public struct GenericFormView: View {
         }
         return Text(display).foregroundStyle(.secondary)
     }
+
+    // MARK: - Bindings
 
     private func isReadOnly(field: FieldDefinition) -> Bool {
         guard let expr = field.readOnlyExpression, !expr.isEmpty else { return false }
@@ -418,12 +486,6 @@ public struct GenericFormView: View {
             }
         )
     }
-}
-
-private struct FieldSectionGroup: Identifiable {
-    let id = UUID()
-    let title: String
-    let fields: [FieldDefinition]
 }
 
 private struct FlowLayout<Content: View>: View {
