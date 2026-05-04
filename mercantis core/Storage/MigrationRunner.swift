@@ -82,6 +82,7 @@ public struct MigrationRunner {
         runner.register(version: 4, name: "add_sync_state", sql: MigrationRunner.v4SQL)
         runner.register(version: 5, name: "add_naming_counters", sql: MigrationRunner.v5SQL)
         runner.register(version: 6, name: "add_scheduler_state", sql: MigrationRunner.v6SQL)
+        runner.register(version: 7, name: "add_tree_parent", sql: MigrationRunner.v7SQL)
     }
 
     // MARK: - v1 Schema
@@ -241,11 +242,20 @@ public struct MigrationRunner {
         --
         -- `taskKey` is the resolver-stable identity of one declaration:
         --   "<appId>::<declarationId>"
-        -- which keeps it usable across reinstall (same app id, same decl id ⇒
+        -- which keeps it usable across reinstall (same app id, same decl id =>
         -- preserved cadence) and isolates apps from each other.
         CREATE TABLE IF NOT EXISTS scheduler_state (
             taskKey     TEXT    PRIMARY KEY NOT NULL,
             lastRunAt   TEXT    NOT NULL
         );
+        """
+
+    // MARK: - v7 Schema — tree parent (W8)
+
+    private static let v7SQL = """
+        -- W8: Tree DocType support — parent-child hierarchy within a DocType.
+        -- parentId references another row in the same documents table.
+        ALTER TABLE documents ADD COLUMN parentId TEXT;
+        CREATE INDEX IF NOT EXISTS idx_documents_parentId ON documents(parentId);
         """
 }

@@ -27,6 +27,9 @@ public struct Document: Identifiable, Codable, Sendable {
     /// The document this was amended from (if any). (ADR-013)
     public var amendedFrom: String?
 
+    /// Parent document ID for tree-structured DocTypes. (W8)
+    public var parentID: String?
+
     /// Custom field values stored as a dictionary (persisted as JSON payload in SQLite). (ADR-002)
     public var fields: [String: FieldValue]
 
@@ -44,6 +47,7 @@ public struct Document: Identifiable, Codable, Sendable {
         syncState: SyncState,
         docStatus: Int = 0,
         amendedFrom: String? = nil,
+        parentID: String? = nil,
         fields: [String: FieldValue],
         children: [String: [ChildRow]]
     ) {
@@ -57,6 +61,7 @@ public struct Document: Identifiable, Codable, Sendable {
         self.syncState = syncState
         self.docStatus = docStatus
         self.amendedFrom = amendedFrom
+        self.parentID = parentID
         self.fields = fields
         self.children = children
     }
