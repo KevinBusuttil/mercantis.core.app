@@ -21,7 +21,7 @@ _Last assessed: 2026-05-04_
 
 This section grades `mercantis.core.app` against the requirements of an ERP host application
 (the canonical consumer being `mercantis.hub.app`). It filters the Implementation Status
-section below through an "is this enough to build Accounting / Sales / Purchase / Inventory on?" lens.
+section below through an “is this enough to build Accounting / Sales / Purchase / Inventory on?” lens.
 
 ---
 
@@ -32,7 +32,7 @@ and the offline-first / metadata-driven / sandboxed-expression / mutation-log
 substrate is sound. Most of what remains is either (a) host-app wiring that
 Hub will own, (b) ERP-flavoured features that have a place in the architecture
 but no implementation yet (Files, Print/PDF, Import/Export), or (c) a small
-number of "the type exists but the runtime does not" cases that will bite
+number of “the type exists but the runtime does not” cases that will bite
 the first ERP module to need them.
 
 There are no architectural rewrites required. Every gap below has a clear
@@ -57,7 +57,7 @@ real ERP modules on top of it?_
 | NamingSystem | ⚠️ Partial | Five strategies ship (UUIDv7, Series, FieldDerived, Prompt, Format). **`DocumentNamingRule` (conditional selector) is missing** — per-company / per-fiscal-year naming series cannot be expressed today. **Counters are local-only** — multi-device sequential naming will collide. |
 | AppRuntime | ⚠️ Partial | `AppManifest`, `AppInstaller`, `ExtensionPointResolver` all ship. **Not constructed at app launch** in `mercantis_coreApp.swift`; Hub already does this on its side, but third-party app shells will need the same wiring or a helper. |
 | AutomationRunner | ✅ Ready | Action registry + built-in handlers (`set_value`, `set_status`, `send_notification`, `validate`, `assign`) cover the common ERP automation cases. Scheduler-triggered rules (`triggerEvent == "onSchedule"`) are still no-ops — see §3. |
-| SchedulerService | ⚠️ Partial | Cron, persistence, tick loop all ship. **Not wired to AutomationRunner**, so manifest-declared scheduled automation rules don't fire. **Background-task budget categories** (`short` / `default` / `long`) **and `audit_log` writes for failed runs** are not implemented. |
+| SchedulerService | ⚠️ Partial | Cron, persistence, tick loop all ship. **Not wired to AutomationRunner**, so manifest-declared scheduled automation rules don’t fire. **Background-task budget categories** (`short` / `default` / `long`) **and `audit_log` writes for failed runs** are not implemented. |
 | ReportEngine | ⚠️ Partial | `register` / `availableReports` / `execute` exist. **Role filtering is ignored** — `availableReports(for: role)` returns everything. No native renderer yet (`MercantisCoreUI` has no `GenericReportView`). |
 | Audit log | ❌ Missing-in-fact | The `audit_log` table is created in migration v1 and **nothing ever writes to it**. Sync queue is acting as a de-facto log, but a financial-grade ERP needs a true append-only audit table with a writer + reader API. |
 | Files / Attachments | ❌ Missing | No `Files/` subsystem on disk. Every ERP transactional document needs attachments (scanned invoice, signed PO, photo of damaged shipment). |
@@ -131,8 +131,8 @@ value can stay for callers that want immediate access.
 sandboxed boolean expression. Callers of `list()` must pass that
 expression themselves via `whereExpression`.
 
-**Why it matters for ERP:** Row-level security ("warehouse manager can
-only see their own warehouse's stock entries") is a per-DocType
+**Why it matters for ERP:** Row-level security (“warehouse manager can
+only see their own warehouse’s stock entries”) is a per-DocType
 declaration. Every list call site repeating the row-expression
 plumbing is fragile.
 
@@ -150,7 +150,7 @@ reference adapter (CloudKit, Supabase, S3+JSON, custom REST, etc.).
 
 **Suggested fix:** Out of scope for Core itself per ADR-018 — Core
 defines the protocol, host apps implement. But shipping at least one
-reference adapter (likely CloudKit) would help Hub's first
+reference adapter (likely CloudKit) would help Hub’s first
 multi-device customer.
 
 ### 3.6 `DocumentNamingRule` conditional selector missing
@@ -165,7 +165,7 @@ expressible today in Hub.
 
 **Suggested fix:** Implement `DocumentNamingRule` (priority-ordered,
 condition expression + strategy reference) and evaluate in
-`NamingService.resolve(...)` before falling through to the DocType's
+`NamingService.resolve(...)` before falling through to the DocType’s
 default `autoname`.
 
 ### 3.7 Naming counters are local-only
@@ -177,7 +177,7 @@ in a short transaction. Single-device only.
 offline will pick the same `SINV-2026-0001` and collide on sync
 (VCM rejects, but the user experience is bad).
 
-**Suggested fix:** Per ADR-014's open follow-up — per-device range
+**Suggested fix:** Per ADR-014’s open follow-up — per-device range
 reservation via the sync queue. Each device claims a block of N
 counter values from the cloud; offline issuance draws from the
 local block. Reconciles on next sync.
@@ -186,25 +186,25 @@ local block. Reconciles on next sync.
 
 **What ships today:** Both subsystems exist and tick correctly in
 isolation. Manifest `automationRules` with `triggerEvent == "onSchedule"`
-parse but never fire because the runner doesn't subscribe to scheduler ticks.
+parse but never fire because the runner doesn’t subscribe to scheduler ticks.
 
-**Why it matters for ERP:** "Daily — recompute open balance",
-"Hourly — pull supplier price feed", "Monthly — close the period" all
+**Why it matters for ERP:** “Daily — recompute open balance”,
+“Hourly — pull supplier price feed”, “Monthly — close the period” all
 need scheduler-driven automation.
 
 **Suggested fix:** `AutomationRunner` registers a single
 `ScheduledTask` per cron expression seen in `automationRules`. On tick,
-runs the rule's actions through the existing dispatcher.
+runs the rule’s actions through the existing dispatcher.
 
 ### 3.9 Files / Print / Import-Export missing
 
-These are documented as planned (P3.1 / P3.2 / P3.3) and won't surprise
+These are documented as planned (P3.1 / P3.2 / P3.3) and won’t surprise
 anyone, but they are real ERP blockers:
 
 - **Files:** Required by every transactional DocType. Land first.
 - **Print / PDF:** Required by Sales Invoice, Purchase Order, Delivery
   Note, Quotation. Land before submitting Selling/Buying modules.
-- **Import / Export:** Required by every customer's data migration. Land
+- **Import / Export:** Required by every customer’s data migration. Land
   before any production deployment.
 
 ### 3.10 Dashboard rendering missing
@@ -213,7 +213,7 @@ anyone, but they are real ERP blockers:
 `HubDashboards.swift` already declares dashboards. No view renders them.
 
 **Suggested fix:** Add `GenericDashboardView` to `MercantisCoreUI`
-backed by `ReportEngine.execute(...)` for the data tiles. Hub's
+backed by `ReportEngine.execute(...)` for the data tiles. Hub’s
 `HubMenuItem.dashboard` case in `Navigation/HubNavigation.swift` then
 routes to it.
 
@@ -269,7 +269,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 
 - **Shipped** — matches the documented contract, end-to-end.
 - **Partial** — real implementation, but narrower than the doc claims (explicit caveats below).
-- **Stub** — type/method exists but the moving parts don't.
+- **Stub** — type/method exists but the moving parts don’t.
 - **Planned** — accurately labelled as planned in the docs; absent from code, which is fine.
 - **Missing** — the docs describe it as present, but nothing exists on disk.
 
@@ -293,12 +293,12 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 | `Naming/` | Yes | Ships `NamingStrategy`, `NamingContext`, `NamingError`, `NamingService`, `UUIDv7Strategy`, `NamingSeriesStrategy`, `FieldDerivedStrategy`, `PromptStrategy`, `FormatStrategy` (P1.1 / ADR-014, 2026-04-23). `DocumentNamingRule` conditional selector is still unimplemented. |
 | `Notifications/` | Yes | Has **both** `EventBus.swift` (ADR-012, superseded) and `EventEmitter.swift` (ADR-020). `DocumentEngine` still requires an `EventBus` in its initializer, so the old path has not been retired. |
 | `Permissions/` | Yes | `PermissionEngine.swift` is the only file and matches the revised §4.4 / ADR-011 (flat surface — see P0.5). `PermissionContext.swift` and `PermissionEvaluators.swift` were documented by earlier revisions but are no longer part of the target shape. |
-| `Printing/` | **No** | `LetterHead.swift`, `PDFGenerator.swift`, `PrintFormat.swift` absent. (Docs correctly mark §4.17 _planned_, but §7's tree still lists them.) |
+| `Printing/` | **No** | `LetterHead.swift`, `PDFGenerator.swift`, `PrintFormat.swift` absent. (Docs correctly mark §4.17 _planned_, but §7’s tree still lists them.) |
 | `Reporting/` | Yes | `ReportEngine.swift` only. |
 | `Scheduling/` | Yes | Ships `ScheduledTask`, `CronExpression`, `SchedulerPersistence`, `SchedulerService` (P1.4 / §4.13, 2026-04-24). Cadence is persisted in the v6 `scheduler_state` table. |
 | `Storage/` | Yes | Matches §4.3. |
 | `SyncEngine/` | Yes | Also contains `CloudAdapter.swift` with a `NoOpCloudAdapter` — not listed in §7 but referenced elsewhere (ADR-018). |
-| `UIShell/` | Yes (much larger than §7) | See §2.17 "UIShell reality" below. Now its own SwiftPM library product `MercantisCoreUI` (P2.7). |
+| `UIShell/` | Yes (much larger than §7) | See §2.17 “UIShell reality” below. Now its own SwiftPM library product `MercantisCoreUI` (P2.7). |
 | `Workflows/` | Yes | Matches §4.5. |
 | `Views/DesignSystem/` | **On disk, not in §7** | 14 files of demo/design-lab surfaces. Mentioned in prose in §5.1 but not in the tree. |
 
@@ -324,7 +324,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 - **Shipped** — Field-level diffs written to `document_versions` on save (ADR-024).
 - **Shipped** — `ValidationPipeline` protocol + stages (ADR-022): type coercion, required, link, unique, expression rule, workflow guard, permission. All seven are real guards composed in `DocumentEngine.save` (and `applyRemote`). `WorkflowGuardStage` enforces declared transitions, roles, and condition expressions against the persisted `status`; `PermissionStage` delegates to `PermissionEngine.canPerform`. (P1.5 — 2026-04-23)
 - **Partial** — `list(docType:filters:)` filters are equality-only. No sort, no limit, no LIKE/range, despite `§4.15` advertising `sortBy:limit:`.
-- **Partial** — `audit_log` table is created in the migration but nothing writes to it. §4.3 describes it as "the immutable audit trail of all document mutations"; in practice the sync queue is acting as that log.
+- **Partial** — `audit_log` table is created in the migration but nothing writes to it. §4.3 describes it as “the immutable audit trail of all document mutations”; in practice the sync queue is acting as that log.
 
 ### 2.3 Storage — §4.3
 
@@ -334,15 +334,15 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 
 ### 2.4 Permissions Engine — §4.4
 
-- **Shipped** — `PermissionEngine` exposes `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, and `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`. `ValidationPipeline`'s `PermissionStage` calls into `canPerform`.
+- **Shipped** — `PermissionEngine` exposes `canPerform(operation:on:userRoles:)`, `canAccessField(fieldKey:on:userRoles:operation:)`, and `canAccessRow(document:userRoles:rowExpression:userId:userAttributes:expressionEvaluator:)`. `ValidationPipeline`’s `PermissionStage` calls into `canPerform`.
 - **Aligned (P0.5 — 2026-04-23)** — §4.4 and ADR-011 now describe the flat method surface that actually ships.
-- **Shipped (P1.7 — 2026-04-25)** — `canAccessRow` now evaluates a sandboxed boolean `rowExpression` via `ExpressionEvaluator` over the document's fields plus a `user.*` namespace. A `nil`/empty expression grants access; an expression that throws fails closed. Coverage in `PermissionEngineTests.swift`.
+- **Shipped (P1.7 — 2026-04-25)** — `canAccessRow` now evaluates a sandboxed boolean `rowExpression` via `ExpressionEvaluator` over the document’s fields plus a `user.*` namespace. A `nil`/empty expression grants access; an expression that throws fails closed. Coverage in `PermissionEngineTests.swift`.
 - **Not implemented** — There is no app-/module-level gate. Workflow transition role checks live inside `WorkflowEngine.availableTransitions` and are not routed through `PermissionEngine`. `DocumentEngine.list` does not yet apply `canAccessRow` automatically.
 
 ### 2.5 Workflow Engine — §4.5
 
 - **Shipped** — `availableTransitions`, `transition`, transition-history records, event emission.
-- **Partial** — `WorkflowTransitionHistory` is produced and returned to the caller but is **not persisted** anywhere in `WorkflowEngine`; it's up to the caller to store it. §4.5 implies it's recorded automatically.
+- **Partial** — `WorkflowTransitionHistory` is produced and returned to the caller but is **not persisted** anywhere in `WorkflowEngine`; it’s up to the caller to store it. §4.5 implies it’s recorded automatically.
 
 ### 2.6 Sync Engine — §4.6 / ADR-005 / ADR-006
 
@@ -352,7 +352,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 - **Shipped (P0.3)** — `lastServerSequence` now persists in a v4 `sync_state` key/value table.
 - **Shipped (P0.4 / ADR-028)** — `SyncEngine.pruneSyncQueue(force:)` deletes acknowledged `.pushed` and `.applied` rows once they fall outside the retention window (default 30 days each).
 - **Shipped (W6, 2026-04-29)** — typed `FieldValue` coercion + round-trip: `DocumentEngine.save` / `fetch` preserve the tagged JSON envelope for `.date`, `.dateTime`, `.data`, and `.array`.
-- **Partial** — `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)` appends a `resolveConflict` mutation but does not load the chosen version's payload.
+- **Partial** — `resolveConflict(docType:documentId:chosenVersion:resolvedBy:)` appends a `resolveConflict` mutation but does not load the chosen version’s payload.
 
 ### 2.7 Expression Engine — §4.7 / ADR-017
 
@@ -388,7 +388,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 
 - **Shipped (Automation, P1.2 — 2026-04-24)** — Action registry + built-in handlers wired through `ExtensionActionDispatcher`. Covered in `AutomationTests.swift`.
 - **Shipped (Scheduling, P1.4 — 2026-04-24)** — `mercantis core/Scheduling/` ships `ScheduledTask`, `CronExpression`, `SchedulerPersistence`, and `SchedulerService`. `SchedulerService` conforms to `ExtensionSchedulerRegistrar`. Last-run state survives process restarts via the v6 `scheduler_state` table. `AppInstaller.uninstall` calls `SchedulerService.unregister(appId:)` to wipe persisted state on full uninstall.
-- **Cron support** — dependency-free five-field parser (minute, hour, day-of-month, month, day-of-week). Supports `*`, integer, comma-separated lists, inclusive ranges, and `*/step`. Day-of-week accepts `0`–`7` with both `0` and `7` binding to Sunday. `@yearly` / `@daily` aliases are not supported — `ScheduleInterval` already covers those cases.
+- **Cron support** — dependency-free five-field parser (minute, hour, day-of-month, month, day-of-week). Supports `*`, integer, comma-separated lists, inclusive ranges, and `*/step`. Day-of-week accepts `0`–7 with both `0` and `7` binding to Sunday. `@yearly` / `@daily` aliases are not supported — `ScheduleInterval` already covers those cases.
 - **Known follow-ups** — `mercantis_coreApp.swift` still does not construct an `AppInstaller` / `SchedulerService` at launch. Scheduler-triggered automation rules (`triggerEvent == "onSchedule"`) are still no-ops because the runner is not wired to the scheduler.
 
 ### 2.13 Caching Layer — §4.14
@@ -397,7 +397,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 
 ### 2.14 Public API Surface — §4.15
 
-- **Shipped** — Everything listed in the "Key API points" bullets exists with the signatures shown, **except**:
+- **Shipped** — Everything listed in the “Key API points” bullets exists with the signatures shown, **except**:
   - `PermissionEngine.canPerform(operation:on:context:)` — real signature is `canPerform(operation:on:userRoles:)`. No `context:` parameter.
   - `DocumentEngine.list(docType:filters:sortBy:limit:)` — real signature is `list(docType:filters:)` only.
   - `AutomationActionRegistry` — does not exist.
@@ -416,9 +416,9 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 - **Shipped** — `NavigationShell`, `CommandBarView`, `GenericFormView`, `GenericListView`, `FormBuilderView`, `DocTypeBuilderView`, `DocTypeListView`. Three-pane FormBuilder with dedicated `WindowGroup` works.
 - **Note** — UIShell is by far the largest subsystem. The core engine (DocumentEngine + SyncEngine + ExpressionEngine) totals ~1,850 lines. The balance of effort is ~60% UI, ~20% engine, ~20% everything else.
 - **Partial** — `AppManifest.dashboards: [DashboardDefinition]` decodes into the manifest, but there is no `DashboardView` or dashboard rendering code. The type exists; the runtime does not.
-- **Footgun** — `DocTypeBuilderView.swift` does `fatalError` when the metadata DB won't open. Acceptable for a builder surface, but it's the only `fatalError` in the codebase.
+- **Footgun** — `DocTypeBuilderView.swift` does `fatalError` when the metadata DB won’t open. Acceptable for a builder surface, but it’s the only `fatalError` in the codebase.
 - **Link picker (W4 / ADR-030, 2026-04-29)** — `LinkPickerField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `linkSearchProvider: ((String, String) -> [Document])?` closure; when supplied the form renders a search-as-you-type picker sheet for `FieldType.link` fields. When `nil` (the default), the form falls back to plain `TextField` — fully backwards-compatible.
-- **Inline child-table editor (W5 / ADR-031, 2026-04-29)** — `ChildTableField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `childDocTypeProvider: ((String) -> DocType?)?` closure; when supplied the form renders an editable inline grid for `FieldType.table` fields, with columns derived from the child DocType's field schema. Children persist atomically through the existing `Document.children` / `ChildRow` plumbing.
+- **Inline child-table editor (W5 / ADR-031, 2026-04-29)** — `ChildTableField` view added to `MercantisCoreUI`. `GenericFormView` accepts an optional `childDocTypeProvider: ((String) -> DocType?)?` closure; when supplied the form renders an editable inline grid for `FieldType.table` fields, with columns derived from the child DocType’s field schema. Children persist atomically through the existing `Document.children` / `ChildRow` plumbing.
 - **Rich text field (W7 / ADR-033, 2026-04-29)** — `FieldType.richText` persists Markdown as a plain `String`. `RichTextField` adds an edit/preview toggle backed by `AttributedString(markdown:)`. `GenericListView` strips Markdown to a single-line plain-text summary.
 - **Image field (W8 / ADR-034, 2026-04-29)** — `FieldType.image` persists as `.data(...)` (with legacy `.string(...)` URLs still accepted by validation). `ImageField` adds an inline thumbnail preview plus a native chooser (`PhotosPicker` on iOS, `NSOpenPanel` on macOS).
 - **Barcode field (W9 / ADR-035, 2026-04-29)** — `FieldType.barcode` persists as a plain `String`. `BarcodeField` adds a text field plus an iOS-only `AVFoundation` scan button/sheet; on macOS the scan button is hidden and manual entry remains available.
@@ -455,7 +455,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 
 - `.library(name: "MercantisCore", targets: ["MercantisCore"])` — the engine, importable via `.package(url:from:)`. The target points at `mercantis core/` with `exclude: ["Assets.xcassets", "mercantis_coreApp.swift", "UIShell", "Views"]`, so SwiftUI / app-shell code is deliberately not part of the library. GRDB (`https://github.com/groue/GRDB.swift`, `from: "6.0.0"`) is declared on the library target. Shipped in P2.6 (2026-04-25).
 - `.library(name: "MercantisCoreUI", targets: ["MercantisCoreUI"])` — the SwiftUI shell. The target points at `mercantis core/UIShell/` and depends on `MercantisCore` + GRDB. Ships `GenericFormView`, `GenericListView`, `NavigationShell`, `DocTypeBuilderView`, `FormBuilderView`, `CommandBarView`, `RecordCollectionHostView`, and supporting view types as the public renderer surface. Hub and any third-party app that wants the out-of-the-box metadata-driven UI imports this product; headless consumers stick with `MercantisCore`. Shipped in P2.7 (2026-04-27).
-- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Depends on `MercantisCore` (P2.3) for `install-app` / `list-apps` / `new-app` / `new-doctype`, and intentionally does **not** depend on `MercantisCoreUI`, so SwiftUI stays out of the CLI's transitive graph.
+- `.executable(name: "mercantis", targets: ["mercantis"])` — the CLI. Depends on `MercantisCore` (P2.3) for `install-app` / `list-apps` / `new-app` / `new-doctype`, and intentionally does **not** depend on `MercantisCoreUI`, so SwiftUI stays out of the CLI’s transitive graph.
 
 ---
 
@@ -464,7 +464,7 @@ A candid map between `ARCHITECTURE.md` / the ADR set and what is actually presen
 `MercantisCLI/` is a separate SwiftPM executable built on `swift-argument-parser`. Commands:
 
 - `new-app` — scaffold a canonical `AppManifest` JSON.
-- `new-doctype` — scaffold a canonical `DocType` (encoded via Core's `Codable`), optionally appending to a manifest.
+- `new-doctype` — scaffold a canonical `DocType` (encoded via Core’s `Codable`), optionally appending to a manifest.
 - `install-app` — calls `AppInstaller.install(manifestData:)` against a `MercantisDatabase`. Same schema, same `SchemaValidator` pass, same side-effects as the in-app install path. Pre-decode envelope checks (reverse-DNS id, semver versions) run on the CLI side as a fast-fail layer. (P2.3)
 - `migrate`, `create-patch`, `run-patch` — data-patch flow. These operate on `patch_log` and arbitrary SQL deltas rather than the engine schema.
 - `list-apps` — reads the canonical `apps(id, name, version, installedAt, payload)` schema via `MercantisDatabase`.
@@ -489,6 +489,7 @@ Everything else in the doc is at least partially real. The _engine_ is in good s
 - [`ARCHITECTURE.md`](../ARCHITECTURE.md) — full Core architecture.
 - [`Docs/ADR/`](ADR/) — architecture decision records.
 - [`Docs/ROADMAP.md`](ROADMAP.md) — enhancement backlog (P0–P3 items, sequencing, what not to build).
+- [`Docs/UX-DIRECTION.md`](UX-DIRECTION.md) — UX direction, design strategy, macOS best practice guardrails, and `MercantisCoreUI` component roadmap.
 - [`Docs/Examples/`](Examples/) — example manifests and porting guides.
 - [`Docs/ARCHITECTURE-CHANGELOG.md`](ARCHITECTURE-CHANGELOG.md) — chronological record of architecture revisions.
 - Hub-side: [`mercantis.hub.app/Docs/HUB-STATUS.md`](https://github.com/KevinBusuttil/mercantis.hub.app/blob/main/Docs/HUB-STATUS.md) — Hub implementation status and ERP module scorecard.
