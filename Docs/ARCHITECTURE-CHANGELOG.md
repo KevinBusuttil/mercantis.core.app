@@ -1,5 +1,69 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-05-05 (Phase B — scheduled automation, naming rules, counter block reservation)
+
+This revision lands the three "wiring and naming polish" items from
+STATUS.md §3.6–§3.8. ADRs 040–042 cover the design.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/Naming/DocumentNamingRule.swift` *(new)* | `(id, priority, condition, autoname)` rule. Evaluated in priority order; first match wins; nil/empty condition is a catch-all; failed evaluations skip fail-closed (ADR-040). |
+| `mercantis core/Metadata/DocType.swift` | New `namingRules: [DocumentNamingRule]` field with backward-compatible `Codable` decoding. |
+| `mercantis core/Naming/NamingService.swift` | `resolve(...)` now evaluates `docType.namingRules` first (in priority order) and uses the matching rule's `autoname`, falling through to `docType.autoname` if none matches. Constructor accepts an `ExpressionEvaluator`. |
+| `mercantis core/Naming/NamingCounterBlockReserver.swift` *(new)* | Atomic per-`(seriesKey, deviceId)` block reservation. Single-device sequential issuance preserved; two devices get disjoint ranges (ADR-042). |
+| `mercantis core/Storage/MigrationRunner.swift` | Migration v9 adds `naming_counter_blocks(seriesKey, deviceId, blockStart, blockEnd, nextValue)` PK `(seriesKey, deviceId)`. |
+| `mercantis core/DocumentEngine/DocumentEngine.swift` | `reserveCounter(...)` threads `deviceId` through to `NamingCounterBlockReserver`. The naming context closure captures `[database, deviceId]`. |
+| `mercantis core/AppRuntime/AppRuntimeTypes.swift` | `AutomationRule` gains an optional `schedule: ScheduleInterval?` (ADR-041). Custom `Codable` decode preserves backward compat for older manifests. |
+| `mercantis core/Automation/AutomationRunner.swift` | New optional `scheduler: ExtensionSchedulerRegistrar?` dependency. `register(rules:appId:)`, `applyManifests(_:)`, and `unregister(appId:)` (re-)bind `onSchedule` rules into `ScheduledTask`s with declaration id `automation::<ruleId>`. On tick, the runner iterates `gateway.listDocuments(docType:)` and runs the rule per document. New diagnostic `scheduledRuleCount(forAppId:)`. |
+| `mercantis core/Automation/AutomationRunner.swift` (gateway) | `AutomationDocumentGateway` extended with `listDocuments(docType:)`. `DocumentEngine` conformance reads through `list(docType:applyRowAccess: false)` so automation runs as a system actor. |
+| `mercantis coreTests/DocumentNamingRuleTests.swift` *(new)* | Priority ordering, catch-all (`nil` condition), fall-through, fail-closed on bad expression. |
+| `mercantis coreTests/NamingCounterBlockTests.swift` *(new)* | Single-device sequential, two-device disjoint, block exhaustion claims fresh block, separate series isolated, full DocumentEngine save round-trip preserves `…0001`/`…0002`/`…0003`. |
+| `mercantis coreTests/AutomationSchedulerTests.swift` *(new)* | Scheduled rule registration, non-schedule rules excluded, missing schedule excluded, `unregister`/re-register cancel handles cleanly, `tick()` fans out across documents, condition gates per-document, `applyManifests` integrates per-app. |
+| `mercantis coreTests/MigrationRunnerTests.swift` | Highest-applied-version bumped to 9; new `testV9CreatesNamingCounterBlocksTable`. |
+
+### Behaviour changes
+
+- `DocumentEngine.save(...)` now runs through the per-device counter
+  reservation. Single-device installs see no behavioural difference
+  (block 1..50 issues 1, 2, 3, ...). Multi-device installs no longer
+  collide on naming-series IDs.
+- `AutomationRunner` initialised with a `scheduler:` will register
+  `onSchedule` rules immediately on `register(rules:appId:)`. Existing
+  callers that don't pass a scheduler keep the legacy "scheduled rules
+  are no-ops" behaviour.
+- `AutomationDocumentGateway` gained a third method
+  (`listDocuments(docType:)`). Custom test conformances will need to
+  add it; `DocumentEngine` already does.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ADR/ADR-040-document-naming-rules.md` *(new)* | Conditional naming-rule selector. |
+| `Docs/ADR/ADR-041-scheduled-automation-rules.md` *(new)* | Runner ↔ scheduler wiring + `onSchedule` rule semantics. |
+| `Docs/ADR/ADR-042-counter-block-reservation.md` *(new)* | Per-device counter blocks. |
+| `Docs/ADR/README.md` | Index extended with ADR-040 to ADR-042. |
+| `Docs/STATUS.md` | Headline grade bumped to ~80%. §2 scorecard rows for Storage, NamingSystem, AutomationRunner, SchedulerService updated. §3.6–§3.8 rewritten as "shipped". §4 Phase B marked complete. |
+
+### Known follow-ups
+
+- Phase C is unblocked: Files / Attachments (P3.1), Print / PDF
+  (P3.2), Dashboard rendering (§3.10), Import / Export (P3.3).
+- The runner's per-tick "iterate every document" path is O(rules ×
+  documents) — fine today, optimisable later by pushing the rule's
+  condition into `DocumentEngine.list(...)`'s `whereExpression`.
+- `DocumentNamingRule.condition` expressions are not yet validated at
+  install time. The schema validator currently checks
+  `visibilityExpression` / `readOnlyExpression` / `formulaExpression`
+  on fields; extending the same check to naming rules is recommended.
+- True multi-device counter reconciliation needs a real
+  `CloudAdapter` (ADR-018). The local block infrastructure landed
+  here is correct; the cloud-side merge policy is not.
+
+---
+
 ## Revision: 2026-05-05 (Phase A engine fixes — list operators, row access, audit log, workflow transition history)
 
 This revision lands the four engine-level "ERP-blocking" gaps from STATUS.md

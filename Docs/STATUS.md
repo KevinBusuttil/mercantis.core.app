@@ -1,6 +1,6 @@
 # Mercantis Core — Status & Roadmap
 
-_Last updated: 2026-05-05 (Phase A — list operators, row access, audit log, workflow transition history)_
+_Last updated: 2026-05-05 (Phase B — scheduled automation, naming rules, counter block reservation)_
 
 This document consolidates `ERP-READINESS.md` and `IMPLEMENTATION-STATUS.md` into a single reference.
 The Enhancement Backlog (former `ENHANCEMENT-PROPOSAL.md`) has been renamed to [`ROADMAP.md`](ROADMAP.md).
@@ -27,15 +27,14 @@ section below through an “is this enough to build Accounting / Sales / Purchas
 
 ## 1. Headline grade
 
-**Core is ~75% ready as an ERP platform.** The engine layer is well-architected
-and the offline-first / metadata-driven / sandboxed-expression / mutation-log
-substrate is sound. Phase A (this revision) closed four ERP-blocking engine
-gaps — typed list operators, auto-applied row-level access, a real audit-log
-writer, and persisted workflow transition history. Most of what remains is
-either (a) host-app wiring that Hub will own, (b) ERP-flavoured features
-that have a place in the architecture but no implementation yet (Files,
-Print/PDF, Import/Export), or (c) the breadth-and-depth Phase B/C/D items
-listed in §4.
+**Core is ~80% ready as an ERP platform.** Phase A closed the four engine
+gaps; Phase B (this revision) closed the three wiring-and-naming items
+— scheduled automation rules now fire, conditional naming rules pick the
+right `autoname` per document, and counter reservation is per-device so
+multi-device offline saves don't collide. What remains is mostly (a)
+ERP-flavoured features (Files, Print/PDF, Import/Export, Dashboards),
+(b) ReportEngine role filtering and a `GenericReportView`, and (c) at
+least one real `CloudAdapter` implementation.
 
 There are no architectural rewrites required. Every gap below has a clear
 landing place in an existing subsystem.
@@ -52,14 +51,14 @@ real ERP modules on top of it?_
 | DocumentEngine | ✅ Ready | CRUD, submit/cancel/amend, optimistic concurrency, atomic mutation log, typed `ListFilter` operator surface (Phase A §3.1, ADR-036), and auto-applied row-level access (Phase A §3.4, ADR-037) all ship. |
 | MetadataEngine | ✅ Ready | DocType + ResolvedMeta + custom fields + property setters cover ERP customisation needs. `DocType.rowAccessExpression` (ADR-037) added in Phase A. |
 | ExpressionEngine | ✅ Ready | AST + cross-document `lookup()` + parse-cache means automation rules and formula fields will scale to an ERP rule set without re-architecting. |
-| Storage | ✅ Ready | GRDB/SQLite + 8 versioned migrations (v8 adds `workflow_transitions`). Proven offline-first substrate. |
+| Storage | ✅ Ready | GRDB/SQLite + 9 versioned migrations (v8 adds `workflow_transitions`, v9 adds `naming_counter_blocks`). Proven offline-first substrate. |
 | SyncEngine | ⚠️ Partial | Push/pull/conflict-resolution all work; pruning works. **No real `CloudAdapter` implementation** — only `NoOpCloudAdapter`. Multi-device ERP sync is architecturally ready but not connected to any backend. |
 | WorkflowEngine | ✅ Ready | State machine + role/condition gating + auto-persisted `WorkflowTransitionHistory` (Phase A §3.3, ADR-038, table `workflow_transitions`). Reader API exposed via both `WorkflowTransitionHistoryWriter` and `DocumentEngine.workflowTransitions(...)`. |
 | PermissionEngine | ✅ Ready | DocType / field / row-level checks all work. `DocumentEngine.list` now auto-applies `canAccessRow` via `DocType.rowAccessExpression` (Phase A §3.4, ADR-037). Per-call `applyRowAccess: false` opt-out preserved for admin paths. |
-| NamingSystem | ⚠️ Partial | Five strategies ship (UUIDv7, Series, FieldDerived, Prompt, Format). **`DocumentNamingRule` (conditional selector) is missing** — per-company / per-fiscal-year naming series cannot be expressed today. **Counters are local-only** — multi-device sequential naming will collide. |
+| NamingSystem | ✅ Ready | Five strategies ship + conditional `DocumentNamingRule` selector (Phase B §3.6, ADR-040) + per-device counter block reservation (Phase B §3.7, ADR-042). Multi-device offline saves no longer collide on `SINV-2026-0001`-style series. |
 | AppRuntime | ⚠️ Partial | `AppManifest`, `AppInstaller`, `ExtensionPointResolver` all ship. **Not constructed at app launch** in `mercantis_coreApp.swift`; Hub already does this on its side, but third-party app shells will need the same wiring or a helper. |
-| AutomationRunner | ✅ Ready | Action registry + built-in handlers (`set_value`, `set_status`, `send_notification`, `validate`, `assign`) cover the common ERP automation cases. Scheduler-triggered rules (`triggerEvent == "onSchedule"`) are still no-ops — see §3. |
-| SchedulerService | ⚠️ Partial | Cron, persistence, tick loop all ship. **Not wired to AutomationRunner**, so manifest-declared scheduled automation rules don’t fire. **Background-task budget categories** (`short` / `default` / `long`) **and `audit_log` writes for failed runs** are not implemented. |
+| AutomationRunner | ✅ Ready | Action registry + built-in handlers + `onSchedule` rules (Phase B §3.8, ADR-041). Scheduled rules iterate every document of the rule's DocType per tick, evaluate the condition per document, and run actions on matches. |
+| SchedulerService | ✅ Ready | Cron, persistence, tick loop, and `AutomationRunner` integration (Phase B §3.8). Manifest-declared `onSchedule` automation rules now fire as expected. |
 | ReportEngine | ⚠️ Partial | `register` / `availableReports` / `execute` exist. **Role filtering is ignored** — `availableReports(for: role)` returns everything. No native renderer yet (`MercantisCoreUI` has no `GenericReportView`). |
 | Audit log | ✅ Ready | `AuditLogWriter` (Phase A §3.2, ADR-039) writes inside the same atomic block as save/applyRemote/delete, and follow-on rows for submit/cancel/amend lifecycle events. Reader API exposed via `DocumentEngine.auditEntries(forDocumentId:)` / `(forDocType:limit:offset:)`. |
 | Files / Attachments | ❌ Missing | No `Files/` subsystem on disk. Every ERP transactional document needs attachments (scanned invoice, signed PO, photo of damaged shipment). |
@@ -129,48 +128,36 @@ defines the protocol, host apps implement. But shipping at least one
 reference adapter (likely CloudKit) would help Hub’s first
 multi-device customer.
 
-### 3.6 `DocumentNamingRule` conditional selector missing
+### 3.6 `DocumentNamingRule` conditional selector — ✅ shipped (Phase B, ADR-040)
 
-**What ships today:** Five naming strategies, but no rule layer that
-picks between them based on document field values.
+`DocType.namingRules: [DocumentNamingRule]` declares priority-ordered
+rules `(id, priority, condition, autoname)`. `NamingService.resolve(...)`
+evaluates them in ascending priority; the first rule whose condition
+matches wins, otherwise it falls through to `DocType.autoname`. A `nil`
+or empty condition is a catch-all. Conditions that fail to evaluate
+fail closed (skipped). Unblocks ERPnext-style per-company /
+per-fiscal-year naming.
 
-**Why it matters for ERP:** Per-company naming series
-(`SINV-ACME-` vs `SINV-WIDGETS-`), per-fiscal-year resets, per-warehouse
-GRN numbering — all expressed via conditional rules in ERPNext. None
-expressible today in Hub.
+### 3.7 Naming counter range reservation — ✅ shipped (Phase B, ADR-042)
 
-**Suggested fix:** Implement `DocumentNamingRule` (priority-ordered,
-condition expression + strategy reference) and evaluate in
-`NamingService.resolve(...)` before falling through to the DocType’s
-default `autoname`.
+Migration v9 adds `naming_counter_blocks(seriesKey, deviceId, blockStart, blockEnd, nextValue)`.
+`NamingCounterBlockReserver` allocates per-device blocks from the
+shared `naming_counters` row, so two devices saving offline draw from
+disjoint ranges and never pick the same `SINV-2026-0001`. Default
+block size 50 keeps single-device behaviour byte-for-byte identical.
+True cloud reconciliation (block invalidation on remote-higher-value)
+is a `CloudAdapter` follow-up per ADR-018.
 
-### 3.7 Naming counters are local-only
+### 3.8 SchedulerService ↔ AutomationRunner wiring — ✅ shipped (Phase B, ADR-041)
 
-**What ships today:** `naming_counters(seriesKey, value)` table written
-in a short transaction. Single-device only.
-
-**Why it matters for ERP:** Two devices submitting Sales Invoices
-offline will pick the same `SINV-2026-0001` and collide on sync
-(VCM rejects, but the user experience is bad).
-
-**Suggested fix:** Per ADR-014’s open follow-up — per-device range
-reservation via the sync queue. Each device claims a block of N
-counter values from the cloud; offline issuance draws from the
-local block. Reconciles on next sync.
-
-### 3.8 SchedulerService is not wired to AutomationRunner
-
-**What ships today:** Both subsystems exist and tick correctly in
-isolation. Manifest `automationRules` with `triggerEvent == "onSchedule"`
-parse but never fire because the runner doesn’t subscribe to scheduler ticks.
-
-**Why it matters for ERP:** “Daily — recompute open balance”,
-“Hourly — pull supplier price feed”, “Monthly — close the period” all
-need scheduler-driven automation.
-
-**Suggested fix:** `AutomationRunner` registers a single
-`ScheduledTask` per cron expression seen in `automationRules`. On tick,
-runs the rule’s actions through the existing dispatcher.
+`AutomationRule` gains an optional `schedule: ScheduleInterval?`.
+`AutomationRunner` accepts an optional `scheduler:` at init; when
+present, `register(rules:appId:)` registers a `ScheduledTask` per
+`onSchedule` rule. On tick, the runner iterates documents of the
+rule's `docType` (via the new `gateway.listDocuments(docType:)`),
+evaluates the condition per document, and runs the actions on
+matches. `unregister(appId:)` and `applyManifests(_:)` cancel old
+handles cleanly.
 
 ### 3.9 Files / Print / Import-Export missing
 
@@ -208,11 +195,15 @@ routes to it.
 4. ✅ **§3.2 Audit log writer + reader** — `AuditLogWriter` wired into the
    atomic write block (ADR-039).
 
-### Phase B — Wiring and naming polish
+### Phase B — Wiring and naming polish — ✅ shipped 2026-05-05
 
-5. **§3.8 Scheduler ↔ AutomationRunner.** Unlocks scheduled rules.
-6. **§3.6 `DocumentNamingRule`.** Unlocks per-company naming series.
-7. **§3.7 Counter range reservation.** Required before any production multi-device deployment.
+5. ✅ **§3.8 Scheduler ↔ AutomationRunner** (ADR-041). `onSchedule`
+   automation rules now fire across every document of the rule's
+   DocType, with per-document condition evaluation.
+6. ✅ **§3.6 `DocumentNamingRule`** (ADR-040). Priority-ordered
+   conditional selector evaluated in `NamingService.resolve(...)`.
+7. ✅ **§3.7 Counter range reservation** (ADR-042). Per-device
+   block allocation backed by migration v9's `naming_counter_blocks`.
 
 ### Phase C — ERP feature breadth
 

@@ -33,6 +33,10 @@ public struct DocType: Codable, Identifiable, Sendable {
     /// row-filter results through `PermissionEngine.canAccessRow`. When `nil`
     /// or empty, no row-level restriction is enforced. (Phase A §3.4)
     public var rowAccessExpression: String?
+    /// Conditional naming rules evaluated in `priority` order before
+    /// falling through to `autoname`. Required by per-company /
+    /// per-fiscal-year ERPnext-style naming series. (Phase B §3.6, ADR-040)
+    public var namingRules: [DocumentNamingRule]
 
     public init(
         id: String,
@@ -54,7 +58,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         titleField: String,
         isCustom: Bool = false,
         formLayout: FormLayout? = nil,
-        rowAccessExpression: String? = nil
+        rowAccessExpression: String? = nil,
+        namingRules: [DocumentNamingRule] = []
     ) {
         self.id = id
         self.name = name
@@ -76,6 +81,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.isCustom = isCustom
         self.formLayout = formLayout
         self.rowAccessExpression = rowAccessExpression
+        self.namingRules = namingRules
     }
 
     enum CodingKeys: String, CodingKey {
@@ -99,6 +105,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         case isCustom
         case formLayout
         case rowAccessExpression
+        case namingRules
     }
 
     public init(from decoder: any Decoder) throws {
@@ -124,5 +131,6 @@ public struct DocType: Codable, Identifiable, Sendable {
         isCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
         formLayout = try container.decodeIfPresent(FormLayout.self, forKey: .formLayout)
         rowAccessExpression = try container.decodeIfPresent(String.self, forKey: .rowAccessExpression)
+        namingRules = try container.decodeIfPresent([DocumentNamingRule].self, forKey: .namingRules) ?? []
     }
 }

@@ -56,7 +56,7 @@ final class MigrationRunnerTests: XCTestCase {
         MigrationRunner.registerAll(into: &runner, pool: pool)
         try runner.migrate(pool: pool)
 
-        XCTAssertEqual(try highestAppliedVersion(), 8)
+        XCTAssertEqual(try highestAppliedVersion(), 9)
     }
 
     func testV1CreatesExpectedTables() throws {
@@ -135,6 +135,19 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertTrue(try columnExists("workflowId", in: "workflow_transitions"))
         XCTAssertTrue(try columnExists("fromState", in: "workflow_transitions"))
         XCTAssertTrue(try columnExists("toState", in: "workflow_transitions"))
+    }
+
+    func testV9CreatesNamingCounterBlocksTable() throws {
+        var runner = MigrationRunner()
+        MigrationRunner.registerAll(into: &runner, pool: pool)
+        try runner.migrate(pool: pool)
+
+        XCTAssertTrue(try tableExists("naming_counter_blocks"))
+        XCTAssertTrue(try columnExists("seriesKey",  in: "naming_counter_blocks"))
+        XCTAssertTrue(try columnExists("deviceId",   in: "naming_counter_blocks"))
+        XCTAssertTrue(try columnExists("blockStart", in: "naming_counter_blocks"))
+        XCTAssertTrue(try columnExists("blockEnd",   in: "naming_counter_blocks"))
+        XCTAssertTrue(try columnExists("nextValue",  in: "naming_counter_blocks"))
     }
 
     func testSecondMigrateIsIdempotent() throws {

@@ -22,8 +22,12 @@ import Foundation
 public final class NamingService {
 
     private var strategies: [String: NamingStrategy]
+    private let expressionEvaluator: ExpressionEvaluator
 
-    public init(strategies: [NamingStrategy] = NamingService.defaultStrategies()) {
+    public init(
+        strategies: [NamingStrategy] = NamingService.defaultStrategies(),
+        expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator()
+    ) {
         var map: [String: NamingStrategy] = [:]
         for strategy in strategies {
             for token in strategy.handles {
@@ -31,6 +35,7 @@ public final class NamingService {
             }
         }
         self.strategies = map
+        self.expressionEvaluator = expressionEvaluator
     }
 
     public static func defaultStrategies() -> [NamingStrategy] {
@@ -51,16 +56,63 @@ public final class NamingService {
         }
     }
 
-    /// Resolve the document's ID according to the DocType's `autoname`.
+    /// Resolve the document's ID according to the DocType's `namingRules`
+    /// (Phase B §3.6, ADR-040), falling back to `autoname` if no rule matches.
     ///
-    /// A DocType with no `autoname` (or `autoname == "UUID"`) uses
-    /// `UUIDv7Strategy` — this is the recommended offline-safe default.
+    /// Rules run in ascending `priority` order; ties resolve by declaration
+    /// order. The first rule whose `condition` evaluates `true` against the
+    /// document's fields wins, and its `autoname` spec is used in place of
+    /// the DocType's. A `nil` / empty / whitespace-only condition matches
+    /// every document — useful as a final-priority catch-all.
+    ///
+    /// Conditions that fail to evaluate (parse error, type mismatch) are
+    /// skipped fail-closed: the rule is treated as a non-match and the
+    /// next rule (or the DocType `autoname`) is tried.
+    ///
+    /// A DocType with no rules and no `autoname` (or `autoname == "UUID"`)
+    /// uses `UUIDv7Strategy` — the recommended offline-safe default.
     public func resolve(
         docType: DocType,
         document: Document,
         context: NamingContext
     ) throws -> String {
-        let raw = (docType.autoname ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedAutoname = selectAutoname(forDocType: docType, document: document)
+        return try dispatch(
+            autoname: resolvedAutoname,
+            docType: docType,
+            document: document,
+            context: context
+        )
+    }
+
+    /// Evaluate `docType.namingRules` and return the winning `autoname`
+    /// spec, falling back to `docType.autoname` if no rule matches.
+    private func selectAutoname(forDocType docType: DocType, document: Document) -> String? {
+        guard !docType.namingRules.isEmpty else { return docType.autoname }
+        let ordered = docType.namingRules.sorted { $0.priority < $1.priority }
+        for rule in ordered {
+            let trimmed = rule.condition?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed?.isEmpty ?? true {
+                return rule.autoname
+            }
+            let passes = (try? expressionEvaluator.evaluateBool(
+                expression: trimmed!,
+                context: document.fields
+            )) ?? false
+            if passes {
+                return rule.autoname
+            }
+        }
+        return docType.autoname
+    }
+
+    private func dispatch(
+        autoname: String?,
+        docType: DocType,
+        document: Document,
+        context: NamingContext
+    ) throws -> String {
+        let raw = (autoname ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         if raw.isEmpty {
             return try dispatchUUID(docType: docType, document: document, context: context)
