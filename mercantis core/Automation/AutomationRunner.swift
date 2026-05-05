@@ -21,6 +21,9 @@ import Foundation
 public protocol AutomationDocumentGateway: AnyObject {
     func loadDocument(docType: String, id: String) throws -> Document?
     func saveDocument(_ document: Document) throws -> Document
+    /// Used by `onSchedule` rules to enumerate every document of the rule's
+    /// `docType` per tick. Phase B §3.8.
+    func listDocuments(docType: String) throws -> [Document]
 }
 
 extension DocumentEngine: AutomationDocumentGateway {
@@ -30,6 +33,10 @@ extension DocumentEngine: AutomationDocumentGateway {
 
     public func saveDocument(_ document: Document) throws -> Document {
         try save(document)
+    }
+
+    public func listDocuments(docType: String) throws -> [Document] {
+        try list(docType: docType, applyRowAccess: false)
     }
 }
 
@@ -73,11 +80,17 @@ public final class AutomationRunner: @unchecked Sendable {
     private let userId: String
     private let clock: @Sendable () -> Date
     private let errorReporter: (@Sendable (RunnerError) -> Void)?
+    /// Optional scheduler integration. When provided, `onSchedule` rules
+    /// register themselves as `ScheduledTask`s and fire on tick. (Phase B §3.8)
+    private let scheduler: ExtensionSchedulerRegistrar?
 
     private let lock = NSLock()
     private var rulesByApp: [String: [AutomationRule]] = [:]
     private var tokens: [SubscriptionToken] = []
     private var inFlightDocIds: Set<String> = []
+    /// Active scheduler handles per-app, indexed by rule id, so `unregister`
+    /// or rule replacement cancels them cleanly.
+    private var scheduleHandlesByApp: [String: [String: ExtensionSchedulerHandle]] = [:]
 
     public init(
         emitter: EventEmitter,
@@ -88,7 +101,8 @@ public final class AutomationRunner: @unchecked Sendable {
         expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
         userId: String = "",
         clock: @escaping @Sendable () -> Date = { Date() },
-        errorReporter: (@Sendable (RunnerError) -> Void)? = nil
+        errorReporter: (@Sendable (RunnerError) -> Void)? = nil,
+        scheduler: ExtensionSchedulerRegistrar? = nil
     ) {
         self.emitter = emitter
         self.registry = registry
@@ -99,11 +113,15 @@ public final class AutomationRunner: @unchecked Sendable {
         self.userId = userId
         self.clock = clock
         self.errorReporter = errorReporter
+        self.scheduler = scheduler
         wireSubscriptions()
     }
 
     deinit {
         for token in tokens { token.cancel() }
+        for (_, handles) in scheduleHandlesByApp {
+            for (_, handle) in handles { handle.cancel() }
+        }
     }
 
     // MARK: - Rule registration
@@ -114,13 +132,16 @@ public final class AutomationRunner: @unchecked Sendable {
         lock.lock()
         rulesByApp[appId] = rules
         lock.unlock()
+        rebindScheduledRules(for: appId, rules: rules)
     }
 
     /// Remove every rule registered for `appId`. Matches `AppInstaller.uninstall`.
     public func unregister(appId: String) {
         lock.lock()
         rulesByApp.removeValue(forKey: appId)
+        let handles = scheduleHandlesByApp.removeValue(forKey: appId) ?? [:]
         lock.unlock()
+        for (_, handle) in handles { handle.cancel() }
     }
 
     /// Install every rule from every manifest. Used by `restore`-style paths
@@ -131,7 +152,15 @@ public final class AutomationRunner: @unchecked Sendable {
         for manifest in manifests {
             rulesByApp[manifest.id] = manifest.automationRules
         }
+        let snapshotHandles = scheduleHandlesByApp
+        scheduleHandlesByApp.removeAll(keepingCapacity: true)
         lock.unlock()
+        for (_, handles) in snapshotHandles {
+            for (_, handle) in handles { handle.cancel() }
+        }
+        for manifest in manifests {
+            rebindScheduledRules(for: manifest.id, rules: manifest.automationRules)
+        }
     }
 
     /// The number of rules currently registered for `appId`. For tests and
@@ -139,6 +168,124 @@ public final class AutomationRunner: @unchecked Sendable {
     public func ruleCount(forAppId appId: String) -> Int {
         lock.lock(); defer { lock.unlock() }
         return rulesByApp[appId]?.count ?? 0
+    }
+
+    /// Number of `onSchedule` rules currently armed for `appId`.
+    public func scheduledRuleCount(forAppId appId: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return scheduleHandlesByApp[appId]?.count ?? 0
+    }
+
+    // MARK: - Scheduler integration (Phase B §3.8)
+
+    /// (Re-)register `onSchedule` rules with the scheduler. Cancels any
+    /// existing handles for the same app first, so calling `register(rules:)`
+    /// with a modified rule set applies cleanly.
+    private func rebindScheduledRules(for appId: String, rules: [AutomationRule]) {
+        guard let scheduler else { return }
+
+        // Cancel any prior handles before we re-bind.
+        lock.lock()
+        let oldHandles = scheduleHandlesByApp.removeValue(forKey: appId) ?? [:]
+        lock.unlock()
+        for (_, handle) in oldHandles { handle.cancel() }
+
+        var newHandles: [String: ExtensionSchedulerHandle] = [:]
+        for rule in rules {
+            guard rule.triggerEvent.lowercased() == "onschedule",
+                  let interval = rule.schedule else { continue }
+            let declaration = SchedulerEventDeclaration(
+                id: "automation::\(rule.id)",
+                interval: interval,
+                actions: []
+            )
+            let capturedAppId = appId
+            let capturedRule = rule
+            let handle = scheduler.register(
+                declaration: declaration,
+                appId: capturedAppId
+            ) { [weak self] in
+                self?.handleScheduledTick(rule: capturedRule, appId: capturedAppId)
+            }
+            newHandles[rule.id] = handle
+        }
+
+        if !newHandles.isEmpty {
+            lock.lock()
+            scheduleHandlesByApp[appId] = newHandles
+            lock.unlock()
+        }
+    }
+
+    /// Fire one `onSchedule` rule. Iterates every document of the rule's
+    /// `docType` (via the gateway), evaluates the condition per-document,
+    /// and runs actions on matches. Errors per document are reported but
+    /// do not abort the iteration.
+    private func handleScheduledTick(rule: AutomationRule, appId: String) {
+        guard let gateway else {
+            // No gateway → run actions document-less so notification /
+            // assignment / pure-action rules still fire.
+            do {
+                try runDocumentLessRule(rule, appId: appId)
+            } catch {
+                errorReporter?(.ruleFailed(appId: appId, ruleId: rule.id, underlying: error))
+            }
+            return
+        }
+
+        let documents: [Document]
+        do {
+            documents = try gateway.listDocuments(docType: rule.docType)
+        } catch {
+            errorReporter?(.ruleFailed(appId: appId, ruleId: rule.id, underlying: error))
+            return
+        }
+
+        for document in documents {
+            do {
+                try runRule(rule, appId: appId, trigger: "onSchedule", initialDocument: document)
+            } catch {
+                errorReporter?(.ruleFailed(appId: appId, ruleId: rule.id, underlying: error))
+            }
+        }
+    }
+
+    /// Run a rule that has no document context. Used when the runner has no
+    /// gateway — the actions still execute against a placeholder document.
+    private func runDocumentLessRule(_ rule: AutomationRule, appId: String) throws {
+        var placeholder = Document(
+            id: "scheduler:\(rule.id)",
+            docType: rule.docType,
+            company: "",
+            status: "",
+            createdAt: clock(),
+            updatedAt: clock(),
+            syncVersion: 0,
+            syncState: .local,
+            docStatus: 0,
+            amendedFrom: nil,
+            fields: [:],
+            children: [:]
+        )
+        let context = AutomationContext(
+            appId: appId,
+            trigger: "onSchedule",
+            docType: rule.docType,
+            documentId: placeholder.id,
+            userId: userId,
+            now: clock(),
+            notificationSink: notificationSink,
+            assignmentSink: assignmentSink,
+            expressionEvaluator: expressionEvaluator
+        )
+        for action in rule.actions {
+            try registry.execute(
+                actionType: action.type,
+                parameters: action.parameters,
+                on: &placeholder,
+                context: context
+            )
+        }
     }
 
     // MARK: - Event wiring

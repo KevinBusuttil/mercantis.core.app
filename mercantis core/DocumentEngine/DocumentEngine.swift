@@ -239,8 +239,8 @@ public final class DocumentEngine {
         let context = NamingContext(
             userSuppliedName: userSuppliedName,
             now: Date(),
-            counterProvider: { [database] seriesKey in
-                try Self.reserveCounter(in: database, seriesKey: seriesKey)
+            counterProvider: { [database, deviceId] seriesKey in
+                try Self.reserveCounter(in: database, seriesKey: seriesKey, deviceId: deviceId)
             }
         )
         let resolvedId = try namingService.resolve(
@@ -265,27 +265,17 @@ public final class DocumentEngine {
         )
     }
 
-    /// Atomically increment and return the next counter value for a naming-series key.
+    /// Reserve and return the next counter value for a naming-series key,
+    /// scoped to this device. Backed by `NamingCounterBlockReserver`
+    /// (Phase B §3.7, ADR-042) so two devices saving offline don't pick
+    /// the same number.
     private static func reserveCounter(
         in database: MercantisDatabase,
-        seriesKey: String
+        seriesKey: String,
+        deviceId: String
     ) throws -> Int {
-        try database.write { db in
-            try db.execute(
-                sql: """
-                    INSERT INTO naming_counters (seriesKey, value) VALUES (?, 1)
-                    ON CONFLICT(seriesKey) DO UPDATE SET value = value + 1
-                    """,
-                arguments: [seriesKey]
-            )
-            let row = try Row.fetchOne(
-                db,
-                sql: "SELECT value FROM naming_counters WHERE seriesKey = ?",
-                arguments: [seriesKey]
-            )
-            let value: Int = row?["value"] ?? 0
-            return value
-        }
+        let reserver = NamingCounterBlockReserver(database: database)
+        return try reserver.reserve(seriesKey: seriesKey, deviceId: deviceId)
     }
 
     // MARK: - Apply Remote (ADR-005, P0.2)

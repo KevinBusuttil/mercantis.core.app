@@ -84,6 +84,7 @@ public struct MigrationRunner {
         runner.register(version: 6, name: "add_scheduler_state", sql: MigrationRunner.v6SQL)
         runner.register(version: 7, name: "add_tree_parent", sql: MigrationRunner.v7SQL)
         runner.register(version: 8, name: "add_workflow_transitions", sql: MigrationRunner.v8SQL)
+        runner.register(version: 9, name: "add_naming_counter_blocks", sql: MigrationRunner.v9SQL)
     }
 
     // MARK: - v1 Schema
@@ -283,5 +284,31 @@ public struct MigrationRunner {
             ON workflow_transitions(documentId);
         CREATE INDEX IF NOT EXISTS idx_workflow_transitions_workflow
             ON workflow_transitions(workflowId);
+        """
+
+    // MARK: - v9 Schema — naming_counter_blocks (Phase B §3.7, ADR-042)
+
+    private static let v9SQL = """
+        -- Per-device counter blocks for naming-series IDs. Each device
+        -- reserves a contiguous block of N values from the shared
+        -- `naming_counters` allocator, then issues counter values out of
+        -- its local block without touching the shared row again until the
+        -- block is exhausted. This breaks the multi-device offline collision
+        -- (two devices can't both pick `SINV-2026-0001`) without depending
+        -- on a server round-trip per save.
+        --
+        -- `seriesKey` matches the key used by `NamingSeriesStrategy`
+        -- (e.g. "SalesInvoice::SINV-2026-"). `deviceId` matches
+        -- `DocumentEngine.deviceId`. `nextValue` is the next value the
+        -- device will issue (always within `[blockStart, blockEnd]`); when
+        -- it exceeds `blockEnd`, the device claims a fresh block.
+        CREATE TABLE IF NOT EXISTS naming_counter_blocks (
+            seriesKey   TEXT    NOT NULL,
+            deviceId    TEXT    NOT NULL,
+            blockStart  INTEGER NOT NULL,
+            blockEnd    INTEGER NOT NULL,
+            nextValue   INTEGER NOT NULL,
+            PRIMARY KEY (seriesKey, deviceId)
+        );
         """
 }

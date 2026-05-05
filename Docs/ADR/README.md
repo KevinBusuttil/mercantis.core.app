@@ -47,6 +47,9 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-037](ADR-037-doctype-row-access-expression.md) | DocType-Level `rowAccessExpression` Auto-Filter | Accepted |
 | [ADR-038](ADR-038-workflow-transition-history-persistence.md) | Workflow Transition History Persistence | Accepted |
 | [ADR-039](ADR-039-audit-log-writer.md) | `audit_log` Writer / Reader | Accepted |
+| [ADR-040](ADR-040-document-naming-rules.md) | `DocumentNamingRule` Conditional Selector | Accepted |
+| [ADR-041](ADR-041-scheduled-automation-rules.md) | Scheduled Automation Rules | Accepted |
+| [ADR-042](ADR-042-counter-block-reservation.md) | Per-Device Counter Block Reservation | Accepted |
 
 ## How to Read an ADR
 

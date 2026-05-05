@@ -89,14 +89,41 @@ public struct AutomationRule: Codable, Sendable {
     public let triggerEvent: String         // e.g. "onSave", "onSubmit", "onSchedule"
     public let conditionExpression: String  // e.g. "document.status == \"Submitted\" && document.grandTotal > 10000"
     public let actions: [AutomationAction]
+    /// Required when `triggerEvent == "onSchedule"`. Ignored otherwise.
+    /// (Phase B §3.8, ADR-041)
+    public let schedule: ScheduleInterval?
 
-    public init(id: String, name: String, docType: String, triggerEvent: String, conditionExpression: String, actions: [AutomationAction]) {
+    public init(
+        id: String,
+        name: String,
+        docType: String,
+        triggerEvent: String,
+        conditionExpression: String,
+        actions: [AutomationAction],
+        schedule: ScheduleInterval? = nil
+    ) {
         self.id = id
         self.name = name
         self.docType = docType
         self.triggerEvent = triggerEvent
         self.conditionExpression = conditionExpression
         self.actions = actions
+        self.schedule = schedule
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, docType, triggerEvent, conditionExpression, actions, schedule
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        docType = try c.decode(String.self, forKey: .docType)
+        triggerEvent = try c.decode(String.self, forKey: .triggerEvent)
+        conditionExpression = try c.decode(String.self, forKey: .conditionExpression)
+        actions = try c.decode([AutomationAction].self, forKey: .actions)
+        schedule = try c.decodeIfPresent(ScheduleInterval.self, forKey: .schedule)
     }
 }
 
