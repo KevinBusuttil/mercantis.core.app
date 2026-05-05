@@ -98,6 +98,9 @@ public final class DocumentEngine {
     private let permissionEngine: PermissionEngine
     private let auditLogWriter: AuditLogWriter
     private let workflowHistoryWriter: WorkflowTransitionHistoryWriter
+    /// Optional. When supplied, `delete(...)` cascades and removes every
+    /// attachment row + on-disk file for the deleted document. (Phase C / P3.1)
+    private let attachmentManager: AttachmentManager?
     private let deviceId: String
     private let userId: String
 
@@ -109,7 +112,8 @@ public final class DocumentEngine {
         eventEmitter: EventEmitter = EventEmitter(),
         validationPipeline: ValidationPipeline = ValidationPipeline(),
         namingService: NamingService = NamingService(),
-        permissionEngine: PermissionEngine = PermissionEngine()
+        permissionEngine: PermissionEngine = PermissionEngine(),
+        attachmentManager: AttachmentManager? = nil
     ) {
         self.database = database
         self.registry = registry
@@ -120,6 +124,7 @@ public final class DocumentEngine {
         self.permissionEngine = permissionEngine
         self.auditLogWriter = AuditLogWriter(database: database)
         self.workflowHistoryWriter = WorkflowTransitionHistoryWriter(database: database)
+        self.attachmentManager = attachmentManager
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -395,6 +400,13 @@ public final class DocumentEngine {
                 after: nil,
                 in: db
             )
+        }
+
+        // Cascade attachments (Phase C / P3.1). Done outside the document-row
+        // transaction because attachment metadata + bytes have their own
+        // atomic boundary inside `AttachmentManager.deleteAll(...)`.
+        if let attachmentManager {
+            try? attachmentManager.deleteAll(forDocumentId: id, userId: userId)
         }
 
         eventEmitter.publish(DocumentDeletedEvent(
