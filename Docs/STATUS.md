@@ -1,6 +1,6 @@
 # Mercantis Core — Status & Roadmap
 
-_Last updated: 2026-05-04_
+_Last updated: 2026-05-05 (Phase A — list operators, row access, audit log, workflow transition history)_
 
 This document consolidates `ERP-READINESS.md` and `IMPLEMENTATION-STATUS.md` into a single reference.
 The Enhancement Backlog (former `ENHANCEMENT-PROPOSAL.md`) has been renamed to [`ROADMAP.md`](ROADMAP.md).
@@ -27,13 +27,15 @@ section below through an “is this enough to build Accounting / Sales / Purchas
 
 ## 1. Headline grade
 
-**Core is ~70% ready as an ERP platform.** The engine layer is well-architected
+**Core is ~75% ready as an ERP platform.** The engine layer is well-architected
 and the offline-first / metadata-driven / sandboxed-expression / mutation-log
-substrate is sound. Most of what remains is either (a) host-app wiring that
-Hub will own, (b) ERP-flavoured features that have a place in the architecture
-but no implementation yet (Files, Print/PDF, Import/Export), or (c) a small
-number of “the type exists but the runtime does not” cases that will bite
-the first ERP module to need them.
+substrate is sound. Phase A (this revision) closed four ERP-blocking engine
+gaps — typed list operators, auto-applied row-level access, a real audit-log
+writer, and persisted workflow transition history. Most of what remains is
+either (a) host-app wiring that Hub will own, (b) ERP-flavoured features
+that have a place in the architecture but no implementation yet (Files,
+Print/PDF, Import/Export), or (c) the breadth-and-depth Phase B/C/D items
+listed in §4.
 
 There are no architectural rewrites required. Every gap below has a clear
 landing place in an existing subsystem.
@@ -47,19 +49,19 @@ real ERP modules on top of it?_
 
 | Subsystem | Grade | ERP-relevant verdict |
 |---|---|---|
-| DocumentEngine | ✅ Ready | CRUD, submit/cancel/amend, optimistic concurrency, atomic mutation log all work. The two ERP-relevant gaps are listed in §3 (`list()` capabilities; auto row-level filtering). |
-| MetadataEngine | ✅ Ready | DocType + ResolvedMeta + custom fields + property setters cover ERP customisation needs. |
+| DocumentEngine | ✅ Ready | CRUD, submit/cancel/amend, optimistic concurrency, atomic mutation log, typed `ListFilter` operator surface (Phase A §3.1, ADR-036), and auto-applied row-level access (Phase A §3.4, ADR-037) all ship. |
+| MetadataEngine | ✅ Ready | DocType + ResolvedMeta + custom fields + property setters cover ERP customisation needs. `DocType.rowAccessExpression` (ADR-037) added in Phase A. |
 | ExpressionEngine | ✅ Ready | AST + cross-document `lookup()` + parse-cache means automation rules and formula fields will scale to an ERP rule set without re-architecting. |
-| Storage | ✅ Ready | GRDB/SQLite + 6 versioned migrations. Proven offline-first substrate. |
+| Storage | ✅ Ready | GRDB/SQLite + 8 versioned migrations (v8 adds `workflow_transitions`). Proven offline-first substrate. |
 | SyncEngine | ⚠️ Partial | Push/pull/conflict-resolution all work; pruning works. **No real `CloudAdapter` implementation** — only `NoOpCloudAdapter`. Multi-device ERP sync is architecturally ready but not connected to any backend. |
-| WorkflowEngine | ⚠️ Partial | State machine + role/condition gating work. `WorkflowTransitionHistory` is **returned but not auto-persisted** — Hub will silently lose audit trail unless it stores history itself. |
-| PermissionEngine | ⚠️ Partial | DocType / field / row-level checks all work. **`DocumentEngine.list` does not auto-apply `canAccessRow`** — every list call site must remember to pass the row expression. Easy to forget in an ERP with many list views. |
+| WorkflowEngine | ✅ Ready | State machine + role/condition gating + auto-persisted `WorkflowTransitionHistory` (Phase A §3.3, ADR-038, table `workflow_transitions`). Reader API exposed via both `WorkflowTransitionHistoryWriter` and `DocumentEngine.workflowTransitions(...)`. |
+| PermissionEngine | ✅ Ready | DocType / field / row-level checks all work. `DocumentEngine.list` now auto-applies `canAccessRow` via `DocType.rowAccessExpression` (Phase A §3.4, ADR-037). Per-call `applyRowAccess: false` opt-out preserved for admin paths. |
 | NamingSystem | ⚠️ Partial | Five strategies ship (UUIDv7, Series, FieldDerived, Prompt, Format). **`DocumentNamingRule` (conditional selector) is missing** — per-company / per-fiscal-year naming series cannot be expressed today. **Counters are local-only** — multi-device sequential naming will collide. |
 | AppRuntime | ⚠️ Partial | `AppManifest`, `AppInstaller`, `ExtensionPointResolver` all ship. **Not constructed at app launch** in `mercantis_coreApp.swift`; Hub already does this on its side, but third-party app shells will need the same wiring or a helper. |
 | AutomationRunner | ✅ Ready | Action registry + built-in handlers (`set_value`, `set_status`, `send_notification`, `validate`, `assign`) cover the common ERP automation cases. Scheduler-triggered rules (`triggerEvent == "onSchedule"`) are still no-ops — see §3. |
 | SchedulerService | ⚠️ Partial | Cron, persistence, tick loop all ship. **Not wired to AutomationRunner**, so manifest-declared scheduled automation rules don’t fire. **Background-task budget categories** (`short` / `default` / `long`) **and `audit_log` writes for failed runs** are not implemented. |
 | ReportEngine | ⚠️ Partial | `register` / `availableReports` / `execute` exist. **Role filtering is ignored** — `availableReports(for: role)` returns everything. No native renderer yet (`MercantisCoreUI` has no `GenericReportView`). |
-| Audit log | ❌ Missing-in-fact | The `audit_log` table is created in migration v1 and **nothing ever writes to it**. Sync queue is acting as a de-facto log, but a financial-grade ERP needs a true append-only audit table with a writer + reader API. |
+| Audit log | ✅ Ready | `AuditLogWriter` (Phase A §3.2, ADR-039) writes inside the same atomic block as save/applyRemote/delete, and follow-on rows for submit/cancel/amend lifecycle events. Reader API exposed via `DocumentEngine.auditEntries(forDocumentId:)` / `(forDocType:limit:offset:)`. |
 | Files / Attachments | ❌ Missing | No `Files/` subsystem on disk. Every ERP transactional document needs attachments (scanned invoice, signed PO, photo of damaged shipment). |
 | Print / PDF | ❌ Missing | No `Printing/` subsystem. Sales invoices, purchase orders, delivery notes universally require print formats and PDF rendering. |
 | ImportExport | ❌ Missing | No `ImportExport/` subsystem. Bulk CSV/JSON import/export is essential for any real deployment (data migration, supplier price lists, opening balances). |
@@ -77,68 +79,42 @@ Legend: ✅ Ready · ⚠️ Partial · ❌ Missing
 These are the gaps most likely to bite Hub as it builds out modules. Each
 one has a concrete fix that lands inside an existing subsystem.
 
-### 3.1 `DocumentEngine.list()` is equality-only
+### 3.1 `DocumentEngine.list()` operator surface — ✅ shipped (Phase A, ADR-036)
 
-**What ships today:** `list(docType:filters:whereExpression:sortBy:limit:offset:)`.
-The `filters` parameter takes equality-only `[String: FieldValue]` matches.
-Sort, range, LIKE, and IN are not implemented. `whereExpression` covers
-arbitrary boolean expressions but runs in-memory after the SQL fetch.
+`list(...)` now accepts `predicates: [ListFilter]?` alongside the legacy
+`filters: [String: FieldValue]?` dictionary. Operators: `eq`, `neq`, `gt`,
+`gte`, `lt`, `lte`, `between`, `in`, `like`, `isNull`, `isNotNull`. Predicates
+push to SQL when the field is a system column or carries an
+`IndexDefinition` (via `json_extract(payload, '$.<key>')`); everything else
+falls back to a per-row in-memory evaluator with mirrored semantics. Sort,
+limit, offset, and `whereExpression` continue to compose. See ADR-036.
 
-**Why it matters for ERP:** Every ERP list view needs date ranges (open
-invoices in Q4), amount filters (POs over €10k), sorting (most recent
-first), and IN filters (Sales Invoices for a list of customers).
-Today every such list must over-fetch and post-filter, which will not scale.
+### 3.2 Audit log writer + reader — ✅ shipped (Phase A, ADR-039)
 
-**Suggested fix:** Extend `filters` to a typed `[ListFilter]` with
-operator (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`, `between`),
-and push to SQL via `json_extract` for fields that match a system column
-or a `DocType.IndexDefinition`. Keep the in-memory tail for the rest.
+`AuditLogWriter` writes inside the same atomic block as the document
+mutation. Wired into save (`create`/`update`), `applyRemote`, `delete`,
+and lifecycle follow-ons for `submit`/`cancel`/`amend`. Reader API exposed
+via `DocumentEngine.auditEntries(forDocumentId:)` and
+`auditEntries(forDocType:limit:offset:)`. The audit log is **not** subject
+to ADR-028 sync-queue pruning.
 
-### 3.2 Audit log table is never written
+### 3.3 `WorkflowTransitionHistory` auto-persistence — ✅ shipped (Phase A, ADR-038)
 
-**What ships today:** Migration v1 creates an `audit_log` table.
-`DocumentEngine.save / delete / submit / cancel / amend` write the
-mutation log but **not** the audit log. There is no reader or writer API.
+Migration v8 creates `workflow_transitions`. `WorkflowEngine` accepts an
+optional `WorkflowTransitionHistoryWriter` (or a `database:` convenience
+init) and calls `writer.append(history)` inside `transition(...)` after
+the state update. Reader API exposed via the writer and via
+`DocumentEngine.workflowTransitions(of:)` /
+`workflowTransitions(forWorkflow:limit:offset:)`. Legacy "no writer =
+return-only" behaviour is preserved.
 
-**Why it matters for ERP:** Financial compliance (SOX, audit trails for
-journal entries / GL entries / payment entries) requires an immutable
-record of who-changed-what-when that is distinct from the sync queue
-(which is operationally pruned — see ADR-028).
+### 3.4 `DocumentEngine.list` auto-applies `canAccessRow` — ✅ shipped (Phase A, ADR-037)
 
-**Suggested fix:** Add an `AuditLogWriter` invoked from the same atomic
-write block as the mutation-log append. Persist `{id, docType, docId, op,
-userId, deviceId, before, after, timestamp}`. Expose a typed reader for
-the Hub UI. Honour ADR-028 retention separately (audit log is _not_
-pruned by default).
-
-### 3.3 `WorkflowTransitionHistory` is not auto-persisted
-
-**What ships today:** `WorkflowEngine.transition(...)` returns a
-`WorkflowTransitionHistory` record and fires a typed event. It does **not**
-write the record anywhere. §4.5 of `ARCHITECTURE.md` reads as if it does.
-
-**Why it matters for ERP:** Workflow audit (who approved this PO at what
-state, when it was submitted, who cancelled it) is a hard requirement.
-If Hub forgets to persist the returned record, the audit is lost.
-
-**Suggested fix:** Persist transition history inside `WorkflowEngine` to
-a new `workflow_transitions` table; expose a reader API. The returned
-value can stay for callers that want immediate access.
-
-### 3.4 `DocumentEngine.list` does not auto-apply `canAccessRow`
-
-**What ships today:** `PermissionEngine.canAccessRow(...)` works with a
-sandboxed boolean expression. Callers of `list()` must pass that
-expression themselves via `whereExpression`.
-
-**Why it matters for ERP:** Row-level security (“warehouse manager can
-only see their own warehouse’s stock entries”) is a per-DocType
-declaration. Every list call site repeating the row-expression
-plumbing is fragile.
-
-**Suggested fix:** Add an optional `DocType.rowAccessExpression: String?`
-honoured automatically by `DocumentEngine.list`. The current
-`whereExpression` parameter remains for ad-hoc filters.
+`DocType.rowAccessExpression: String?` declares the row-level security
+predicate. `DocumentEngine.list(...)` evaluates it against
+`PermissionEngine.canAccessRow(...)` for every fetched row using the
+supplied (or defaulted) `userRoles`, `listUserId`, and `userAttributes`.
+Per-call `applyRowAccess: false` opts out for maintenance / migration paths.
 
 ### 3.5 No real `CloudAdapter` implementation
 
@@ -221,12 +197,16 @@ routes to it.
 
 ## 4. Suggested fix order
 
-### Phase A — Engine fixes that unblock real list views (do first)
+### Phase A — Engine fixes that unblock real list views — ✅ shipped 2026-05-05
 
-1. **§3.1 `list()` operators + sort + push-to-SQL.** Every module benefits immediately.
-2. **§3.4 Auto-apply `canAccessRow`.** Cheap to add once §3.1 lands.
-3. **§3.3 Persist `WorkflowTransitionHistory`.** Tiny change, large compliance payoff.
-4. **§3.2 Audit log writer + reader.** Wire into the existing atomic write block.
+1. ✅ **§3.1 `list()` operators + sort + push-to-SQL** — typed `ListFilter`
+   surface (ADR-036). Every module benefits immediately.
+2. ✅ **§3.4 Auto-apply `canAccessRow`** — `DocType.rowAccessExpression`
+   (ADR-037), evaluated by `list()` for every row.
+3. ✅ **§3.3 Persist `WorkflowTransitionHistory`** — migration v8 +
+   `WorkflowTransitionHistoryWriter` (ADR-038).
+4. ✅ **§3.2 Audit log writer + reader** — `AuditLogWriter` wired into the
+   atomic write block (ADR-039).
 
 ### Phase B — Wiring and naming polish
 

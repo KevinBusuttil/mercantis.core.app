@@ -29,6 +29,10 @@ public struct DocType: Codable, Identifiable, Sendable {
     public var titleField: String
     public var isCustom: Bool
     public var formLayout: FormLayout?
+    /// Sandboxed boolean expression auto-applied by `DocumentEngine.list` to
+    /// row-filter results through `PermissionEngine.canAccessRow`. When `nil`
+    /// or empty, no row-level restriction is enforced. (Phase A §3.4)
+    public var rowAccessExpression: String?
 
     public init(
         id: String,
@@ -49,7 +53,8 @@ public struct DocType: Codable, Identifiable, Sendable {
         searchFields: [String],
         titleField: String,
         isCustom: Bool = false,
-        formLayout: FormLayout? = nil
+        formLayout: FormLayout? = nil,
+        rowAccessExpression: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -70,6 +75,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         self.titleField = titleField
         self.isCustom = isCustom
         self.formLayout = formLayout
+        self.rowAccessExpression = rowAccessExpression
     }
 
     enum CodingKeys: String, CodingKey {
@@ -92,6 +98,7 @@ public struct DocType: Codable, Identifiable, Sendable {
         case titleField
         case isCustom
         case formLayout
+        case rowAccessExpression
     }
 
     public init(from decoder: any Decoder) throws {
@@ -116,5 +123,6 @@ public struct DocType: Codable, Identifiable, Sendable {
         // Older payloads don't include `isCustom`; treat them as system/non-custom by default.
         isCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
         formLayout = try container.decodeIfPresent(FormLayout.self, forKey: .formLayout)
+        rowAccessExpression = try container.decodeIfPresent(String.self, forKey: .rowAccessExpression)
     }
 }

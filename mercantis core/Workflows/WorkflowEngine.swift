@@ -11,9 +11,27 @@ import Foundation
 public final class WorkflowEngine {
 
     private let eventEmitter: EventEmitter
+    private let historyWriter: WorkflowTransitionHistoryWriter?
 
-    public init(eventEmitter: EventEmitter = EventEmitter()) {
+    public init(
+        eventEmitter: EventEmitter = EventEmitter(),
+        historyWriter: WorkflowTransitionHistoryWriter? = nil
+    ) {
         self.eventEmitter = eventEmitter
+        self.historyWriter = historyWriter
+    }
+
+    /// Convenience init that constructs a `WorkflowTransitionHistoryWriter`
+    /// from `database`, so transitions auto-persist into `workflow_transitions`
+    /// (Phase A §3.3).
+    public convenience init(
+        database: MercantisDatabase,
+        eventEmitter: EventEmitter = EventEmitter()
+    ) {
+        self.init(
+            eventEmitter: eventEmitter,
+            historyWriter: WorkflowTransitionHistoryWriter(database: database)
+        )
     }
 
     // MARK: - Available Transitions
@@ -89,6 +107,13 @@ public final class WorkflowEngine {
             userId: userId,
             timestamp: Date()
         )
+
+        // Phase A §3.3: persist the transition automatically when a writer is
+        // configured. Older callers that don't pass a writer keep the legacy
+        // "return-only" behaviour.
+        if let writer = historyWriter {
+            try writer.append(history)
+        }
 
         eventEmitter.publish(WorkflowTransitionEvent(
             document: document,

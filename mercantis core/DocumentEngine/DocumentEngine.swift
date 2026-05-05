@@ -40,6 +40,49 @@ public struct ListSort: Sendable, Equatable {
     }
 }
 
+/// A typed predicate for `DocumentEngine.list(...)` covering the operators
+/// every real ERP list view needs (Phase A §3.1).
+///
+/// System columns and indexed `FieldDefinition` keys push to SQL; everything
+/// else evaluates in memory after the row fetch. Operator semantics intentionally
+/// mirror SQLite's behaviour (e.g. `null` rows fail comparisons rather than
+/// matching).
+public struct ListFilter: Sendable {
+    /// Comparison operator. Values are carried in the associated payload so
+    /// invalid combinations (e.g. `between` with one value, `in` with zero)
+    /// are unrepresentable at the type level.
+    public enum Op: Sendable {
+        case eq(FieldValue)
+        case neq(FieldValue)
+        case gt(FieldValue)
+        case gte(FieldValue)
+        case lt(FieldValue)
+        case lte(FieldValue)
+        /// Inclusive on both ends. `(low, high)` must be the same primitive type.
+        case between(FieldValue, FieldValue)
+        /// Match if the field value equals any element. Empty arrays match nothing.
+        case `in`([FieldValue])
+        /// SQL `LIKE` pattern (`%` and `_` wildcards). Case-sensitivity follows SQLite default.
+        case like(String)
+        case isNull
+        case isNotNull
+    }
+
+    public let fieldKey: String
+    public let op: Op
+
+    public init(_ fieldKey: String, _ op: Op) {
+        self.fieldKey = fieldKey
+        self.op = op
+    }
+
+    /// Convenience for callers that previously used `[String: FieldValue]`-style
+    /// equality filters.
+    public static func eq(_ key: String, _ value: FieldValue) -> ListFilter {
+        ListFilter(key, .eq(value))
+    }
+}
+
 /// Handles all CRUD operations on documents.
 /// Every persistent write atomically appends a MutationRecord to the sync queue. (ADR-002, ADR-005)
 ///
@@ -52,6 +95,9 @@ public final class DocumentEngine {
     private let eventEmitter: EventEmitter
     private let validationPipeline: ValidationPipeline
     private let namingService: NamingService
+    private let permissionEngine: PermissionEngine
+    private let auditLogWriter: AuditLogWriter
+    private let workflowHistoryWriter: WorkflowTransitionHistoryWriter
     private let deviceId: String
     private let userId: String
 
@@ -62,7 +108,8 @@ public final class DocumentEngine {
         userId: String,
         eventEmitter: EventEmitter = EventEmitter(),
         validationPipeline: ValidationPipeline = ValidationPipeline(),
-        namingService: NamingService = NamingService()
+        namingService: NamingService = NamingService(),
+        permissionEngine: PermissionEngine = PermissionEngine()
     ) {
         self.database = database
         self.registry = registry
@@ -70,6 +117,9 @@ public final class DocumentEngine {
         self.eventEmitter = eventEmitter
         self.validationPipeline = validationPipeline
         self.namingService = namingService
+        self.permissionEngine = permissionEngine
+        self.auditLogWriter = AuditLogWriter(database: database)
+        self.workflowHistoryWriter = WorkflowTransitionHistoryWriter(database: database)
         self.deviceId = deviceId
         self.userId = userId
     }
@@ -138,6 +188,8 @@ public final class DocumentEngine {
         let saveTimestamp = Date()
         let updatedAtString = ISO8601DateFormatter().string(from: saveTimestamp)
 
+        let auditAction = existing == nil ? "create" : "update"
+
         try database.write { db in
             try upsertDocumentRow(
                 db, document: document,
@@ -153,6 +205,15 @@ public final class DocumentEngine {
                 savedAt: saveTimestamp,
                 savedBy: userId,
                 oldFields: oldFields
+            )
+            try auditLogWriter.append(
+                documentId: document.id,
+                docType: document.docType,
+                userId: userId,
+                action: auditAction,
+                before: existing == nil ? nil : oldFields,
+                after: document.fields,
+                in: db
             )
         }
 
@@ -273,6 +334,15 @@ public final class DocumentEngine {
                 savedBy: savedBy,
                 oldFields: oldFields
             )
+            try auditLogWriter.append(
+                documentId: doc.id,
+                docType: doc.docType,
+                userId: savedBy,
+                action: "applyRemote",
+                before: existing == nil ? nil : oldFields,
+                after: doc.fields,
+                in: db
+            )
         }
 
         eventEmitter.publish(DocumentSavedEvent(
@@ -286,7 +356,8 @@ public final class DocumentEngine {
     /// Delete a document. Appends a `deleteDocument` mutation atomically.
     public func delete(docType: String, id: String) throws {
         // ADR-013: Submitted documents cannot be deleted directly.
-        if let existing = try fetch(docType: docType, id: id), existing.docStatus == 1 {
+        let existing = try fetch(docType: docType, id: id)
+        if let existing = existing, existing.docStatus == 1 {
             throw DocumentEngineError.cannotDeleteSubmitted(id: id)
         }
 
@@ -325,6 +396,15 @@ public final class DocumentEngine {
                     mutation.status.rawValue
                 ]
             )
+            try auditLogWriter.append(
+                documentId: id,
+                docType: docType,
+                userId: userId,
+                action: "delete",
+                before: existing?.fields,
+                after: nil,
+                in: db
+            )
         }
 
         eventEmitter.publish(DocumentDeletedEvent(
@@ -352,6 +432,12 @@ public final class DocumentEngine {
         document.docStatus = 1
         document.updatedAt = Date()
         try save(document)
+
+        try writeLifecycleAuditEntry(
+            documentId: document.id,
+            docType: document.docType,
+            action: "submit"
+        )
 
         eventEmitter.publish(DocumentSubmittedEvent(
             document: document,
@@ -387,6 +473,12 @@ public final class DocumentEngine {
         document.docStatus = 2
         document.updatedAt = Date()
         try save(document)
+
+        try writeLifecycleAuditEntry(
+            documentId: document.id,
+            docType: document.docType,
+            action: "cancel"
+        )
 
         eventEmitter.publish(DocumentCancelledEvent(
             document: document,
@@ -441,6 +533,13 @@ public final class DocumentEngine {
 
         try save(amended)
 
+        try writeLifecycleAuditEntry(
+            documentId: amended.id,
+            docType: amended.docType,
+            action: "amend",
+            extraJSON: "{\"amendedFrom\":\"\(document.id)\"}"
+        )
+
         eventEmitter.publish(DocumentAmendedEvent(
             newDocumentId: newId,
             amendedFrom: document.id,
@@ -448,6 +547,53 @@ public final class DocumentEngine {
         ))
 
         return amended
+    }
+
+    /// Append a single audit row for a lifecycle action (submit/cancel/amend).
+    /// Lives outside the save's atomic block — the save itself is durable, and
+    /// adding a follow-on audit row keeps the writer composable.
+    private func writeLifecycleAuditEntry(
+        documentId: String,
+        docType: String,
+        action: String,
+        extraJSON: String = "{}"
+    ) throws {
+        try database.write { db in
+            try auditLogWriter.append(
+                AuditLogEntry(
+                    documentId: documentId,
+                    docType: docType,
+                    userId: userId,
+                    action: action,
+                    payloadJSON: extraJSON
+                ),
+                in: db
+            )
+        }
+    }
+
+    // MARK: - Audit log readers (Phase A §3.2)
+
+    /// Return the full audit history for a document, oldest first.
+    public func auditEntries(forDocumentId documentId: String) throws -> [AuditLogEntry] {
+        try auditLogWriter.entries(forDocumentId: documentId)
+    }
+
+    /// Return the audit history for a DocType, newest first.
+    public func auditEntries(forDocType docType: String, limit: Int = 100, offset: Int = 0) throws -> [AuditLogEntry] {
+        try auditLogWriter.entries(forDocType: docType, limit: limit, offset: offset)
+    }
+
+    // MARK: - Workflow transition history readers (Phase A §3.3)
+
+    /// Return the workflow transition history for a document, oldest first.
+    public func workflowTransitions(of documentId: String) throws -> [WorkflowTransitionHistory] {
+        try workflowHistoryWriter.transitions(of: documentId)
+    }
+
+    /// Return all transitions for a workflow id, newest first.
+    public func workflowTransitions(forWorkflow workflowId: String, limit: Int = 100, offset: Int = 0) throws -> [WorkflowTransitionHistory] {
+        try workflowHistoryWriter.transitions(forWorkflow: workflowId, limit: limit, offset: offset)
     }
 
     // MARK: - Fetch
@@ -476,14 +622,30 @@ public final class DocumentEngine {
     // MARK: - List
 
     /// Fetch documents of a given type with optional filters, sort, paging, and a
-    /// boolean expression predicate. (P2.5)
+    /// boolean expression predicate. (P2.5, Phase A §3.1, §3.4)
+    ///
+    /// Predicates can be supplied two ways:
+    /// - `filters: [String: FieldValue]` — legacy equality-only shorthand.
+    /// - `predicates: [ListFilter]` — typed operator predicates (eq/neq/gt/gte/lt/lte/in/like/between/isNull/isNotNull).
+    /// Both are AND-combined. `predicates` is the preferred surface for new code.
+    ///
+    /// Row-level access (§3.4): if the registered `DocType` carries a
+    /// `rowAccessExpression`, every fetched document is filtered through
+    /// `PermissionEngine.canAccessRow(...)` using the supplied `userRoles`,
+    /// `listUserId` (defaulting to the engine's `userId`), and `userAttributes`.
+    /// Callers can opt out per-call by passing `applyRowAccess: false`.
     public func list(
         docType: String,
         filters: [String: FieldValue]? = nil,
+        predicates: [ListFilter]? = nil,
         whereExpression: String? = nil,
         sortBy: [ListSort]? = nil,
         limit: Int? = nil,
-        offset: Int = 0
+        offset: Int = 0,
+        userRoles: Set<String> = [],
+        listUserId: String? = nil,
+        userAttributes: [String: FieldValue] = [:],
+        applyRowAccess: Bool = true
     ) throws -> [Document] {
         let resolvedDocType = registry.get(docType)
         let indexedFieldKeys: Set<String> = resolvedDocType.map { Set($0.indexes.map(\.fieldKey)) } ?? []
@@ -491,10 +653,12 @@ public final class DocumentEngine {
 
         var sqlClauses: [String] = ["doctype = ?"]
         var arguments: [any DatabaseValueConvertible] = [docType]
-        var inMemoryFilters: [String: FieldValue] = [:]
+        var inMemoryEqFilters: [String: FieldValue] = [:]
+        var inMemoryPredicates: [ListFilter] = []
 
+        // Legacy `filters` dict — equality semantics, equivalent to `.eq` predicates.
         for (key, value) in filters ?? [:] {
-            if let fragment = sqlFilterFragment(
+            if let fragment = sqlEqFragment(
                 forKey: key,
                 value: value,
                 indexedFieldKeys: indexedFieldKeys,
@@ -503,7 +667,22 @@ public final class DocumentEngine {
                 sqlClauses.append(fragment.sql)
                 arguments.append(contentsOf: fragment.arguments)
             } else {
-                inMemoryFilters[key] = value
+                inMemoryEqFilters[key] = value
+            }
+        }
+
+        // Typed `predicates` — full operator surface, push to SQL where the
+        // field is a system column or carries an `IndexDefinition`.
+        for predicate in predicates ?? [] {
+            if let fragment = sqlPredicateFragment(
+                predicate,
+                indexedFieldKeys: indexedFieldKeys,
+                userDeclaredFieldKeys: userDeclaredFieldKeys
+            ) {
+                sqlClauses.append(fragment.sql)
+                arguments.append(contentsOf: fragment.arguments)
+            } else {
+                inMemoryPredicates.append(predicate)
             }
         }
 
@@ -515,8 +694,15 @@ public final class DocumentEngine {
             indexedFieldKeys: indexedFieldKeys,
             userDeclaredFieldKeys: userDeclaredFieldKeys
         )
-        let needsInMemoryWork = !inMemoryFilters.isEmpty
+        let rowAccessExpression: String? = {
+            guard applyRowAccess, let dt = resolvedDocType else { return nil }
+            let trimmed = dt.rowAccessExpression?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (trimmed?.isEmpty ?? true) ? nil : trimmed
+        }()
+        let needsInMemoryWork = !inMemoryEqFilters.isEmpty
+            || !inMemoryPredicates.isEmpty
             || activeWhereExpression != nil
+            || rowAccessExpression != nil
             || (sortBy != nil && sortPushdown == nil)
         let pagingPushedToSQL = !needsInMemoryWork && limit != nil
 
@@ -544,10 +730,18 @@ public final class DocumentEngine {
             documents[i].children = try fetchChildren(parentId: documents[i].id)
         }
 
-        if !inMemoryFilters.isEmpty {
+        if !inMemoryEqFilters.isEmpty {
             documents = documents.filter { doc in
-                inMemoryFilters.allSatisfy { (key, value) in
+                inMemoryEqFilters.allSatisfy { (key, value) in
                     doc.fields[key] == value
+                }
+            }
+        }
+
+        if !inMemoryPredicates.isEmpty {
+            documents = documents.filter { doc in
+                inMemoryPredicates.allSatisfy { predicate in
+                    evaluatePredicateInMemory(predicate, document: doc)
                 }
             }
         }
@@ -556,6 +750,20 @@ public final class DocumentEngine {
             let evaluator = listExpressionEvaluator
             documents = documents.filter { doc in
                 (try? evaluator.evaluateBool(expression: expression, context: doc.fields)) ?? false
+            }
+        }
+
+        if let expression = rowAccessExpression {
+            let resolvedUserId = listUserId ?? self.userId
+            documents = documents.filter { doc in
+                permissionEngine.canAccessRow(
+                    document: doc,
+                    userRoles: userRoles,
+                    rowExpression: expression,
+                    userId: resolvedUserId,
+                    userAttributes: userAttributes,
+                    expressionEvaluator: listExpressionEvaluator
+                )
             }
         }
 
@@ -601,43 +809,208 @@ public final class DocumentEngine {
         return nodes(under: "")
     }
 
-    // MARK: - List helpers (P2.5)
+    // MARK: - List helpers (P2.5, Phase A §3.1)
 
     private struct SQLFilterFragment {
         let sql: String
         let arguments: [any DatabaseValueConvertible]
     }
 
-    /// Map a system column / indexed JSON field filter to a SQL fragment, or
-    /// return `nil` to defer the filter to the in-memory pass.
-    private func sqlFilterFragment(
+    /// Map an equality filter (legacy `[String: FieldValue]` form) to a SQL
+    /// fragment, or return `nil` to defer the filter to the in-memory pass.
+    private func sqlEqFragment(
         forKey key: String,
         value: FieldValue,
         indexedFieldKeys: Set<String>,
         userDeclaredFieldKeys: Set<String>
     ) -> SQLFilterFragment? {
-        if let column = systemColumn(for: key, userDeclaredFieldKeys: userDeclaredFieldKeys) {
-            if column == "doctype" { return SQLFilterFragment(sql: "doctype = ?", arguments: [databaseValue(for: value) ?? ""]) }
-            if case .null = value {
-                return SQLFilterFragment(sql: "\(column) IS NULL", arguments: [])
-            }
-            guard let arg = databaseValue(for: value) else { return nil }
-            return SQLFilterFragment(sql: "\(column) = ?", arguments: [arg])
+        guard let target = sqlPushdownTarget(
+            forKey: key,
+            indexedFieldKeys: indexedFieldKeys,
+            userDeclaredFieldKeys: userDeclaredFieldKeys
+        ) else { return nil }
+
+        if case .null = value {
+            return SQLFilterFragment(sql: "\(target) IS NULL", arguments: [])
         }
-        if indexedFieldKeys.contains(key) {
-            if case .null = value {
-                return SQLFilterFragment(
-                    sql: "json_extract(payload, '$.\(key)') IS NULL",
-                    arguments: []
-                )
-            }
+        guard let arg = databaseValue(for: value) else { return nil }
+        return SQLFilterFragment(sql: "\(target) = ?", arguments: [arg])
+    }
+
+    /// Map a typed `ListFilter` predicate to a SQL fragment, or return `nil`
+    /// when the field is not pushable (non-system, non-indexed user field) or
+    /// the operator carries an unsupported `FieldValue` shape.
+    private func sqlPredicateFragment(
+        _ predicate: ListFilter,
+        indexedFieldKeys: Set<String>,
+        userDeclaredFieldKeys: Set<String>
+    ) -> SQLFilterFragment? {
+        guard let target = sqlPushdownTarget(
+            forKey: predicate.fieldKey,
+            indexedFieldKeys: indexedFieldKeys,
+            userDeclaredFieldKeys: userDeclaredFieldKeys
+        ) else { return nil }
+
+        switch predicate.op {
+        case .eq(let value):
+            if case .null = value { return SQLFilterFragment(sql: "\(target) IS NULL", arguments: []) }
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(target) = ?", arguments: [arg])
+
+        case .neq(let value):
+            // SQLite three-valued logic: `NULL != x` is NULL, not true. Mirror
+            // ERPNext "not equal" semantics by also matching missing values so
+            // callers don't have to remember to OR isNull manually.
+            if case .null = value { return SQLFilterFragment(sql: "\(target) IS NOT NULL", arguments: []) }
             guard let arg = databaseValue(for: value) else { return nil }
             return SQLFilterFragment(
-                sql: "json_extract(payload, '$.\(key)') = ?",
+                sql: "(\(target) IS NULL OR \(target) != ?)",
                 arguments: [arg]
             )
+
+        case .gt(let value):
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(target) > ?", arguments: [arg])
+        case .gte(let value):
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(target) >= ?", arguments: [arg])
+        case .lt(let value):
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(target) < ?", arguments: [arg])
+        case .lte(let value):
+            guard let arg = databaseValue(for: value) else { return nil }
+            return SQLFilterFragment(sql: "\(target) <= ?", arguments: [arg])
+
+        case .between(let low, let high):
+            guard let lowArg = databaseValue(for: low),
+                  let highArg = databaseValue(for: high) else { return nil }
+            return SQLFilterFragment(
+                sql: "\(target) BETWEEN ? AND ?",
+                arguments: [lowArg, highArg]
+            )
+
+        case .in(let values):
+            // Empty IN matches nothing — emit a tautologically-false predicate
+            // rather than an invalid `IN ()`.
+            if values.isEmpty {
+                return SQLFilterFragment(sql: "0 = 1", arguments: [])
+            }
+            // Defer to in-memory if any element isn't a SQL primitive.
+            var args: [any DatabaseValueConvertible] = []
+            for v in values {
+                if case .null = v { return nil } // can't push NULL via IN; defer
+                guard let arg = databaseValue(for: v) else { return nil }
+                args.append(arg)
+            }
+            let placeholders = Array(repeating: "?", count: args.count).joined(separator: ", ")
+            return SQLFilterFragment(sql: "\(target) IN (\(placeholders))", arguments: args)
+
+        case .like(let pattern):
+            return SQLFilterFragment(sql: "\(target) LIKE ?", arguments: [pattern])
+
+        case .isNull:
+            return SQLFilterFragment(sql: "\(target) IS NULL", arguments: [])
+        case .isNotNull:
+            return SQLFilterFragment(sql: "\(target) IS NOT NULL", arguments: [])
+        }
+    }
+
+    /// Resolve a public field key to its SQL pushdown target — either a
+    /// `documents`-table system column or a `json_extract(payload, '$.<key>')`
+    /// expression for an indexed user-declared field. Returns `nil` for
+    /// non-indexed user fields, which must run in memory.
+    private func sqlPushdownTarget(
+        forKey key: String,
+        indexedFieldKeys: Set<String>,
+        userDeclaredFieldKeys: Set<String>
+    ) -> String? {
+        if let column = systemColumn(for: key, userDeclaredFieldKeys: userDeclaredFieldKeys) {
+            return column
+        }
+        if indexedFieldKeys.contains(key) {
+            return "json_extract(payload, '$.\(key)')"
         }
         return nil
+    }
+
+    /// Evaluate a `ListFilter` against an in-memory document. Used for fields
+    /// that aren't pushable to SQL.
+    private func evaluatePredicateInMemory(_ predicate: ListFilter, document: Document) -> Bool {
+        let value = sortValue(for: predicate.fieldKey, in: document)
+        switch predicate.op {
+        case .eq(let rhs):
+            if case .null = rhs { return value == nil || value == .null }
+            return value == rhs
+        case .neq(let rhs):
+            if case .null = rhs { return !(value == nil || value == .null) }
+            return value != rhs
+        case .gt(let rhs):
+            return compareNumericOrString(value, rhs) == .orderedDescending
+        case .gte(let rhs):
+            let r = compareNumericOrString(value, rhs)
+            return r == .orderedDescending || r == .orderedSame
+        case .lt(let rhs):
+            return compareNumericOrString(value, rhs) == .orderedAscending
+        case .lte(let rhs):
+            let r = compareNumericOrString(value, rhs)
+            return r == .orderedAscending || r == .orderedSame
+        case .between(let low, let high):
+            let lower = compareNumericOrString(value, low)
+            let upper = compareNumericOrString(value, high)
+            let inLow = lower == .orderedDescending || lower == .orderedSame
+            let inHigh = upper == .orderedAscending || upper == .orderedSame
+            return inLow && inHigh
+        case .in(let candidates):
+            guard let v = value else { return false }
+            return candidates.contains(v)
+        case .like(let pattern):
+            guard case .string(let s) = value else { return false }
+            return matchesLike(s, pattern: pattern)
+        case .isNull:
+            return value == nil || value == .null
+        case .isNotNull:
+            return !(value == nil || value == .null)
+        }
+    }
+
+    /// Compare two `FieldValue?`s numerically when both sides parse as a
+    /// number/date, falling back to lexicographic string comparison. Missing
+    /// values are treated as smaller than any present value.
+    private func compareNumericOrString(_ a: FieldValue?, _ b: FieldValue) -> ComparisonResult {
+        guard let a = a, !(a == .null) else { return .orderedAscending }
+        if let an = numericForSort(a), let bn = numericForSort(b) {
+            if an < bn { return .orderedAscending }
+            if an > bn { return .orderedDescending }
+            return .orderedSame
+        }
+        let aStr = stringForSort(a)
+        let bStr = stringForSort(b)
+        if aStr < bStr { return .orderedAscending }
+        if aStr > bStr { return .orderedDescending }
+        return .orderedSame
+    }
+
+    /// In-memory `LIKE` matcher. `%` matches any sequence (incl. empty); `_`
+    /// matches exactly one character. Backslash escapes the wildcards.
+    private func matchesLike(_ subject: String, pattern: String) -> Bool {
+        // Translate to a NSRegularExpression. Escape regex specials, then
+        // map LIKE wildcards.
+        var regex = ""
+        var iter = pattern.makeIterator()
+        while let ch = iter.next() {
+            switch ch {
+            case "%": regex += ".*"
+            case "_": regex += "."
+            case "\\":
+                if let next = iter.next() {
+                    regex += NSRegularExpression.escapedPattern(for: String(next))
+                }
+            default:
+                regex += NSRegularExpression.escapedPattern(for: String(ch))
+            }
+        }
+        let anchored = "^" + regex + "$"
+        return subject.range(of: anchored, options: .regularExpression) != nil
     }
 
     /// Build a SQL ORDER BY clause when every sort key is SQL-pushable.

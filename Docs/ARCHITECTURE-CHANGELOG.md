@@ -1,5 +1,52 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-05-05 (Phase A engine fixes — list operators, row access, audit log, workflow transition history)
+
+This revision lands the four engine-level "ERP-blocking" gaps from STATUS.md
+§3.1–§3.4 in a single bundle. None of the changes break existing call sites.
+ADRs 036–039 cover the design.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/DocumentEngine/DocumentEngine.swift` | `ListFilter` struct + `predicates: [ListFilter]?` parameter on `list(...)` (ADR-036). Operators: eq / neq / gt / gte / lt / lte / between / in / like / isNull / isNotNull. System columns and `IndexDefinition` fields push to SQL via `json_extract`; everything else evaluates in memory with mirrored semantics. New `userRoles` / `listUserId` / `userAttributes` / `applyRowAccess` parameters wire `DocType.rowAccessExpression` through `PermissionEngine.canAccessRow` for every fetched row (ADR-037). New private dependencies: `permissionEngine`, `auditLogWriter`, `workflowHistoryWriter`. Save / applyRemote / delete now append an `audit_log` row inside the same atomic write block (ADR-039). Submit / cancel / amend write a follow-on lifecycle audit row. New public readers: `auditEntries(forDocumentId:)`, `auditEntries(forDocType:limit:offset:)`, `workflowTransitions(of:)`, `workflowTransitions(forWorkflow:limit:offset:)`. |
+| `mercantis core/DocumentEngine/AuditLog.swift` *(new)* | `AuditLogEntry` struct and `AuditLogWriter` (atomic-block `append(_:in:)` + convenience before/after wrapper + reader API). |
+| `mercantis core/Metadata/DocType.swift` | New `rowAccessExpression: String?` field with backward-compatible `Codable` decoding (older payloads default to `nil`). |
+| `mercantis core/Workflows/WorkflowEngine.swift` | Optional `historyWriter` injected at init; `transition(...)` calls `writer.append(history)` immediately after the state update when configured. Convenience init `WorkflowEngine(database:)`. Legacy "no writer = return-only" behaviour preserved. |
+| `mercantis core/Workflows/WorkflowTransitionHistoryWriter.swift` *(new)* | Writer with both atomic-block (`append(_:in:)`) and standalone (`append(_:)`) entry points; reader API `transitions(of:)` and `transitions(forWorkflow:limit:offset:)`. |
+| `mercantis core/Storage/MigrationRunner.swift` | Migration v8 creates `workflow_transitions` (`id`, `documentId`, `docType`, `workflowId`, `fromState`, `toState`, `action`, `userId`, `timestamp`) plus indices on `documentId` and `workflowId`. |
+| `mercantis coreTests/ListFilterTests.swift` *(new)* | 13 tests covering each operator, the SQL-pushdown / in-memory-fallback split, multi-predicate AND composition, and system-column predicates. |
+| `mercantis coreTests/RowAccessExpressionTests.swift` *(new)* | Auto-applied `rowAccessExpression`, explicit `listUserId`, `applyRowAccess: false` opt-out, empty expression, `user.*` namespace via `userAttributes`. |
+| `mercantis coreTests/AuditLogTests.swift` *(new)* | Create/update produces two rows; delete appends; submit/cancel/amend write lifecycle rows; reader returns descending timestamps; payload carries before/after snapshots. |
+| `mercantis coreTests/WorkflowTransitionPersistenceTests.swift` *(new)* | Writer-attached engine persists; writer-less engine preserves legacy return-only behaviour; multiple transitions accumulate in chronological order; reader-by-workflow-id; `DocumentEngine` reader plumb-through. |
+| `mercantis coreTests/MigrationRunnerTests.swift` | Highest-applied-version assertion bumped to 8; new `testV7AddsParentIdColumn` and `testV8CreatesWorkflowTransitionsTable`. |
+
+### Behaviour changes
+
+- `DocumentEngine.list(...)` with no `applyRowAccess` argument now silently filters out rows the registered DocType's `rowAccessExpression` rejects. DocTypes that ship today with `rowAccessExpression == nil` (the default) are unaffected.
+- `DocumentEngine.delete(...)` and the rest of the write paths now write an `audit_log` row per call. Existing `sync_queue` count assertions in tests remain correct because the audit table is separate.
+- `WorkflowEngine.transition(...)` constructed via the legacy `WorkflowEngine()` (no writer) initializer behaves exactly as before. The new `WorkflowEngine(database:)` / `WorkflowEngine(historyWriter:)` paths persist automatically.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ADR/ADR-036-list-filter-operator-surface.md` *(new)* | Typed `ListFilter` predicate + SQL pushdown contract. |
+| `Docs/ADR/ADR-037-doctype-row-access-expression.md` *(new)* | DocType-level row-access expression auto-filter. |
+| `Docs/ADR/ADR-038-workflow-transition-history-persistence.md` *(new)* | `workflow_transitions` table + writer/reader API. |
+| `Docs/ADR/ADR-039-audit-log-writer.md` *(new)* | `AuditLogWriter` wired into the atomic write block; reader API. |
+| `Docs/ADR/README.md` | Index extended with ADR-036 to ADR-039. |
+| `Docs/STATUS.md` | Headline grade bumped to ~75%. §2 scorecard updated for DocumentEngine / Storage / WorkflowEngine / PermissionEngine / Audit log. §3.1–§3.4 rewritten as "shipped" entries. §4 Phase A marked complete. |
+
+### Known follow-ups
+
+- Phase B is unblocked: SchedulerService ↔ AutomationRunner wiring (§3.8), `DocumentNamingRule` (§3.6), counter range reservation (§3.7).
+- The `audit_log` payload format is `{before, after}` JSON. If Hub's audit UI grows, we may extract a `summary` column or a structured-diff format in a follow-up.
+- The lifecycle audit follow-on rows for submit/cancel/amend commit in a separate transaction from the underlying save. The save's atomicity is preserved; full atomicity across the two writes is a follow-up if required.
+
+---
+
 ## Revision: 2026-04-27 (MercantisCoreUI library product shipped — P2.7)
 
 This revision promotes `mercantis core/UIShell/` to its own SwiftPM library product (`MercantisCoreUI`) so downstream apps that `import MercantisCore` can also `import MercantisCoreUI` and reach `GenericFormView` / `GenericListView` directly, instead of hand-rolling a SwiftUI form per DocType.
