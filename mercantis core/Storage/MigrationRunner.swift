@@ -83,6 +83,7 @@ public struct MigrationRunner {
         runner.register(version: 5, name: "add_naming_counters", sql: MigrationRunner.v5SQL)
         runner.register(version: 6, name: "add_scheduler_state", sql: MigrationRunner.v6SQL)
         runner.register(version: 7, name: "add_tree_parent", sql: MigrationRunner.v7SQL)
+        runner.register(version: 8, name: "add_workflow_transitions", sql: MigrationRunner.v8SQL)
     }
 
     // MARK: - v1 Schema
@@ -257,5 +258,30 @@ public struct MigrationRunner {
         -- parentId references another row in the same documents table.
         ALTER TABLE documents ADD COLUMN parentId TEXT;
         CREATE INDEX IF NOT EXISTS idx_documents_parentId ON documents(parentId);
+        """
+
+    // MARK: - v8 Schema — workflow_transitions (Phase A §3.3)
+
+    private static let v8SQL = """
+        -- Append-only history of every workflow state transition. Previously
+        -- WorkflowEngine returned a WorkflowTransitionHistory record but did
+        -- not persist it; this table closes that gap so financial / approval
+        -- audit trails survive.
+        CREATE TABLE IF NOT EXISTS workflow_transitions (
+            id              TEXT    PRIMARY KEY NOT NULL,
+            documentId      TEXT    NOT NULL,
+            docType         TEXT    NOT NULL,
+            workflowId      TEXT    NOT NULL,
+            fromState       TEXT    NOT NULL,
+            toState         TEXT    NOT NULL,
+            action          TEXT    NOT NULL,
+            userId          TEXT    NOT NULL,
+            timestamp       TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workflow_transitions_document
+            ON workflow_transitions(documentId);
+        CREATE INDEX IF NOT EXISTS idx_workflow_transitions_workflow
+            ON workflow_transitions(workflowId);
         """
 }

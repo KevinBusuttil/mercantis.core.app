@@ -43,6 +43,10 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-033](ADR-033-rich-text-field.md) | Rich Text Field Type | Accepted |
 | [ADR-034](ADR-034-image-field-type.md) | Image Field Type | Accepted |
 | [ADR-035](ADR-035-barcode-field-type.md) | Barcode / QR Field Type | Accepted |
+| [ADR-036](ADR-036-list-filter-operator-surface.md) | Typed `ListFilter` Operator Surface | Accepted |
+| [ADR-037](ADR-037-doctype-row-access-expression.md) | DocType-Level `rowAccessExpression` Auto-Filter | Accepted |
+| [ADR-038](ADR-038-workflow-transition-history-persistence.md) | Workflow Transition History Persistence | Accepted |
+| [ADR-039](ADR-039-audit-log-writer.md) | `audit_log` Writer / Reader | Accepted |
 
 ## How to Read an ADR
 

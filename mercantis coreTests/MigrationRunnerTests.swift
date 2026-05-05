@@ -56,7 +56,7 @@ final class MigrationRunnerTests: XCTestCase {
         MigrationRunner.registerAll(into: &runner, pool: pool)
         try runner.migrate(pool: pool)
 
-        XCTAssertEqual(try highestAppliedVersion(), 6)
+        XCTAssertEqual(try highestAppliedVersion(), 8)
     }
 
     func testV1CreatesExpectedTables() throws {
@@ -115,6 +115,26 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertTrue(try tableExists("scheduler_state"))
         XCTAssertTrue(try columnExists("taskKey", in: "scheduler_state"))
         XCTAssertTrue(try columnExists("lastRunAt", in: "scheduler_state"))
+    }
+
+    func testV7AddsParentIdColumn() throws {
+        var runner = MigrationRunner()
+        MigrationRunner.registerAll(into: &runner, pool: pool)
+        try runner.migrate(pool: pool)
+
+        XCTAssertTrue(try columnExists("parentId", in: "documents"))
+    }
+
+    func testV8CreatesWorkflowTransitionsTable() throws {
+        var runner = MigrationRunner()
+        MigrationRunner.registerAll(into: &runner, pool: pool)
+        try runner.migrate(pool: pool)
+
+        XCTAssertTrue(try tableExists("workflow_transitions"))
+        XCTAssertTrue(try columnExists("documentId", in: "workflow_transitions"))
+        XCTAssertTrue(try columnExists("workflowId", in: "workflow_transitions"))
+        XCTAssertTrue(try columnExists("fromState", in: "workflow_transitions"))
+        XCTAssertTrue(try columnExists("toState", in: "workflow_transitions"))
     }
 
     func testSecondMigrateIsIdempotent() throws {
