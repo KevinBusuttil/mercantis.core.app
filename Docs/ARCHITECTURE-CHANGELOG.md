@@ -1,5 +1,73 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-05-05 (Phase C — files/attachments, print/PDF, dashboards, import/export)
+
+This revision lands the four ERP-feature-breadth items from STATUS.md
+§3.9 + §3.10. ADRs 043–046 cover the design.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/Files/Attachment.swift` *(new)* | Typed metadata struct + `AttachmentError`. (ADR-043) |
+| `mercantis core/Files/AttachmentStore.swift` *(new)* | Filesystem byte store rooted at `<dbDir>/attachments/`. SHA-256 helper for integrity. |
+| `mercantis core/Files/AttachmentManager.swift` *(new)* | Public attach / read / list / delete API. Atomic metadata + audit-log writes; rolls back the on-disk file if metadata persistence fails. |
+| `mercantis core/Storage/MigrationRunner.swift` | Migration v10 adds `attachments(id PK, documentId, docType, fieldKey, fileName, mimeType, byteSize, storagePath, uploadedAt, uploadedBy, sha256)` + indices. |
+| `mercantis core/DocumentEngine/DocumentEngine.swift` | Optional `attachmentManager:` init dependency. `delete(_:)` cascades and removes every attachment metadata row + on-disk file for the deleted document. |
+| `mercantis core/Printing/PrintFormat.swift` *(new)* | `PrintFormat` + `LetterHead` + structured `PrintSection` enum (heading / paragraph / fields / table / keyValue). (ADR-044) |
+| `mercantis core/Printing/PrintRenderer.swift` *(new)* | `PrintRenderer` protocol + `PrintRenderContext` / `PrintRenderResult` / `PrintOutputKind`. Shared `PrintTemplate` helpers (`{field}` substitution, `FieldValue` formatting, label humanisation). |
+| `mercantis core/Printing/PlainTextPrintRenderer.swift` *(new)* | Cross-platform plain-text renderer. Test oracle and CLI fallback. |
+| `mercantis core/Printing/PDFPrintRenderer.swift` *(new)* | CoreGraphics-backed PDF renderer with `#if canImport(CoreGraphics)` guard so non-Apple builds throw `backendUnavailable` instead of failing to link. |
+| `mercantis core/Printing/PrintService.swift` *(new)* | Public coordinator: format + letter-head registries, dispatches to renderer by `PrintOutputKind`. |
+| `mercantis core/Reporting/DashboardEngine.swift` *(new)* | Resolves `DashboardDefinition`s into typed `DashboardResult` (count / list / chart / shortcut / error). Widget-parameter mini-grammar (`where.<field>__<op>=<value>`) reuses `ListFilter` predicates from Phase A. (ADR-045) |
+| `mercantis core/ImportExport/ImportExportFormat.swift` *(new)* | `ImportExportFormat`, `ImportRowOutcome`, `ImportReport`, `ImportConflictPolicy`, `ImportExportError`. (ADR-046) |
+| `mercantis core/ImportExport/CSVCodec.swift` *(new)* | RFC-4180-ish encoder + decoder. Handles embedded commas/quotes/newlines; rejects unterminated quoted cells. |
+| `mercantis core/ImportExport/DataExporter.swift` *(new)* | CSV (flat) + JSON (envelope including children) export. Optional `[ListFilter]` subset. |
+| `mercantis core/ImportExport/DataImporter.swift` *(new)* | CSV + JSON import. Rows route through `DocumentEngine.save(...)` so validation / naming / audit / counter blocks all run. Per-row failures aggregate into `ImportReport` rather than aborting the batch. |
+| `mercantis coreTests/AttachmentTests.swift` *(new)* | Attach/read/list/delete; integrity verification on tampered file; field-key isolation; audit-log integration; engine cascade-on-delete. |
+| `mercantis coreTests/PrintServiceTests.swift` *(new)* | Registry, plain-text rendering with letter heads and child tables, placeholder substitution, unknown-format / docType-mismatch errors, PDF magic-byte sanity, `Codable` round-trip for `PrintFormat`. |
+| `mercantis coreTests/DashboardEngineTests.swift` *(new)* | count / list / chart / shortcut resolution; equality + operator filters; missing-ReportEngine fallback; unknown widget type → error tile; unknown dashboard throws. |
+| `mercantis coreTests/ImportExportTests.swift` *(new)* | CSV codec edge cases; CSV export columns + system fields; insert / overwrite / skipExisting; per-row failure isolation; JSON round-trip preserves children + typed values; predicate-bound exports. |
+| `mercantis coreTests/MigrationRunnerTests.swift` | Highest-applied-version bumped to 10; new `testV10CreatesAttachmentsTable`. |
+
+### Behaviour changes
+
+- `DocumentEngine.delete(...)` now cascades attachments when an
+  `attachmentManager:` is wired into the engine. The cascade runs
+  outside the document write transaction (the manager has its own
+  atomic boundary), with failures swallowed via `try?` so document
+  deletion remains durable.
+- New subsystems are entirely opt-in. Existing callers that don't
+  construct `AttachmentManager` / `PrintService` / `DashboardEngine`
+  / `DataImporter` see no behavioural change.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ADR/ADR-043-attachments-subsystem.md` *(new)* | `AttachmentStore` + `AttachmentManager` + cascade-on-delete contract. |
+| `Docs/ADR/ADR-044-print-formats-and-pdf.md` *(new)* | Declarative `PrintFormat` + plain-text + CoreGraphics PDF renderer architecture. |
+| `Docs/ADR/ADR-045-dashboard-runtime.md` *(new)* | Engine vs renderer split; widget parameter grammar; per-widget error isolation. |
+| `Docs/ADR/ADR-046-import-export-subsystem.md` *(new)* | CSV + JSON; per-row outcomes; conflict policies; route-through-save semantics. |
+| `Docs/ADR/README.md` | Index extended with ADR-043 to ADR-046. |
+| `Docs/STATUS.md` | Headline grade bumped to ~90%. §2 scorecard rows for Storage, Files, Print/PDF, ImportExport, Dashboards updated. §3.9 + §3.10 rewritten as "shipped". §4 Phase C marked complete. |
+
+### Known follow-ups
+
+- Phase D is unblocked: real `CloudAdapter` (§3.5), `NotificationLog`
+  + at least one channel, `ReportEngine` role filtering +
+  `GenericReportView` in `MercantisCoreUI`.
+- The PDF renderer is text-only (mono-spaced layout). Pixel-accurate
+  invoice templates with logos / styled tables would require a
+  richer renderer behind the same `PrintRenderer` protocol.
+- `DashboardEngine` runs queries with `applyRowAccess: false`. A
+  per-user "what I can see" dashboard mode is a follow-up.
+- Attachment sync across devices is not in scope. Local-only
+  attachments are useful immediately; multi-device attachment sync
+  belongs in a `CloudAdapter` follow-up tied to ADR-018.
+
+---
+
 ## Revision: 2026-05-05 (Phase B — scheduled automation, naming rules, counter block reservation)
 
 This revision lands the three "wiring and naming polish" items from

@@ -85,6 +85,7 @@ public struct MigrationRunner {
         runner.register(version: 7, name: "add_tree_parent", sql: MigrationRunner.v7SQL)
         runner.register(version: 8, name: "add_workflow_transitions", sql: MigrationRunner.v8SQL)
         runner.register(version: 9, name: "add_naming_counter_blocks", sql: MigrationRunner.v9SQL)
+        runner.register(version: 10, name: "add_attachments", sql: MigrationRunner.v10SQL)
     }
 
     // MARK: - v1 Schema
@@ -310,5 +311,35 @@ public struct MigrationRunner {
             nextValue   INTEGER NOT NULL,
             PRIMARY KEY (seriesKey, deviceId)
         );
+        """
+
+    // MARK: - v10 Schema — attachments (Phase C / P3.1, ADR-043)
+
+    private static let v10SQL = """
+        -- File attachments per document. Bytes live on disk under the
+        -- attachment store's root directory; this table holds metadata only.
+        -- `fieldKey` is nullable: null means "general document attachment"
+        -- (not bound to a specific FieldType.attachment field), non-null
+        -- binds the attachment to the named field for typed UI rendering.
+        --
+        -- `sha256` enables content-addressable dedup at the store layer
+        -- and integrity checks at read time.
+        CREATE TABLE IF NOT EXISTS attachments (
+            id           TEXT    PRIMARY KEY NOT NULL,
+            documentId   TEXT    NOT NULL,
+            docType      TEXT    NOT NULL,
+            fieldKey     TEXT,
+            fileName     TEXT    NOT NULL,
+            mimeType     TEXT    NOT NULL DEFAULT 'application/octet-stream',
+            byteSize     INTEGER NOT NULL,
+            storagePath  TEXT    NOT NULL,
+            uploadedAt   TEXT    NOT NULL,
+            uploadedBy   TEXT    NOT NULL,
+            sha256       TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_attachments_document ON attachments(documentId);
+        CREATE INDEX IF NOT EXISTS idx_attachments_doctype  ON attachments(docType);
+        CREATE INDEX IF NOT EXISTS idx_attachments_field    ON attachments(documentId, fieldKey);
         """
 }

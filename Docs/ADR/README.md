@@ -50,6 +50,10 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-040](ADR-040-document-naming-rules.md) | `DocumentNamingRule` Conditional Selector | Accepted |
 | [ADR-041](ADR-041-scheduled-automation-rules.md) | Scheduled Automation Rules | Accepted |
 | [ADR-042](ADR-042-counter-block-reservation.md) | Per-Device Counter Block Reservation | Accepted |
+| [ADR-043](ADR-043-attachments-subsystem.md) | Files / Attachments Subsystem | Accepted |
+| [ADR-044](ADR-044-print-formats-and-pdf.md) | Print Formats and PDF Rendering | Accepted |
+| [ADR-045](ADR-045-dashboard-runtime.md) | Dashboard Runtime | Accepted |
+| [ADR-046](ADR-046-import-export-subsystem.md) | Import / Export Subsystem | Accepted |
 
 ## How to Read an ADR
 

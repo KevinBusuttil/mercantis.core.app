@@ -1,6 +1,6 @@
 # Mercantis Core — Status & Roadmap
 
-_Last updated: 2026-05-05 (Phase B — scheduled automation, naming rules, counter block reservation)_
+_Last updated: 2026-05-05 (Phase C — files/attachments, print/PDF, dashboards, import/export)_
 
 This document consolidates `ERP-READINESS.md` and `IMPLEMENTATION-STATUS.md` into a single reference.
 The Enhancement Backlog (former `ENHANCEMENT-PROPOSAL.md`) has been renamed to [`ROADMAP.md`](ROADMAP.md).
@@ -27,14 +27,16 @@ section below through an “is this enough to build Accounting / Sales / Purchas
 
 ## 1. Headline grade
 
-**Core is ~80% ready as an ERP platform.** Phase A closed the four engine
-gaps; Phase B (this revision) closed the three wiring-and-naming items
-— scheduled automation rules now fire, conditional naming rules pick the
-right `autoname` per document, and counter reservation is per-device so
-multi-device offline saves don't collide. What remains is mostly (a)
-ERP-flavoured features (Files, Print/PDF, Import/Export, Dashboards),
-(b) ReportEngine role filtering and a `GenericReportView`, and (c) at
-least one real `CloudAdapter` implementation.
+**Core is ~90% ready as an ERP platform.** Phase A closed the four engine
+gaps; Phase B closed the three wiring-and-naming items; Phase C (this
+revision) ships the four "ERP feature breadth" items — file attachments
+with on-disk store + cascade-on-delete, declarative print formats with
+plain-text and CoreGraphics PDF renderers, a dashboard runtime that
+resolves widget declarations into typed result tiles, and a CSV/JSON
+bulk import/export subsystem routed through the document validation
+pipeline. What remains is Phase D production-readiness: at least one
+real `CloudAdapter`, `NotificationLog` channels, and `ReportEngine`
+role filtering with a `GenericReportView` in `MercantisCoreUI`.
 
 There are no architectural rewrites required. Every gap below has a clear
 landing place in an existing subsystem.
@@ -51,7 +53,7 @@ real ERP modules on top of it?_
 | DocumentEngine | ✅ Ready | CRUD, submit/cancel/amend, optimistic concurrency, atomic mutation log, typed `ListFilter` operator surface (Phase A §3.1, ADR-036), and auto-applied row-level access (Phase A §3.4, ADR-037) all ship. |
 | MetadataEngine | ✅ Ready | DocType + ResolvedMeta + custom fields + property setters cover ERP customisation needs. `DocType.rowAccessExpression` (ADR-037) added in Phase A. |
 | ExpressionEngine | ✅ Ready | AST + cross-document `lookup()` + parse-cache means automation rules and formula fields will scale to an ERP rule set without re-architecting. |
-| Storage | ✅ Ready | GRDB/SQLite + 9 versioned migrations (v8 adds `workflow_transitions`, v9 adds `naming_counter_blocks`). Proven offline-first substrate. |
+| Storage | ✅ Ready | GRDB/SQLite + 10 versioned migrations (v8 `workflow_transitions`, v9 `naming_counter_blocks`, v10 `attachments`). Proven offline-first substrate. |
 | SyncEngine | ⚠️ Partial | Push/pull/conflict-resolution all work; pruning works. **No real `CloudAdapter` implementation** — only `NoOpCloudAdapter`. Multi-device ERP sync is architecturally ready but not connected to any backend. |
 | WorkflowEngine | ✅ Ready | State machine + role/condition gating + auto-persisted `WorkflowTransitionHistory` (Phase A §3.3, ADR-038, table `workflow_transitions`). Reader API exposed via both `WorkflowTransitionHistoryWriter` and `DocumentEngine.workflowTransitions(...)`. |
 | PermissionEngine | ✅ Ready | DocType / field / row-level checks all work. `DocumentEngine.list` now auto-applies `canAccessRow` via `DocType.rowAccessExpression` (Phase A §3.4, ADR-037). Per-call `applyRowAccess: false` opt-out preserved for admin paths. |
@@ -61,11 +63,11 @@ real ERP modules on top of it?_
 | SchedulerService | ✅ Ready | Cron, persistence, tick loop, and `AutomationRunner` integration (Phase B §3.8). Manifest-declared `onSchedule` automation rules now fire as expected. |
 | ReportEngine | ⚠️ Partial | `register` / `availableReports` / `execute` exist. **Role filtering is ignored** — `availableReports(for: role)` returns everything. No native renderer yet (`MercantisCoreUI` has no `GenericReportView`). |
 | Audit log | ✅ Ready | `AuditLogWriter` (Phase A §3.2, ADR-039) writes inside the same atomic block as save/applyRemote/delete, and follow-on rows for submit/cancel/amend lifecycle events. Reader API exposed via `DocumentEngine.auditEntries(forDocumentId:)` / `(forDocType:limit:offset:)`. |
-| Files / Attachments | ❌ Missing | No `Files/` subsystem on disk. Every ERP transactional document needs attachments (scanned invoice, signed PO, photo of damaged shipment). |
-| Print / PDF | ❌ Missing | No `Printing/` subsystem. Sales invoices, purchase orders, delivery notes universally require print formats and PDF rendering. |
-| ImportExport | ❌ Missing | No `ImportExport/` subsystem. Bulk CSV/JSON import/export is essential for any real deployment (data migration, supplier price lists, opening balances). |
-| Notifications | ⚠️ Partial | Typed event bus ships and works. `NotificationLog` DocType, in-app inbox, email/SMS/webhook channels are not implemented. |
-| Dashboards | ❌ Missing-runtime | `DashboardDefinition` decodes from manifests. **No `DashboardView` exists** in `MercantisCoreUI`. ERP home screens require dashboards. |
+| Files / Attachments | ✅ Ready | `Files/` subsystem (Phase C / P3.1, ADR-043). `AttachmentStore` (filesystem) + `AttachmentManager` (atomic metadata + audit). `DocumentEngine` cascade-on-delete via optional `attachmentManager:` init dependency. SHA-256 integrity check on every read. |
+| Print / PDF | ✅ Ready | `Printing/` subsystem (Phase C / P3.2, ADR-044). Declarative `PrintFormat` + `LetterHead`, pluggable `PrintRenderer` per `PrintOutputKind`, plain-text and CoreGraphics PDF renderers, `PrintService` coordinator. UI-tier rich rendering remains a `MercantisCoreUI` follow-up. |
+| ImportExport | ✅ Ready | `ImportExport/` subsystem (Phase C / P3.3, ADR-046). RFC-4180-ish `CSVCodec`, `DataExporter` (CSV + JSON), `DataImporter` routed through `DocumentEngine.save(...)` so validation / naming / audit / counter blocks all fire. Per-row outcome aggregation in `ImportReport`. |
+| Notifications | ⚠️ Partial | Typed event bus ships and works. `NotificationLog` DocType, in-app inbox, email/SMS/webhook channels are not implemented. (Phase D) |
+| Dashboards | ✅ Ready (engine) | `DashboardEngine` (Phase C / §3.10, ADR-045) resolves `DashboardDefinition` widgets into typed `DashboardResult` tiles using `DocumentEngine` + `ReportEngine`. Per-widget error isolation. SwiftUI `GenericDashboardView` is a `MercantisCoreUI` follow-up. |
 | UIShell | ✅ Ready | `GenericFormView`, `GenericListView`, `NavigationShell`, `FormBuilderView`, link picker, inline child-table editor, rich text / image / barcode field types all ship. |
 | SwiftPM split | ✅ Ready | `MercantisCore` (headless) + `MercantisCoreUI` (SwiftUI) means Hub can depend on the right surface cleanly. |
 
@@ -159,26 +161,38 @@ evaluates the condition per document, and runs the actions on
 matches. `unregister(appId:)` and `applyManifests(_:)` cancel old
 handles cleanly.
 
-### 3.9 Files / Print / Import-Export missing
+### 3.9 Files / Print / Import-Export — ✅ shipped (Phase C, ADRs 043 / 044 / 046)
 
-These are documented as planned (P3.1 / P3.2 / P3.3) and won’t surprise
-anyone, but they are real ERP blockers:
+- **Files (P3.1, ADR-043):** `Files/` subsystem with `AttachmentStore`
+  (bytes on disk under `<dbDir>/attachments/<documentId>/`),
+  `AttachmentManager` (atomic metadata + audit), and `DocumentEngine`
+  cascade-on-delete via the optional `attachmentManager:` init
+  dependency. SHA-256 hashing on every write enables integrity
+  verification on every read.
+- **Print / PDF (P3.2, ADR-044):** `Printing/` subsystem with
+  declarative `PrintFormat` + `LetterHead`, pluggable `PrintRenderer`
+  per `PrintOutputKind`, plain-text and CoreGraphics PDF renderers,
+  and a `PrintService` coordinator. UI-tier rich rendering remains a
+  `MercantisCoreUI` follow-up.
+- **Import / Export (P3.3, ADR-046):** `ImportExport/` subsystem with
+  RFC-4180-ish `CSVCodec`, `DataExporter` (CSV + JSON envelope),
+  and `DataImporter` routed through `DocumentEngine.save(...)` so the
+  validation pipeline, naming service, audit log, and per-device
+  counter blocks all fire identically to interactive saves. Per-row
+  outcomes aggregate into `ImportReport`.
 
-- **Files:** Required by every transactional DocType. Land first.
-- **Print / PDF:** Required by Sales Invoice, Purchase Order, Delivery
-  Note, Quotation. Land before submitting Selling/Buying modules.
-- **Import / Export:** Required by every customer’s data migration. Land
-  before any production deployment.
+### 3.10 Dashboard runtime — ✅ shipped (Phase C, ADR-045)
 
-### 3.10 Dashboard rendering missing
+`DashboardEngine` lives under `mercantis core/Reporting/`. It registers
+`DashboardDefinition`s and resolves them into typed `DashboardResult`
+trees (count / list / chart / shortcut tiles, plus an `error` case for
+per-widget failure isolation). Counts and lists run through
+`DocumentEngine.list(...)` (with `ListFilter` predicates parsed from
+widget parameters); charts defer to `ReportEngine.execute(...)`.
 
-**What ships today:** `DashboardDefinition` decodes from manifests.
-`HubDashboards.swift` already declares dashboards. No view renders them.
-
-**Suggested fix:** Add `GenericDashboardView` to `MercantisCoreUI`
-backed by `ReportEngine.execute(...)` for the data tiles. Hub’s
-`HubMenuItem.dashboard` case in `Navigation/HubNavigation.swift` then
-routes to it.
+The SwiftUI `GenericDashboardView` that consumes a `DashboardResult` is
+a follow-up in `MercantisCoreUI`. The engine library contract — the
+typed result — is shipped.
 
 ---
 
@@ -205,12 +219,19 @@ routes to it.
 7. ✅ **§3.7 Counter range reservation** (ADR-042). Per-device
    block allocation backed by migration v9's `naming_counter_blocks`.
 
-### Phase C — ERP feature breadth
+### Phase C — ERP feature breadth — ✅ shipped 2026-05-05
 
-8. **Files / Attachments (P3.1).** Required by every ERP DocType with external paperwork.
-9. **Print / PDF (P3.2).** Required before Selling / Buying modules ship to a customer.
-10. **Dashboard rendering (§3.10).** Hub already declares dashboards that have nowhere to render today.
-11. **Import / Export (P3.3).** Required before any real-world deployment.
+8. ✅ **Files / Attachments (P3.1, ADR-043).** `Files/` subsystem
+   with on-disk store, atomic metadata writes, audit-log integration,
+   and `DocumentEngine` cascade-on-delete.
+9. ✅ **Print / PDF (P3.2, ADR-044).** `Printing/` subsystem with
+   declarative formats and plain-text + CoreGraphics PDF renderers.
+10. ✅ **Dashboard runtime (§3.10, ADR-045).** `DashboardEngine`
+    resolves widgets into typed result tiles. `MercantisCoreUI` view
+    is a follow-up.
+11. ✅ **Import / Export (P3.3, ADR-046).** CSV + JSON via
+    `DataExporter` / `DataImporter` routed through
+    `DocumentEngine.save(...)`.
 
 ### Phase D — Production readiness
 
