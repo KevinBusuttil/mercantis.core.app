@@ -51,12 +51,22 @@ public final class ReportEngine {
 
     // MARK: - Available Reports
 
-    /// Return all reports accessible to the given user roles.
+    /// Return all reports accessible to the given user roles. (Phase D / item 14, ADR-049)
     ///
-    /// Currently all registered reports are returned. Role-based filtering can be
-    /// layered on top of `ReportDefinition` once role annotations are added.
+    /// A report's `allowedRoles`:
+    /// - `nil` or empty → every role sees it (back-compat default).
+    /// - non-empty → at least one role in `userRoles` must intersect.
+    ///
+    /// Sorted by `name` so the UI gets a deterministic ordering.
     public func availableReports(for userRoles: Set<String>) -> [ReportDefinition] {
-        return Array(reportDefinitions.values).sorted { $0.name < $1.name }
+        return reportDefinitions.values
+            .filter { report in
+                guard let allowed = report.allowedRoles, !allowed.isEmpty else {
+                    return true
+                }
+                return allowed.contains(where: userRoles.contains)
+            }
+            .sorted { $0.name < $1.name }
     }
 
     // MARK: - Execute

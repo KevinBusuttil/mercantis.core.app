@@ -86,6 +86,7 @@ public struct MigrationRunner {
         runner.register(version: 8, name: "add_workflow_transitions", sql: MigrationRunner.v8SQL)
         runner.register(version: 9, name: "add_naming_counter_blocks", sql: MigrationRunner.v9SQL)
         runner.register(version: 10, name: "add_attachments", sql: MigrationRunner.v10SQL)
+        runner.register(version: 11, name: "add_notification_log", sql: MigrationRunner.v11SQL)
     }
 
     // MARK: - v1 Schema
@@ -341,5 +342,35 @@ public struct MigrationRunner {
         CREATE INDEX IF NOT EXISTS idx_attachments_document ON attachments(documentId);
         CREATE INDEX IF NOT EXISTS idx_attachments_doctype  ON attachments(docType);
         CREATE INDEX IF NOT EXISTS idx_attachments_field    ON attachments(documentId, fieldKey);
+        """
+
+    // MARK: - v11 Schema — notification_log (Phase D / item 13, ADR-048)
+
+    private static let v11SQL = """
+        -- Persisted notification log. Replaces the in-memory default sink
+        -- (`InMemoryNotificationLog`) for production. Channels (in-app
+        -- inbox, future email/SMS adapters) read from / write to this
+        -- table via `SQLiteNotificationLog` and `NotificationInbox`.
+        --
+        -- `readAt` is null until the in-app inbox marks the entry read.
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id          TEXT    PRIMARY KEY NOT NULL,
+            appId       TEXT    NOT NULL,
+            docType     TEXT    NOT NULL,
+            documentId  TEXT    NOT NULL,
+            channel     TEXT    NOT NULL,
+            recipient   TEXT,
+            subject     TEXT    NOT NULL DEFAULT '',
+            body        TEXT    NOT NULL DEFAULT '',
+            emittedAt   TEXT    NOT NULL,
+            readAt      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_notification_recipient
+            ON notification_log(recipient);
+        CREATE INDEX IF NOT EXISTS idx_notification_emittedAt
+            ON notification_log(emittedAt);
+        CREATE INDEX IF NOT EXISTS idx_notification_unread
+            ON notification_log(recipient, readAt);
         """
 }

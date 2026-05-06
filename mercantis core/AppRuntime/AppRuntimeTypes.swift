@@ -53,19 +53,46 @@ public struct WorkflowTransition: Codable, Sendable {
 }
 
 /// A report definition declared in an app manifest. (ADR-004)
+///
+/// `allowedRoles` (Phase D / item 14, ADR-049) gates report visibility.
+/// `nil` or empty means "every role can see this report" — back-compat
+/// with manifests written before role filtering existed.
 public struct ReportDefinition: Codable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let docType: String
     public let columns: [String]
     public let filters: [ReportFilter]
+    public let allowedRoles: [String]?
 
-    public init(id: String, name: String, docType: String, columns: [String], filters: [ReportFilter]) {
+    public init(
+        id: String,
+        name: String,
+        docType: String,
+        columns: [String],
+        filters: [ReportFilter],
+        allowedRoles: [String]? = nil
+    ) {
         self.id = id
         self.name = name
         self.docType = docType
         self.columns = columns
         self.filters = filters
+        self.allowedRoles = allowedRoles
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, docType, columns, filters, allowedRoles
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        docType = try c.decode(String.self, forKey: .docType)
+        columns = try c.decode([String].self, forKey: .columns)
+        filters = try c.decode([ReportFilter].self, forKey: .filters)
+        allowedRoles = try c.decodeIfPresent([String].self, forKey: .allowedRoles)
     }
 }
 

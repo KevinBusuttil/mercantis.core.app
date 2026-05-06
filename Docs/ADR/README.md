@@ -54,6 +54,9 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-044](ADR-044-print-formats-and-pdf.md) | Print Formats and PDF Rendering | Accepted |
 | [ADR-045](ADR-045-dashboard-runtime.md) | Dashboard Runtime | Accepted |
 | [ADR-046](ADR-046-import-export-subsystem.md) | Import / Export Subsystem | Accepted |
+| [ADR-047](ADR-047-filesystem-cloud-adapter.md) | Filesystem Reference `CloudAdapter` | Accepted |
+| [ADR-048](ADR-048-notification-log-persistence.md) | Persistent Notification Log + In-App Inbox | Accepted |
+| [ADR-049](ADR-049-report-role-filtering-and-view.md) | `ReportEngine` Role Filtering + `GenericReportView` | Accepted |
 
 ## How to Read an ADR
 

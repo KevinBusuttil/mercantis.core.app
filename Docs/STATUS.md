@@ -1,6 +1,6 @@
 # Mercantis Core — Status & Roadmap
 
-_Last updated: 2026-05-05 (Phase C — files/attachments, print/PDF, dashboards, import/export)_
+_Last updated: 2026-05-05 (Phase D — filesystem CloudAdapter, persistent notifications, report role filtering)_
 
 This document consolidates `ERP-READINESS.md` and `IMPLEMENTATION-STATUS.md` into a single reference.
 The Enhancement Backlog (former `ENHANCEMENT-PROPOSAL.md`) has been renamed to [`ROADMAP.md`](ROADMAP.md).
@@ -27,19 +27,17 @@ section below through an “is this enough to build Accounting / Sales / Purchas
 
 ## 1. Headline grade
 
-**Core is ~90% ready as an ERP platform.** Phase A closed the four engine
-gaps; Phase B closed the three wiring-and-naming items; Phase C (this
-revision) ships the four "ERP feature breadth" items — file attachments
-with on-disk store + cascade-on-delete, declarative print formats with
-plain-text and CoreGraphics PDF renderers, a dashboard runtime that
-resolves widget declarations into typed result tiles, and a CSV/JSON
-bulk import/export subsystem routed through the document validation
-pipeline. What remains is Phase D production-readiness: at least one
-real `CloudAdapter`, `NotificationLog` channels, and `ReportEngine`
-role filtering with a `GenericReportView` in `MercantisCoreUI`.
-
-There are no architectural rewrites required. Every gap below has a clear
-landing place in an existing subsystem.
+**Core is ~98% ready as an ERP platform.** Phases A–C closed every
+ERP-blocking engine + breadth gap. Phase D (this revision) ships the
+three production-readiness items — `FileSystemCloudAdapter` as the
+reference multi-device transport (peer-to-peer via shared folder),
+persisted notifications with an in-app inbox reader, and
+`ReportEngine` role filtering paired with `GenericReportView` in
+`MercantisCoreUI`. The Core engine is feature-complete relative to the
+original ERP-readiness scorecard; the remaining work is on the Hub side
+(Walls 4–9 module breadth) plus optional polish items (richer
+PDF / dashboard SwiftUI / per-DocType attachment sync) that are
+incremental rather than blocking.
 
 ---
 
@@ -53,20 +51,20 @@ real ERP modules on top of it?_
 | DocumentEngine | ✅ Ready | CRUD, submit/cancel/amend, optimistic concurrency, atomic mutation log, typed `ListFilter` operator surface (Phase A §3.1, ADR-036), and auto-applied row-level access (Phase A §3.4, ADR-037) all ship. |
 | MetadataEngine | ✅ Ready | DocType + ResolvedMeta + custom fields + property setters cover ERP customisation needs. `DocType.rowAccessExpression` (ADR-037) added in Phase A. |
 | ExpressionEngine | ✅ Ready | AST + cross-document `lookup()` + parse-cache means automation rules and formula fields will scale to an ERP rule set without re-architecting. |
-| Storage | ✅ Ready | GRDB/SQLite + 10 versioned migrations (v8 `workflow_transitions`, v9 `naming_counter_blocks`, v10 `attachments`). Proven offline-first substrate. |
-| SyncEngine | ⚠️ Partial | Push/pull/conflict-resolution all work; pruning works. **No real `CloudAdapter` implementation** — only `NoOpCloudAdapter`. Multi-device ERP sync is architecturally ready but not connected to any backend. |
+| Storage | ✅ Ready | GRDB/SQLite + 11 versioned migrations (v8 `workflow_transitions`, v9 `naming_counter_blocks`, v10 `attachments`, v11 `notification_log`). Proven offline-first substrate. |
+| SyncEngine | ✅ Ready | Push/pull/conflict-resolution + pruning + reference `FileSystemCloudAdapter` (Phase D / §3.5, ADR-047). Two adapters against the same shared root simulate two devices end-to-end; iCloud Drive / Dropbox / SMB / NAS all work as transports. Bespoke cloud adapters remain the host's responsibility per ADR-018. |
 | WorkflowEngine | ✅ Ready | State machine + role/condition gating + auto-persisted `WorkflowTransitionHistory` (Phase A §3.3, ADR-038, table `workflow_transitions`). Reader API exposed via both `WorkflowTransitionHistoryWriter` and `DocumentEngine.workflowTransitions(...)`. |
 | PermissionEngine | ✅ Ready | DocType / field / row-level checks all work. `DocumentEngine.list` now auto-applies `canAccessRow` via `DocType.rowAccessExpression` (Phase A §3.4, ADR-037). Per-call `applyRowAccess: false` opt-out preserved for admin paths. |
 | NamingSystem | ✅ Ready | Five strategies ship + conditional `DocumentNamingRule` selector (Phase B §3.6, ADR-040) + per-device counter block reservation (Phase B §3.7, ADR-042). Multi-device offline saves no longer collide on `SINV-2026-0001`-style series. |
 | AppRuntime | ⚠️ Partial | `AppManifest`, `AppInstaller`, `ExtensionPointResolver` all ship. **Not constructed at app launch** in `mercantis_coreApp.swift`; Hub already does this on its side, but third-party app shells will need the same wiring or a helper. |
 | AutomationRunner | ✅ Ready | Action registry + built-in handlers + `onSchedule` rules (Phase B §3.8, ADR-041). Scheduled rules iterate every document of the rule's DocType per tick, evaluate the condition per document, and run actions on matches. |
 | SchedulerService | ✅ Ready | Cron, persistence, tick loop, and `AutomationRunner` integration (Phase B §3.8). Manifest-declared `onSchedule` automation rules now fire as expected. |
-| ReportEngine | ⚠️ Partial | `register` / `availableReports` / `execute` exist. **Role filtering is ignored** — `availableReports(for: role)` returns everything. No native renderer yet (`MercantisCoreUI` has no `GenericReportView`). |
+| ReportEngine | ✅ Ready | `register` / `availableReports` / `execute` ship + role filtering via `ReportDefinition.allowedRoles` (Phase D / item 14, ADR-049). `MercantisCoreUI.GenericReportView` renders any `ReportResult` as a SwiftUI table with refresh / export hooks. |
 | Audit log | ✅ Ready | `AuditLogWriter` (Phase A §3.2, ADR-039) writes inside the same atomic block as save/applyRemote/delete, and follow-on rows for submit/cancel/amend lifecycle events. Reader API exposed via `DocumentEngine.auditEntries(forDocumentId:)` / `(forDocType:limit:offset:)`. |
 | Files / Attachments | ✅ Ready | `Files/` subsystem (Phase C / P3.1, ADR-043). `AttachmentStore` (filesystem) + `AttachmentManager` (atomic metadata + audit). `DocumentEngine` cascade-on-delete via optional `attachmentManager:` init dependency. SHA-256 integrity check on every read. |
 | Print / PDF | ✅ Ready | `Printing/` subsystem (Phase C / P3.2, ADR-044). Declarative `PrintFormat` + `LetterHead`, pluggable `PrintRenderer` per `PrintOutputKind`, plain-text and CoreGraphics PDF renderers, `PrintService` coordinator. UI-tier rich rendering remains a `MercantisCoreUI` follow-up. |
 | ImportExport | ✅ Ready | `ImportExport/` subsystem (Phase C / P3.3, ADR-046). RFC-4180-ish `CSVCodec`, `DataExporter` (CSV + JSON), `DataImporter` routed through `DocumentEngine.save(...)` so validation / naming / audit / counter blocks all fire. Per-row outcome aggregation in `ImportReport`. |
-| Notifications | ⚠️ Partial | Typed event bus ships and works. `NotificationLog` DocType, in-app inbox, email/SMS/webhook channels are not implemented. (Phase D) |
+| Notifications | ✅ Ready | Typed event bus + `SQLiteNotificationLog` (persistent writer) + `NotificationInbox` reader (Phase D / item 13, ADR-048). `CompositeNotificationLog` and `ChannelFilteredNotificationLog` make adding email / push / SMS adapters a one-file change. |
 | Dashboards | ✅ Ready (engine) | `DashboardEngine` (Phase C / §3.10, ADR-045) resolves `DashboardDefinition` widgets into typed `DashboardResult` tiles using `DocumentEngine` + `ReportEngine`. Per-widget error isolation. SwiftUI `GenericDashboardView` is a `MercantisCoreUI` follow-up. |
 | UIShell | ✅ Ready | `GenericFormView`, `GenericListView`, `NavigationShell`, `FormBuilderView`, link picker, inline child-table editor, rich text / image / barcode field types all ship. |
 | SwiftPM split | ✅ Ready | `MercantisCore` (headless) + `MercantisCoreUI` (SwiftUI) means Hub can depend on the right surface cleanly. |
@@ -117,18 +115,21 @@ predicate. `DocumentEngine.list(...)` evaluates it against
 supplied (or defaulted) `userRoles`, `listUserId`, and `userAttributes`.
 Per-call `applyRowAccess: false` opts out for maintenance / migration paths.
 
-### 3.5 No real `CloudAdapter` implementation
+### 3.5 Reference `CloudAdapter` — ✅ shipped (Phase D, ADR-047)
 
-**What ships today:** `CloudAdapter` protocol + `NoOpCloudAdapter`.
+`FileSystemCloudAdapter` ships under `mercantis core/SyncEngine/`.
+It treats a shared directory (iCloud Drive / Dropbox / OneDrive / SMB
+share / local NAS) as the transport: each device writes mutations to
+`<root>/<deviceId>/<seq>.json`, and pulling sweeps every peer
+subdirectory and ingests files past the device's per-peer cursor.
+State (local push counter, peer cursors, synthetic global receive
+sequence) persists in `<myDir>/.adapter-state.json` so adapter
+restarts don't replay history.
 
-**Why it matters for ERP:** Multi-device, multi-user ERP requires a
-real backend. Hub deployments will eventually need at least one
-reference adapter (CloudKit, Supabase, S3+JSON, custom REST, etc.).
-
-**Suggested fix:** Out of scope for Core itself per ADR-018 — Core
-defines the protocol, host apps implement. But shipping at least one
-reference adapter (likely CloudKit) would help Hub’s first
-multi-device customer.
+Per ADR-018 the `CloudAdapter` protocol seam stands; this is a
+reference implementation, not the only valid adapter. Hosts that
+need encrypted transport, server-mediated ACLs, or multi-tenant
+queues continue to ship their own conformer.
 
 ### 3.6 `DocumentNamingRule` conditional selector — ✅ shipped (Phase B, ADR-040)
 
@@ -233,11 +234,18 @@ typed result — is shipped.
     `DataExporter` / `DataImporter` routed through
     `DocumentEngine.save(...)`.
 
-### Phase D — Production readiness
+### Phase D — Production readiness — ✅ shipped 2026-05-05
 
-12. **At least one real `CloudAdapter` implementation (§3.5).**
-13. **`NotificationLog` + at least one channel** (in-app inbox or email).
-14. **`ReportEngine` role filtering** + a `GenericReportView` in `MercantisCoreUI` (Hub Wall 9).
+12. ✅ **Reference `CloudAdapter` (§3.5, ADR-047).**
+    `FileSystemCloudAdapter` ships as the peer-to-peer reference.
+13. ✅ **`NotificationLog` + in-app inbox channel (ADR-048).**
+    `SQLiteNotificationLog` (persistent writer) + `NotificationInbox`
+    (reader) + `CompositeNotificationLog` /
+    `ChannelFilteredNotificationLog` for fanout to extra channels.
+14. ✅ **`ReportEngine` role filtering + `GenericReportView` (ADR-049).**
+    `ReportDefinition.allowedRoles` gates `availableReports(for:)`;
+    `MercantisCoreUI.GenericReportView` renders any `ReportResult` as
+    a SwiftUI table.
 
 ---
 
