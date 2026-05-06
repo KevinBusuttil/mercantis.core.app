@@ -1,5 +1,69 @@
 # Mercantis Core — Architecture Changelog
 
+## Revision: 2026-05-05 (Phase D — filesystem CloudAdapter, persistent notifications, report role filtering)
+
+This revision lands the three production-readiness items from STATUS.md
+§4 Phase D. ADRs 047–049 cover the design.
+
+### Code updated
+
+| File | Summary |
+|---|---|
+| `mercantis core/SyncEngine/FileSystemCloudAdapter.swift` *(new)* | Reference `CloudAdapter`. Each device writes `<root>/<deviceId>/<seq>.json`; pull walks peers and advances per-peer cursors + synthetic global sequence. State persists in `<myDir>/.adapter-state.json`. (ADR-047) |
+| `mercantis core/Storage/MigrationRunner.swift` | Migration v11 adds `notification_log(id PK, appId, docType, documentId, channel, recipient, subject, body, emittedAt, readAt)` + indices on recipient and emittedAt. |
+| `mercantis core/Notifications/SQLiteNotificationLog.swift` *(new)* | `SQLiteNotificationLog: NotificationLogWriter` persists each entry. `CompositeNotificationLog` fans out to multiple sinks. `ChannelFilteredNotificationLog` routes by `entry.channel`. (ADR-048) |
+| `mercantis core/Notifications/NotificationInbox.swift` *(new)* | Reader API for the persisted log: `entries(forRecipient:unreadOnly:limit:offset:)`, `unreadCount`, `markRead`, `markAllRead`, `delete`. (ADR-048) |
+| `mercantis core/AppRuntime/AppRuntimeTypes.swift` | `ReportDefinition.allowedRoles: [String]?` added with backward-compatible `Codable` decode. (ADR-049) |
+| `mercantis core/Reporting/ReportEngine.swift` | `availableReports(for:)` now respects `allowedRoles`: `nil`/empty allows everyone, non-empty requires intersection. Sorted by name for determinism. (ADR-049) |
+| `mercantis core/UIShell/GenericReportView.swift` *(new)* | SwiftUI table renderer for any `ReportResult`. Header row with title + count + optional Refresh / Export-CSV actions, striped rows, empty-state placeholder. (ADR-049) |
+| `mercantis coreTests/FileSystemCloudAdapterTests.swift` *(new)* | Two adapters against one shared root simulate two devices: push monotonic sequence, peer pull, restart durability, three-device fanout, cursor cutoff. |
+| `mercantis coreTests/NotificationInboxTests.swift` *(new)* | SQLite persistence, recipient filtering, broadcast (NULL recipient) feed, mark-read / mark-all-read / unread count, delete, composite + channel-filter sinks, ON CONFLICT idempotency. |
+| `mercantis coreTests/ReportEngineRoleFilterTests.swift` *(new)* | `nil`/empty `allowedRoles` visible to anyone, role intersection required, sorted-by-name, legacy manifest decode without `allowedRoles`, full `Codable` round-trip. |
+| `mercantis coreTests/MigrationRunnerTests.swift` | Highest-applied-version bumped to 11; new `testV11CreatesNotificationLogTable`. |
+
+### Behaviour changes
+
+- `ReportEngine.availableReports(for:)` now actually filters by role.
+  Reports with no `allowedRoles` declaration remain visible to every
+  caller, so existing manifests behave identically.
+- `SyncEngine` is unchanged. The existing `pullMutations(since:)` /
+  `pushMutations(_:)` contract is what `FileSystemCloudAdapter`
+  conforms to.
+- `InMemoryNotificationLog` ships unchanged — production wiring now
+  composes it (or replaces it) with `SQLiteNotificationLog` via
+  `CompositeNotificationLog`.
+
+### Doc updates
+
+| File | Summary |
+|---|---|
+| `Docs/ADR/ADR-047-filesystem-cloud-adapter.md` *(new)* | Reference adapter design + on-disk layout + state persistence. |
+| `Docs/ADR/ADR-048-notification-log-persistence.md` *(new)* | Migration v11 + writer/reader split + composite + channel-filter sinks. |
+| `Docs/ADR/ADR-049-report-role-filtering-and-view.md` *(new)* | `allowedRoles` semantics + `GenericReportView` contract. |
+| `Docs/ADR/README.md` | Index extended with ADR-047 to ADR-049. |
+| `Docs/STATUS.md` | Headline grade bumped to ~98%. §2 scorecard rows for Storage, SyncEngine, Notifications, ReportEngine updated. §3.5 rewritten as "shipped". §4 Phase D marked complete. |
+
+### Known follow-ups
+
+- Phase D closes the engine-side roadmap. The remaining ERP work is
+  Hub-side: Walls 4–9 module breadth (link fields, child tables,
+  submittables, ledgers, trees, reports), backed by the engine
+  capabilities now all in place.
+- Optional polish items not blocking any ERP module:
+  - Pixel-accurate PDF print formats (richer than ADR-044's
+    text-only renderer).
+  - SwiftUI `GenericDashboardView` over `DashboardEngine`'s typed
+    result (ADR-045 follow-up).
+  - Per-DocType attachment sync over `CloudAdapter` (ADR-043
+    cross-device extension).
+- The filesystem adapter's per-peer cursor model gives approximate
+  cross-peer ordering. LWW conflict resolution handles this; AO
+  DocTypes get per-source ordering. A globally-monotonic ordering
+  would require coordination not available in a peer-to-peer
+  shared-folder model.
+
+---
+
 ## Revision: 2026-05-05 (Phase C — files/attachments, print/PDF, dashboards, import/export)
 
 This revision lands the four ERP-feature-breadth items from STATUS.md

@@ -56,7 +56,7 @@ final class MigrationRunnerTests: XCTestCase {
         MigrationRunner.registerAll(into: &runner, pool: pool)
         try runner.migrate(pool: pool)
 
-        XCTAssertEqual(try highestAppliedVersion(), 10)
+        XCTAssertEqual(try highestAppliedVersion(), 11)
     }
 
     func testV1CreatesExpectedTables() throws {
@@ -161,6 +161,17 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertTrue(try columnExists("fileName",    in: "attachments"))
         XCTAssertTrue(try columnExists("storagePath", in: "attachments"))
         XCTAssertTrue(try columnExists("sha256",      in: "attachments"))
+    }
+
+    func testV11CreatesNotificationLogTable() throws {
+        var runner = MigrationRunner()
+        MigrationRunner.registerAll(into: &runner, pool: pool)
+        try runner.migrate(pool: pool)
+
+        XCTAssertTrue(try tableExists("notification_log"))
+        XCTAssertTrue(try columnExists("recipient", in: "notification_log"))
+        XCTAssertTrue(try columnExists("subject",   in: "notification_log"))
+        XCTAssertTrue(try columnExists("readAt",    in: "notification_log"))
     }
 
     func testSecondMigrateIsIdempotent() throws {
