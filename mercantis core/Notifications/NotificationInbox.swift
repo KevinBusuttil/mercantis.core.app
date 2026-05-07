@@ -143,7 +143,7 @@ public final class NotificationInbox: @unchecked Sendable {
 
     // MARK: - Helpers
 
-    private static func itemFromRow(_ row: Row) -> NotificationInboxItem? {
+    nonisolated private static func itemFromRow(_ row: Row) -> NotificationInboxItem? {
         let idString: String = row["id"] ?? ""
         guard let id = UUID(uuidString: idString) else { return nil }
         let appId: String = row["appId"] ?? ""
