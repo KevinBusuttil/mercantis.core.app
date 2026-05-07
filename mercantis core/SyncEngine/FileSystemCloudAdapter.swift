@@ -66,6 +66,21 @@ public final class FileSystemCloudAdapter: CloudAdapter, @unchecked Sendable {
     // MARK: - CloudAdapter
 
     public func pushMutations(_ mutations: [MutationRecord]) async throws -> [SyncAcknowledgement] {
+        // The actual work is synchronous file I/O; routing it through a
+        // sync helper sidesteps Swift 6's prohibition on `NSLock.lock()`
+        // from async contexts without forcing the type to be an actor
+        // (which would have to make the `currentLocalPushSequence()` and
+        // friends async too).
+        try _pushMutations(mutations)
+    }
+
+    public func pullMutations(since version: SyncVersion) async throws -> [RemoteMutation] {
+        try _pullMutations(since: version)
+    }
+
+    // MARK: - Synchronous core (locked sections)
+
+    private func _pushMutations(_ mutations: [MutationRecord]) throws -> [SyncAcknowledgement] {
         lock.lock(); defer { lock.unlock() }
 
         var acks: [SyncAcknowledgement] = []
@@ -96,7 +111,7 @@ public final class FileSystemCloudAdapter: CloudAdapter, @unchecked Sendable {
         return acks
     }
 
-    public func pullMutations(since version: SyncVersion) async throws -> [RemoteMutation] {
+    private func _pullMutations(since version: SyncVersion) throws -> [RemoteMutation] {
         lock.lock(); defer { lock.unlock() }
 
         let cutoff = version.serverSequence

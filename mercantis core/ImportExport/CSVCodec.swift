@@ -20,7 +20,7 @@ public enum CSVCodec {
 
     /// Render a header + rows array as RFC-4180 CSV bytes (LF line endings).
     /// `headers` defines column order; missing cells render empty.
-    public static func encode(headers: [String], rows: [[String: String]]) -> Data {
+    nonisolated public static func encode(headers: [String], rows: [[String: String]]) -> Data {
         var out = ""
         out += headers.map(escape).joined(separator: ",")
         out += "\n"
@@ -33,7 +33,7 @@ public enum CSVCodec {
 
     /// Escape one CSV cell. Quotes the value when it contains a separator,
     /// quote, CR, or LF.
-    public static func escape(_ raw: String) -> String {
+    nonisolated public static func escape(_ raw: String) -> String {
         if raw.isEmpty { return "" }
         let needsQuote = raw.contains(",") || raw.contains("\"") || raw.contains("\n") || raw.contains("\r")
         if !needsQuote { return raw }
@@ -50,7 +50,7 @@ public enum CSVCodec {
 
     /// Parse `bytes` as RFC-4180 CSV. Throws `ImportExportError.malformedCSV`
     /// on quote / row mismatches (e.g. unterminated quoted cells).
-    public static func decode(_ bytes: Data) throws -> DecodedTable {
+    nonisolated public static func decode(_ bytes: Data) throws -> DecodedTable {
         guard let text = String(data: bytes, encoding: .utf8) else {
             throw ImportExportError.malformedCSV(line: 0, reason: "input is not valid UTF-8")
         }
@@ -68,7 +68,7 @@ public enum CSVCodec {
         return DecodedTable(headers: header, rows: Array(dataRows))
     }
 
-    private static func parseRows(_ text: String) throws -> [[String]] {
+    nonisolated private static func parseRows(_ text: String) throws -> [[String]] {
         var rows: [[String]] = []
         var currentRow: [String] = []
         var currentCell = ""
