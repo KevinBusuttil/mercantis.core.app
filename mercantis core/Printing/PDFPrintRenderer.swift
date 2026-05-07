@@ -157,13 +157,22 @@ public struct PDFPrintRenderer: PrintRenderer {
         isBold: Bool,
         in ctx: CGContext
     ) {
+        // Use CoreText's own attribute keys so the renderer compiles
+        // without an AppKit / UIKit dependency. The runtime semantics
+        // are identical to NSAttributedString.Key.font / .foregroundColor;
+        // only the key constants differ.
         let fontName = isBold ? "Helvetica-Bold" : "Helvetica"
         let font = CTFontCreateWithName(fontName as CFString, 11, nil)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: CGColor(gray: 0, alpha: 1)
+        let attributes: [CFString: Any] = [
+            kCTFontAttributeName: font,
+            kCTForegroundColorAttributeName: CGColor(gray: 0, alpha: 1)
         ]
-        let attributed = NSAttributedString(string: text, attributes: attributes)
+        let attributed = CFAttributedStringCreate(
+            nil,
+            text as CFString,
+            attributes as CFDictionary
+        )
+        guard let attributed else { return }
         let line = CTLineCreateWithAttributedString(attributed)
         ctx.textPosition = CGPoint(x: margin, y: y - 11)
         CTLineDraw(line, ctx)

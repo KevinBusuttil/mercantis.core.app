@@ -65,13 +65,18 @@ public enum PrintRenderError: Error, Sendable, Equatable {
 
 /// Helpers shared by every renderer: `{field}` substitution and the
 /// default formatting of a `FieldValue` to a printable string.
+///
+/// All methods are `nonisolated` so they can be called from any actor
+/// context (Swift 6 strict-concurrency builds infer `@MainActor` on
+/// some module-level statics; explicit `nonisolated` keeps the
+/// renderer pipeline portable).
 public enum PrintTemplate {
 
     /// Substitute every `{key}` placeholder in `template` with the
     /// formatted `document.fields[key]`. Unknown keys are left as-is
     /// (`"{unknown}"` literal in output) so format authors can spot
     /// typos without the renderer crashing.
-    public static func substitute(_ template: String, in document: Document) -> String {
+    nonisolated public static func substitute(_ template: String, in document: Document) -> String {
         var out = ""
         var i = template.startIndex
         while i < template.endIndex {
@@ -98,7 +103,7 @@ public enum PrintTemplate {
     /// Lookup `key` against the document's fields plus a few system-column
     /// conveniences (`id`, `status`, `docStatus`, `createdAt`, `updatedAt`,
     /// `company`).
-    public static func lookup(key: String, in document: Document) -> FieldValue? {
+    nonisolated public static func lookup(key: String, in document: Document) -> FieldValue? {
         if let field = document.fields[key] { return field }
         switch key {
         case "id":          return .string(document.id)
@@ -113,7 +118,7 @@ public enum PrintTemplate {
 
     /// Default printable form of a `FieldValue`. Renderers can override
     /// per-type formatting if they need locale-aware money / date output.
-    public static func format(_ value: FieldValue) -> String {
+    nonisolated public static func format(_ value: FieldValue) -> String {
         switch value {
         case .string(let s): return s
         case .int(let i):    return String(i)
@@ -135,7 +140,7 @@ public enum PrintTemplate {
         }
     }
 
-    private static func formattedDouble(_ d: Double) -> String {
+    nonisolated private static func formattedDouble(_ d: Double) -> String {
         if d == d.rounded() {
             return String(format: "%.0f", d)
         }
@@ -143,7 +148,7 @@ public enum PrintTemplate {
     }
 
     /// Humanise a snake_case or camelCase field key into a label.
-    public static func defaultLabel(forKey key: String) -> String {
+    nonisolated public static func defaultLabel(forKey key: String) -> String {
         if key.isEmpty { return key }
         var spaced = ""
         for (i, ch) in key.enumerated() {
