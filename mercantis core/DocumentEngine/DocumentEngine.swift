@@ -1603,6 +1603,65 @@ public final class DocumentEngine {
 
 }
 
+// MARK: - LocalizedError
+
+extension DocumentEngine.DocumentEngineError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .malformedRow:
+            return "A stored record couldn't be read — its payload may be from an incompatible version."
+        case .docTypeNotFound(let id):
+            return "DocType \"\(id)\" isn't registered. The app's manifest may not have finished installing."
+        case .notSubmittable(let docType):
+            return "\"\(docType)\" records can't be submitted because the DocType isn't marked submittable."
+        case .invalidDocStatusTransition(let from, let to, let id):
+            return "Record \(id) can't move from status \(humanStatus(from)) to \(humanStatus(to))."
+        case .fieldImmutableAfterSubmit(let fieldKey, _):
+            return "Field \"\(fieldKey)\" can't be changed after the record is submitted."
+        case .cancelBlockedByLinks(let id, let blockingIds):
+            let preview = blockingIds.prefix(3).joined(separator: ", ")
+            let suffix = blockingIds.count > 3 ? " (and \(blockingIds.count - 3) more)" : ""
+            return "Record \(id) is referenced by submitted records: \(preview)\(suffix). Cancel those first."
+        case .cannotDeleteSubmitted(let id):
+            return "Record \(id) is submitted and can't be deleted directly. Cancel it first, then delete."
+        case .validationFailed(let errors):
+            return humanValidationMessage(errors)
+        case .concurrencyConflict(let id):
+            return "Record \(id) was changed elsewhere since you opened it. Reload to pick up the latest version, then re-apply your edit."
+        }
+    }
+
+    private func humanStatus(_ docStatus: Int) -> String {
+        switch docStatus {
+        case 0: return "Draft"
+        case 1: return "Submitted"
+        case 2: return "Cancelled"
+        default: return "status \(docStatus)"
+        }
+    }
+
+    /// Compose a single user-facing string from a list of stage errors.
+    /// One-message lists collapse to that message verbatim so the form
+    /// reads naturally ("Customer Type is required."); larger lists are
+    /// joined into a short bulleted summary.
+    private func humanValidationMessage(_ errors: [DocumentValidationError]) -> String {
+        if errors.isEmpty {
+            return "The record couldn't be saved because validation failed."
+        }
+        if errors.count == 1 {
+            return errors[0].message
+        }
+        let bullets = errors
+            .prefix(4)
+            .map { "• \($0.message)" }
+            .joined(separator: "\n")
+        if errors.count > 4 {
+            return "\(errors.count) problems prevented the save:\n\(bullets)\n• …"
+        }
+        return "Couldn't save:\n\(bullets)"
+    }
+}
+
 // MARK: - DocumentLookupResolver conformance (ADR-029, P2.2)
 
 extension DocumentEngine: DocumentLookupResolver {
