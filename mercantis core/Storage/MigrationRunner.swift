@@ -87,6 +87,7 @@ public struct MigrationRunner {
         runner.register(version: 9, name: "add_naming_counter_blocks", sql: MigrationRunner.v9SQL)
         runner.register(version: 10, name: "add_attachments", sql: MigrationRunner.v10SQL)
         runner.register(version: 11, name: "add_notification_log", sql: MigrationRunner.v11SQL)
+        runner.register(version: 12, name: "add_custom_fields", sql: MigrationRunner.v12SQL)
     }
 
     // MARK: - v1 Schema
@@ -372,5 +373,32 @@ public struct MigrationRunner {
             ON notification_log(emittedAt);
         CREATE INDEX IF NOT EXISTS idx_notification_unread
             ON notification_log(recipient, readAt);
+        """
+
+    // MARK: - v12 Schema (Custom Fields)
+
+    private static let v12SQL = """
+        -- End-user customizations layered on top of a base DocType. (ADR-021)
+        --
+        -- A row here adds a single field to `docType` without mutating the
+        -- base DocType definition, so app-manifest reinstalls don't clobber
+        -- it and the field can be removed without a schema migration.
+        --
+        -- `insertAfter` is the field key the custom field should be placed
+        -- after in the rendered form; NULL means "append to the end".
+        -- `field_definition` is the JSON-encoded FieldDefinition.
+        CREATE TABLE IF NOT EXISTS custom_fields (
+            id                TEXT PRIMARY KEY NOT NULL,
+            doctype           TEXT NOT NULL,
+            field_key         TEXT NOT NULL,
+            insert_after      TEXT,
+            field_definition  TEXT NOT NULL,
+            created_at        TEXT NOT NULL,
+            updated_at        TEXT NOT NULL,
+            UNIQUE (doctype, field_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_custom_fields_doctype
+            ON custom_fields(doctype);
         """
 }

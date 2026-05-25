@@ -406,42 +406,22 @@ public struct NavigationShell: View {
     @ViewBuilder
     private func docTypeDetail(docTypeId: String) -> some View {
         if let docType = tooling.docType(withId: docTypeId) {
-            let documents = tooling.listDocuments(docTypeId: docType.id)
-            RecordCollectionHostView(
-                preferenceKey: "docType.\(docType.id)",
+            DocTypeWorkspaceContainer(
                 docType: docType,
-                workspaceTitle: docType.id == BuiltInDocTypes.module.id ? "Modules" : nil,
-                documents: documents,
-                configuration: recordCollectionConfiguration(),
-                onCreateDocument: {
-                    let draft = tooling.createDraftDocument(for: docType)
-                    addRecent(.docType(docType.id))
-                    return draft
+                tooling: tooling,
+                activeDocument: Binding(
+                    get: { activeDocument },
+                    set: { activeDocument = $0 }
+                ),
+                onRecordTouched: { documentId in
+                    addRecent(.record(docTypeId: docType.id, documentId: documentId))
                 },
-                onSaveDocument: { document in
-                    let saved = try tooling.saveDocument(document)
-                    activeDocument = saved
-                    addRecent(.record(docTypeId: docType.id, documentId: saved.id))
-                    return saved
-                },
-                onDeleteDocument: { document in
-                    try tooling.deleteDocument(docType: docType.id, id: document.id)
-                    if activeDocument?.id == document.id {
-                        activeDocument = nil
-                    }
-                },
-                initialSelectedDocumentID: activeDocument?.id,
-                onSelectionChange: { selected in
-                    activeDocument = selected
-                    if let selected {
-                        addRecent(.record(docTypeId: docType.id, documentId: selected.id))
-                    }
-                },
-                detailHeader: docType.id == BuiltInDocTypes.module.id
+                detailHeaderForModule: docType.id == BuiltInDocTypes.module.id
                     ? { document in AnyView(moduleSelectedRecordHeader(for: document)) }
                     : nil,
                 externalCreateTrigger: createTriggerBinding(for: docType.id)
             )
+            .id(docType.id)
         } else {
             Text("DocType not found")
                 .foregroundStyle(.secondary)
@@ -1011,4 +991,94 @@ struct WorkspaceDefinition: Identifiable, Hashable {
         WorkspaceDefinition(section: .modules, title: "Modules", icon: "square.grid.2x2", placement: .primary),
         WorkspaceDefinition(section: .settings, title: "Settings", icon: "gear", placement: .secondary)
     ]
+}
+
+/// Small wrapper that owns the per-DocType custom-field state and bridges
+/// the tooling context to `RecordCollectionHostView`. Extracted from
+/// `NavigationShell.docTypeDetail` because the host's customize hooks
+/// need a reactive `[CustomField]` source that re-renders when the user
+/// adds, edits, or removes a field.
+private struct DocTypeWorkspaceContainer: View {
+    let docType: DocType
+    @ObservedObject var tooling: DocTypeToolingContext
+    @Binding var activeDocument: Document?
+    let onRecordTouched: (String) -> Void
+    let detailHeaderForModule: ((Document) -> AnyView)?
+    let externalCreateTrigger: Binding<Bool>
+
+    @State private var customFields: [CustomField] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        let documents = tooling.listDocuments(docTypeId: docType.id)
+        return VStack(spacing: 0) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            RecordCollectionHostView(
+                preferenceKey: "docType.\(docType.id)",
+                docType: docType,
+                workspaceTitle: docType.id == BuiltInDocTypes.module.id ? "Modules" : nil,
+                documents: documents,
+                configuration: RecordCollectionViewConfiguration(
+                    supportedViewModes: [.list, .browse, .detail],
+                    defaultViewMode: .list
+                ),
+                onCreateDocument: {
+                    let draft = tooling.createDraftDocument(for: docType)
+                    onRecordTouched(docType.id)
+                    return draft
+                },
+                onSaveDocument: { document in
+                    let saved = try tooling.saveDocument(document)
+                    activeDocument = saved
+                    onRecordTouched(saved.id)
+                    return saved
+                },
+                onDeleteDocument: { document in
+                    try tooling.deleteDocument(docType: docType.id, id: document.id)
+                    if activeDocument?.id == document.id {
+                        activeDocument = nil
+                    }
+                },
+                customFields: customFields,
+                onAddCustomField: { field in
+                    try tooling.customFieldStore.add(field)
+                    reloadCustomFields()
+                },
+                onUpdateCustomField: { field in
+                    try tooling.customFieldStore.update(field)
+                    reloadCustomFields()
+                },
+                onRemoveCustomField: { id in
+                    try tooling.customFieldStore.remove(id: id)
+                    reloadCustomFields()
+                },
+                initialSelectedDocumentID: activeDocument?.id,
+                onSelectionChange: { selected in
+                    activeDocument = selected
+                    if let selected {
+                        onRecordTouched(selected.id)
+                    }
+                },
+                detailHeader: detailHeaderForModule,
+                externalCreateTrigger: externalCreateTrigger
+            )
+        }
+        .onAppear { reloadCustomFields() }
+    }
+
+    private func reloadCustomFields() {
+        do {
+            customFields = try tooling.customFieldStore.list(forDocType: docType.id)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn't load custom fields: \(error.localizedDescription)"
+        }
+    }
 }
