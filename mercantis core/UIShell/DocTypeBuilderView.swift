@@ -29,6 +29,9 @@ final class DocTypeToolingContext: ObservableObject {
         eventEmitter: eventEmitter
     )
     private var reportEngine: ReportEngine?
+    /// Storage for end-user `CustomField` rows. Exposed so workspaces can
+    /// list / mutate fields on the active DocType.
+    private(set) lazy var customFieldStore = CustomFieldStore(database: database)
 
     init() {
         let dbURL = Self.databaseURL()

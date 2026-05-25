@@ -9,6 +9,7 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
     let supportedViewModes: [RecordViewMode]
     let primaryActionTitle: String
     let onPrimaryAction: (() -> Void)?
+    let onCustomizeFields: (() -> Void)?
     let overflowMenuContent: (() -> AnyView)?
 
     public init(
@@ -17,6 +18,7 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
         supportedViewModes: [RecordViewMode],
         primaryActionTitle: String = "New",
         onPrimaryAction: (() -> Void)? = nil,
+        onCustomizeFields: (() -> Void)? = nil,
         overflowMenuContent: (() -> AnyView)? = nil
     ) {
         self.statusText = statusText
@@ -24,6 +26,7 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
         self.supportedViewModes = supportedViewModes
         self.primaryActionTitle = primaryActionTitle
         self.onPrimaryAction = onPrimaryAction
+        self.onCustomizeFields = onCustomizeFields
         self.overflowMenuContent = overflowMenuContent
     }
 
@@ -44,6 +47,15 @@ public struct RecordWorkspaceToolbarContent: ToolbarContent {
             .labelsHidden()
             .frame(minWidth: 220)
             .accessibilityLabel(Text("Record View Mode"))
+        }
+
+        if let onCustomizeFields {
+            ToolbarItem(placement: .automatic) {
+                Button(action: onCustomizeFields) {
+                    Label("Customize", systemImage: "slider.horizontal.3")
+                }
+                .help("Add or change custom fields on this form")
+            }
         }
 
         if let onPrimaryAction {

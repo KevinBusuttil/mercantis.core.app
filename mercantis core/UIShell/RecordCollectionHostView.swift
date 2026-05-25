@@ -25,13 +25,24 @@ public struct RecordCollectionHostView: View {
     /// selection after a successful delete; the caller is responsible for
     /// reloading the `documents` collection it passes in.
     let onDeleteDocument: ((Document) throws -> Void)?
+    /// End-user-authored fields layered on top of `docType`. The host
+    /// merges them into a single composed DocType before rendering the
+    /// list and form, so consumers don't need to do the merge themselves.
+    let customFields: [CustomField]
+    /// Persists a new custom field. When all three customize callbacks are
+    /// provided, a "Customize" toolbar button surfaces a sheet that lets
+    /// end users add / edit / remove fields without touching the base
+    /// DocType definition.
+    let onAddCustomField: ((CustomField) throws -> Void)?
+    let onUpdateCustomField: ((CustomField) throws -> Void)?
+    let onRemoveCustomField: ((String) throws -> Void)?
     let initialSelectedDocumentID: String?
     let onSelectionChange: ((Document?) -> Void)?
     let detailHeader: ((Document) -> AnyView)?
     let externalCreateTrigger: Binding<Bool>?
     let linkSearchProvider: ((String, String) -> [Document])?
     let childDocTypeProvider: ((String) -> DocType?)?
-    let detailEditor: ((Binding<Document>) -> AnyView)?
+    let detailEditor: ((DocType, Binding<Document>) -> AnyView)?
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
@@ -41,6 +52,7 @@ public struct RecordCollectionHostView: View {
     @State private var lastSavedAt: Date?
     @State private var lastSavedID: String?
     @State private var pendingDeleteDocument: Document?
+    @State private var showCustomizeSheet = false
 
     public init(
         preferenceKey: String,
@@ -57,13 +69,17 @@ public struct RecordCollectionHostView: View {
         workspaceOverflowMenu: (() -> AnyView)? = nil,
         onSaveDocument: ((Document) throws -> Document?)? = nil,
         onDeleteDocument: ((Document) throws -> Void)? = nil,
+        customFields: [CustomField] = [],
+        onAddCustomField: ((CustomField) throws -> Void)? = nil,
+        onUpdateCustomField: ((CustomField) throws -> Void)? = nil,
+        onRemoveCustomField: ((String) throws -> Void)? = nil,
         initialSelectedDocumentID: String? = nil,
         onSelectionChange: ((Document?) -> Void)? = nil,
         detailHeader: ((Document) -> AnyView)? = nil,
         externalCreateTrigger: Binding<Bool>? = nil,
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil,
-        detailEditor: ((Binding<Document>) -> AnyView)? = nil
+        detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -79,6 +95,10 @@ public struct RecordCollectionHostView: View {
         self.workspaceOverflowMenu = workspaceOverflowMenu
         self.onSaveDocument = onSaveDocument
         self.onDeleteDocument = onDeleteDocument
+        self.customFields = customFields
+        self.onAddCustomField = onAddCustomField
+        self.onUpdateCustomField = onUpdateCustomField
+        self.onRemoveCustomField = onRemoveCustomField
         self.initialSelectedDocumentID = initialSelectedDocumentID
         self.onSelectionChange = onSelectionChange
         self.detailHeader = detailHeader
@@ -98,7 +118,7 @@ public struct RecordCollectionHostView: View {
         .toolbar(content: workspaceToolbar)
         .sheet(item: $createSheetDraft) { _ in
             CreateRecordSheet(
-                docType: docType,
+                docType: effectiveDocType,
                 draft: Binding(
                     get: { createSheetDraft ?? emptyDocument(for: docType.id) },
                     set: { createSheetDraft = $0 }
@@ -142,6 +162,56 @@ public struct RecordCollectionHostView: View {
         } message: { document in
             Text("This will permanently remove \(document.id.isEmpty ? "this draft" : document.id). This action cannot be undone.")
         }
+        .sheet(isPresented: $showCustomizeSheet) {
+            if canCustomizeFields {
+                // `effectiveDocType.fields` is base + custom so the Position
+                // picker lets users place a new field after either a built-in
+                // field or one of their own additions.
+                CustomizeWorkspaceSheet(
+                    docTypeName: docType.name,
+                    baseFields: effectiveDocType.fields.map {
+                        CustomizeWorkspaceSheet.BaseFieldEntry(key: $0.key, label: $0.label)
+                    },
+                    customFields: customFields,
+                    onAdd: onAddCustomField ?? { _ in },
+                    onUpdate: onUpdateCustomField ?? { _ in },
+                    onRemove: onRemoveCustomField ?? { _ in }
+                )
+            }
+        }
+    }
+
+    /// All three customize callbacks must be supplied to enable the
+    /// in-app editor. A consumer that wants read-only custom fields can
+    /// pass `customFields` without any of the callbacks.
+    private var canCustomizeFields: Bool {
+        onAddCustomField != nil
+            && onUpdateCustomField != nil
+            && onRemoveCustomField != nil
+    }
+
+    /// `docType` with any persisted custom fields merged in at their
+    /// declared `insertAfter` positions. Used wherever the host renders
+    /// the form / list so end-user fields show up natively.
+    private var effectiveDocType: DocType {
+        Self.merge(base: docType, customFields: customFields)
+    }
+
+    private static func merge(base: DocType, customFields: [CustomField]) -> DocType {
+        guard !customFields.isEmpty else { return base }
+        var composed = base
+        var fields = composed.fields
+        for cf in customFields {
+            let new = cf.fieldDefinition
+            if let after = cf.insertAfter, !after.isEmpty,
+               let idx = fields.firstIndex(where: { $0.key == after }) {
+                fields.insert(new, at: fields.index(after: idx))
+            } else {
+                fields.append(new)
+            }
+        }
+        composed.fields = fields
+        return composed
     }
 
     private var pendingDeleteBinding: Binding<Bool> {
@@ -196,13 +266,16 @@ public struct RecordCollectionHostView: View {
             // would render two identical "+ New <DocType>" buttons on every
             // workspace.
             onPrimaryAction: nil,
+            onCustomizeFields: canCustomizeFields
+                ? { showCustomizeSheet = true }
+                : nil,
             overflowMenuContent: workspaceOverflowMenu
         )
     }
 
     private var listPane: some View {
         GenericListView(
-            docType: docType,
+            docType: effectiveDocType,
             documents: documents,
             onSelect: selectDocument(_:),
             onCreate: handleCreateDocument
@@ -230,10 +303,10 @@ public struct RecordCollectionHostView: View {
                 }
 
                 if let detailEditor {
-                    detailEditor(selectedDocumentBinding)
+                    detailEditor(effectiveDocType, selectedDocumentBinding)
                 } else {
                     GenericFormView(
-                        docType: docType,
+                        docType: effectiveDocType,
                         document: selectedDocumentBinding,
                         linkSearchProvider: linkSearchProvider,
                         childDocTypeProvider: childDocTypeProvider
