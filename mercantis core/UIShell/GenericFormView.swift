@@ -95,15 +95,34 @@ public struct GenericFormView: View {
 
         if usesStackedLayout(field) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(field.label)
+                fieldLabel(for: field)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 fieldControl(for: field, isReadOnly: isReadOnly)
             }
         } else {
-            LabeledContent(field.label) {
+            LabeledContent {
                 fieldControl(for: field, isReadOnly: isReadOnly)
+            } label: {
+                fieldLabel(for: field)
             }
+        }
+    }
+
+    /// Field label with a red asterisk appended when the field is
+    /// required, plus an accessibility hint so VoiceOver announces it.
+    @ViewBuilder
+    private func fieldLabel(for field: FieldDefinition) -> some View {
+        if field.required {
+            HStack(spacing: 2) {
+                Text(field.label)
+                Text("*")
+                    .foregroundStyle(MercantisTheme.danger)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityLabel(Text("\(field.label), required"))
+        } else {
+            Text(field.label)
         }
     }
 

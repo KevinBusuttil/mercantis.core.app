@@ -277,6 +277,7 @@ public struct RecordCollectionHostView: View {
         GenericListView(
             docType: effectiveDocType,
             documents: documents,
+            selectedDocumentID: selectedDocument?.id,
             onSelect: selectDocument(_:),
             onCreate: handleCreateDocument
         )

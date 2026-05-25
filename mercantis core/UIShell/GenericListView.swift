@@ -16,6 +16,7 @@ public struct GenericListView: View {
 
     let docType: DocType
     let documents: [Document]
+    let selectedDocumentID: String?
     let onSelect: ((Document) -> Void)?
     let onCreate: (() -> Void)?
 
@@ -26,11 +27,13 @@ public struct GenericListView: View {
     public init(
         docType: DocType,
         documents: [Document],
+        selectedDocumentID: String? = nil,
         onSelect: ((Document) -> Void)? = nil,
         onCreate: (() -> Void)? = nil
     ) {
         self.docType = docType
         self.documents = documents
+        self.selectedDocumentID = selectedDocumentID
         self.onSelect = onSelect
         self.onCreate = onCreate
     }
@@ -112,36 +115,55 @@ public struct GenericListView: View {
 
     private var documentTable: some View {
         List(processedDocuments) { doc in
+            let isSelected = doc.id == selectedDocumentID
             Button(action: { onSelect?(doc) }) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(titleValue(for: doc))
-                            .font(.headline)
-                        Spacer()
-                        statusBadge(for: doc.status)
-                    }
+                HStack(alignment: .top, spacing: 8) {
+                    // Leading accent bar mirrors the sidebar's selected
+                    // treatment so users see at a glance which record is
+                    // being shown on the right pane.
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(isSelected ? MercantisTheme.accent : Color.clear)
+                        .frame(width: 3)
 
-                    ForEach(displayFields, id: \.key) { field in
-                        let value = displayValue(for: field.key, in: doc)
-                        if value != "—" {
-                            HStack(spacing: 6) {
-                                Text(field.label)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(value)
-                                    .font(.subheadline)
-                                    .lineLimit(field.type == .richText ? 1 : nil)
-                                    .truncationMode(.tail)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(titleValue(for: doc))
+                                .font(.headline)
+                                .fontWeight(isSelected ? .bold : .semibold)
+                                .foregroundStyle(isSelected ? MercantisTheme.accent : MercantisTheme.textPrimary)
+                            Spacer()
+                            statusBadge(for: doc.status)
+                        }
+
+                        ForEach(displayFields, id: \.key) { field in
+                            let value = displayValue(for: field.key, in: doc)
+                            if value != "—" {
+                                HStack(spacing: 6) {
+                                    Text(field.label)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(value)
+                                        .font(.subheadline)
+                                        .lineLimit(field.type == .richText ? 1 : nil)
+                                        .truncationMode(.tail)
+                                }
                             }
                         }
-                    }
 
-                    Text(doc.id)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        Text(doc.id)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? MercantisTheme.accentFillSoft : Color.clear)
+                )
+                .contentShape(Rectangle())
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
             .buttonStyle(.plain)
         }
