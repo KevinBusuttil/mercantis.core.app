@@ -21,6 +21,9 @@ public struct RecordCollectionHostView: View {
     let onSelectionChange: ((Document?) -> Void)?
     let detailHeader: ((Document) -> AnyView)?
     let externalCreateTrigger: Binding<Bool>?
+    let linkSearchProvider: ((String, String) -> [Document])?
+    let childDocTypeProvider: ((String) -> DocType?)?
+    let detailEditor: ((Binding<Document>) -> AnyView)?
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
@@ -45,7 +48,10 @@ public struct RecordCollectionHostView: View {
         initialSelectedDocumentID: String? = nil,
         onSelectionChange: ((Document?) -> Void)? = nil,
         detailHeader: ((Document) -> AnyView)? = nil,
-        externalCreateTrigger: Binding<Bool>? = nil
+        externalCreateTrigger: Binding<Bool>? = nil,
+        linkSearchProvider: ((String, String) -> [Document])? = nil,
+        childDocTypeProvider: ((String) -> DocType?)? = nil,
+        detailEditor: ((Binding<Document>) -> AnyView)? = nil
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -64,6 +70,9 @@ public struct RecordCollectionHostView: View {
         self.onSelectionChange = onSelectionChange
         self.detailHeader = detailHeader
         self.externalCreateTrigger = externalCreateTrigger
+        self.linkSearchProvider = linkSearchProvider
+        self.childDocTypeProvider = childDocTypeProvider
+        self.detailEditor = detailEditor
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
     }
 
@@ -81,7 +90,9 @@ public struct RecordCollectionHostView: View {
                     get: { createSheetDraft ?? emptyDocument(for: docType.id) },
                     set: { createSheetDraft = $0 }
                 ),
-                onCreate: performCreate(_:)
+                onCreate: performCreate(_:),
+                linkSearchProvider: linkSearchProvider,
+                childDocTypeProvider: childDocTypeProvider
             )
         }
         .onAppear {
@@ -178,8 +189,17 @@ public struct RecordCollectionHostView: View {
                     detailHeader(selectedDocument)
                 }
 
-                GenericFormView(docType: docType, document: selectedDocumentBinding)
+                if let detailEditor {
+                    detailEditor(selectedDocumentBinding)
+                } else {
+                    GenericFormView(
+                        docType: docType,
+                        document: selectedDocumentBinding,
+                        linkSearchProvider: linkSearchProvider,
+                        childDocTypeProvider: childDocTypeProvider
+                    )
                     .disabled(!allowsDetailEditing)
+                }
 
                 if let detailSaveError {
                     Text(detailSaveError)
@@ -190,7 +210,7 @@ public struct RecordCollectionHostView: View {
                         .padding(.horizontal)
                 }
 
-                if let onSaveDocument {
+                if detailEditor == nil, let onSaveDocument {
                     HStack {
                         Spacer()
                         Button("Save") {
