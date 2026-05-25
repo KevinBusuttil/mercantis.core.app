@@ -149,33 +149,52 @@ public struct NavigationShell: View {
 
     private var sidebar: some View {
         List {
-            ForEach(topSplitSections) { workspace in
-                Button {
-                    selectSection(workspace.section)
-                } label: {
-                    HStack(spacing: 8) {
-                        Label(workspace.title, systemImage: workspace.icon)
-                            .fontWeight(router.selectedSection == workspace.section ? .semibold : .regular)
-                        if let badge = workspaceBadge(for: workspace.section) {
-                            Spacer()
-                            Text(badge)
-                                .mercantisSemanticBadge(tone: router.selectedSection == workspace.section ? .accent : .muted)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .mercantisSidebarSelection(isActive: router.selectedSection == workspace.section)
+            Section {
+                MercantisSidebarBrandHeader(
+                    title: "Mercantis",
+                    subtitle: "Workspace",
+                    systemImage: "square.stack.3d.up"
+                )
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 6, trailing: 8))
+                .listRowSeparator(.hidden)
             }
 
-            ForEach(bottomSplitSections) { workspace in
-                Button {
-                    selectSection(workspace.section)
-                } label: {
-                    Label(workspace.title, systemImage: workspace.icon)
-                        .fontWeight(router.selectedSection == workspace.section ? .semibold : .regular)
+            Section {
+                ForEach(topSplitSections) { workspace in
+                    Button {
+                        selectSection(workspace.section)
+                    } label: {
+                        MercantisSidebarRow(
+                            title: workspace.title,
+                            systemImage: workspace.icon,
+                            tone: tone(for: workspace.section),
+                            isSelected: router.selectedSection == workspace.section,
+                            badge: workspaceBadge(for: workspace.section)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
-                .buttonStyle(.plain)
-                .mercantisSidebarSelection(isActive: router.selectedSection == workspace.section)
+            }
+
+            Section {
+                ForEach(bottomSplitSections) { workspace in
+                    Button {
+                        selectSection(workspace.section)
+                    } label: {
+                        MercantisSidebarRow(
+                            title: workspace.title,
+                            systemImage: workspace.icon,
+                            tone: tone(for: workspace.section),
+                            isSelected: router.selectedSection == workspace.section
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
             }
         }
         .listStyle(.sidebar)
@@ -698,6 +717,19 @@ public struct NavigationShell: View {
 
     private var bottomSplitSections: [WorkspaceDefinition] {
         workspaceDefinitions.filter { $0.placement == .secondary }
+    }
+
+    private func tone(for section: NavigationSection) -> MercantisModuleTone? {
+        switch section {
+        case .home, .reports, .dashboards:
+            return .platform
+        case .docTypes, .modules:
+            return .setup
+        case .recents:
+            return .neutral
+        case .settings, .inbox, .search, .more:
+            return .system
+        }
     }
 
     private func workspaceBadge(for section: NavigationSection) -> String? {

@@ -17,6 +17,21 @@ enum MercantisSemanticTone {
     case muted
 }
 
+/// Semantic colour identity for a navigation module / domain. Used by the
+/// sidebar to add subtle, low-opacity accents per module while keeping the
+/// overall surface native and calm.
+public enum MercantisModuleTone: Hashable, Sendable {
+    case crm
+    case selling
+    case buying
+    case stock
+    case accounting
+    case setup
+    case platform
+    case system
+    case neutral
+}
+
 enum MercantisTheme {
     static let accent = Color.accentColor
     static let accentFillSoft = Color.accentColor.opacity(0.12)
@@ -85,6 +100,28 @@ enum MercantisTheme {
         case .muted:
             mutedBadge
         }
+    }
+
+    static func moduleTint(_ tone: MercantisModuleTone) -> Color {
+        switch tone {
+        case .crm:        return Color(red: 0.20, green: 0.47, blue: 0.96) // blue
+        case .selling:    return Color(red: 0.13, green: 0.64, blue: 0.40) // green
+        case .buying:     return Color(red: 0.90, green: 0.49, blue: 0.13) // orange
+        case .stock:      return Color(red: 0.55, green: 0.34, blue: 0.85) // purple
+        case .accounting: return Color(red: 0.31, green: 0.27, blue: 0.80) // indigo
+        case .setup:      return Color(red: 0.42, green: 0.45, blue: 0.50) // slate gray
+        case .platform:   return Color(red: 0.10, green: 0.60, blue: 0.74) // cyan
+        case .system:     return Color(red: 0.42, green: 0.45, blue: 0.50)
+        case .neutral:    return textMuted
+        }
+    }
+
+    static func moduleFill(_ tone: MercantisModuleTone) -> Color {
+        moduleTint(tone).opacity(0.12)
+    }
+
+    static func moduleBorder(_ tone: MercantisModuleTone) -> Color {
+        moduleTint(tone).opacity(0.22)
     }
 }
 
