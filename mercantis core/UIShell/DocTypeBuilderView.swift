@@ -133,8 +133,17 @@ final class DocTypeToolingContext: ObservableObject {
         )
     }
 
-    func saveDocument(_ document: Document) throws {
-        try documentEngine.save(document)
+    func saveDocument(_ document: Document) throws -> Document {
+        let saved = try documentEngine.save(document)
+        // `DocumentEngine.save` returns the input with its ORIGINAL
+        // `updatedAt` (optimistic-concurrency contract — callers refetch to
+        // see the persisted timestamp). Re-read so the caller's binding
+        // doesn't carry a stale value into the next save.
+        return (try? documentEngine.fetch(docType: document.docType, id: saved.id)) ?? saved
+    }
+
+    func deleteDocument(docType: String, id: String) throws {
+        try documentEngine.delete(docType: docType, id: id)
     }
 
     func executeReport(_ report: ReportDefinition, filters: [String: FieldValue] = [:]) -> ReportResult? {

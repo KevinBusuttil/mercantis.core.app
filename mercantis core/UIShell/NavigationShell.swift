@@ -419,9 +419,16 @@ public struct NavigationShell: View {
                     return draft
                 },
                 onSaveDocument: { document in
-                    try tooling.saveDocument(document)
-                    activeDocument = document
-                    addRecent(.record(docTypeId: docType.id, documentId: document.id))
+                    let saved = try tooling.saveDocument(document)
+                    activeDocument = saved
+                    addRecent(.record(docTypeId: docType.id, documentId: saved.id))
+                    return saved
+                },
+                onDeleteDocument: { document in
+                    try tooling.deleteDocument(docType: docType.id, id: document.id)
+                    if activeDocument?.id == document.id {
+                        activeDocument = nil
+                    }
                 },
                 initialSelectedDocumentID: activeDocument?.id,
                 onSelectionChange: { selected in

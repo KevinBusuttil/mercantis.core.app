@@ -16,7 +16,15 @@ public struct RecordCollectionHostView: View {
     let primaryCreateActionTitle: String
     let onCreateDocument: (() -> Document?)?
     let workspaceOverflowMenu: (() -> AnyView)?
-    let onSaveDocument: ((Document) throws -> Void)?
+    /// Persists `document` and returns the refreshed copy (e.g. after a
+    /// refetch so the caller sees the new `updatedAt`). Returning `nil`
+    /// means "don't refresh the host's local copy" — useful for callers
+    /// that intentionally manage their own state.
+    let onSaveDocument: ((Document) throws -> Document?)?
+    /// Deletes `document` from the underlying store. The host clears its
+    /// selection after a successful delete; the caller is responsible for
+    /// reloading the `documents` collection it passes in.
+    let onDeleteDocument: ((Document) throws -> Void)?
     let initialSelectedDocumentID: String?
     let onSelectionChange: ((Document?) -> Void)?
     let detailHeader: ((Document) -> AnyView)?
@@ -30,6 +38,9 @@ public struct RecordCollectionHostView: View {
     @State private var selectedViewMode: RecordViewMode
     @State private var createSheetDraft: Document?
     @State private var detailSaveError: String?
+    @State private var lastSavedAt: Date?
+    @State private var lastSavedID: String?
+    @State private var pendingDeleteDocument: Document?
 
     public init(
         preferenceKey: String,
@@ -44,7 +55,8 @@ public struct RecordCollectionHostView: View {
         primaryCreateActionTitle: String = "New",
         onCreateDocument: (() -> Document?)? = nil,
         workspaceOverflowMenu: (() -> AnyView)? = nil,
-        onSaveDocument: ((Document) throws -> Void)? = nil,
+        onSaveDocument: ((Document) throws -> Document?)? = nil,
+        onDeleteDocument: ((Document) throws -> Void)? = nil,
         initialSelectedDocumentID: String? = nil,
         onSelectionChange: ((Document?) -> Void)? = nil,
         detailHeader: ((Document) -> AnyView)? = nil,
@@ -66,6 +78,7 @@ public struct RecordCollectionHostView: View {
         self.onCreateDocument = onCreateDocument
         self.workspaceOverflowMenu = workspaceOverflowMenu
         self.onSaveDocument = onSaveDocument
+        self.onDeleteDocument = onDeleteDocument
         self.initialSelectedDocumentID = initialSelectedDocumentID
         self.onSelectionChange = onSelectionChange
         self.detailHeader = detailHeader
@@ -114,6 +127,30 @@ public struct RecordCollectionHostView: View {
         .onChange(of: externalCreateTrigger?.wrappedValue ?? false) { _, requested in
             if requested { consumeExternalCreateTrigger() }
         }
+        .confirmationDialog(
+            "Delete this \(docType.name)?",
+            isPresented: pendingDeleteBinding,
+            titleVisibility: .visible,
+            presenting: pendingDeleteDocument
+        ) { document in
+            Button("Delete \(docType.name)", role: .destructive) {
+                performDelete(document)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteDocument = nil
+            }
+        } message: { document in
+            Text("This will permanently remove \(document.id.isEmpty ? "this draft" : document.id). This action cannot be undone.")
+        }
+    }
+
+    private var pendingDeleteBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { pendingDeleteDocument != nil },
+            set: { newValue in
+                if !newValue { pendingDeleteDocument = nil }
+            }
+        )
     }
 
     private var heroHeader: some View {
@@ -213,27 +250,116 @@ public struct RecordCollectionHostView: View {
                         .padding(.horizontal)
                 }
 
-                if detailEditor == nil, let onSaveDocument {
-                    HStack {
-                        Spacer()
-                        Button("Save") {
-                            guard let selectedDocument else { return }
-                            do {
-                                try onSaveDocument(selectedDocument)
-                                detailSaveError = nil
-                            } catch {
-                                detailSaveError = (error as NSError).localizedDescription
-                            }
-                        }
-                        .buttonStyle(MercantisPrimaryButtonStyle())
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
-                }
+                persistenceFooter
             }
         } else {
             ContentUnavailableView("Select a record to view details", systemImage: "doc.text.magnifyingglass")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Unified Save + Delete footer, plus a "Saved · just now" indicator.
+    /// Shown in the detail pane so it works for both the default
+    /// `GenericFormView` editor and any custom `detailEditor` a caller
+    /// supplies. The Save flow refreshes `selectedDocument` from the
+    /// caller's return value so optimistic-concurrency timestamps stay
+    /// fresh between consecutive saves.
+    @ViewBuilder
+    private var persistenceFooter: some View {
+        if onSaveDocument != nil || canDeleteSelected {
+            HStack(spacing: 10) {
+                savedIndicator
+                Spacer()
+                if onSaveDocument != nil {
+                    Button("Save") { performSave() }
+                        .buttonStyle(MercantisPrimaryButtonStyle())
+                        .keyboardShortcut("s", modifiers: [.command])
+                        .disabled(selectedDocument == nil)
+                }
+                if canDeleteSelected {
+                    Button(role: .destructive) {
+                        pendingDeleteDocument = selectedDocument
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .keyboardShortcut(.delete, modifiers: [.command])
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var savedIndicator: some View {
+        if let lastSavedAt {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(MercantisTheme.success)
+                Text("Saved \(Self.relativeSaved(lastSavedAt))")
+                    .foregroundStyle(.secondary)
+                if let lastSavedID, !lastSavedID.isEmpty {
+                    Text("· \(lastSavedID)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .font(.callout)
+        }
+    }
+
+    private static func relativeSaved(_ date: Date) -> String {
+        let interval = Date().timeIntervalSince(date)
+        if interval < 2 { return "just now" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Delete is offered for persisted records that aren't currently
+    /// Submitted (docStatus 1). `DocumentEngine.delete` also enforces this,
+    /// but we hide the affordance up front so users don't see a button that
+    /// always errors.
+    private var canDeleteSelected: Bool {
+        guard onDeleteDocument != nil else { return false }
+        guard let selectedDocument else { return false }
+        return !selectedDocument.id.isEmpty && selectedDocument.docStatus != 1
+    }
+
+    private func performSave() {
+        guard let onSaveDocument, let selectedDocument else { return }
+        do {
+            let refreshed = try onSaveDocument(selectedDocument)
+            if let refreshed {
+                self.selectedDocument = refreshed
+                self.selectedDocumentID = refreshed.id
+                onSelectionChange?(refreshed)
+            }
+            lastSavedAt = Date()
+            lastSavedID = refreshed?.id ?? selectedDocument.id
+            detailSaveError = nil
+        } catch {
+            detailSaveError = (error as NSError).localizedDescription
+        }
+    }
+
+    private func performDelete(_ document: Document) {
+        guard let onDeleteDocument else { return }
+        do {
+            try onDeleteDocument(document)
+            // Drop the cached selection up front; the host's onChange of
+            // `documentIDs` will then re-evaluate selection against the
+            // refreshed `documents` array.
+            selectedDocument = nil
+            selectedDocumentID = nil
+            onSelectionChange?(nil)
+            detailSaveError = nil
+            lastSavedAt = nil
+            lastSavedID = nil
+            pendingDeleteDocument = nil
+        } catch {
+            detailSaveError = (error as NSError).localizedDescription
+            pendingDeleteDocument = nil
         }
     }
 
@@ -289,10 +415,17 @@ public struct RecordCollectionHostView: View {
     }
 
     private func performCreate(_ draft: Document) throws {
-        try onSaveDocument?(draft)
-        // Queue selection for when the fresh `documents` list re-renders with
-        // the new row; `onChange(of: documentIDs)` will pick it up and syncSelection.
-        selectedDocumentID = draft.id
+        let saved = try onSaveDocument?(draft)
+        // Use the engine's assigned id (naming series may have rewritten it)
+        // so `onChange(of: documentIDs)` reselects the right row when the
+        // refreshed `documents` array arrives.
+        selectedDocumentID = saved?.id ?? draft.id
+        if let saved {
+            selectedDocument = saved
+            onSelectionChange?(saved)
+            lastSavedAt = Date()
+            lastSavedID = saved.id
+        }
     }
 
     private func syncSelection(from documentID: String?) {
