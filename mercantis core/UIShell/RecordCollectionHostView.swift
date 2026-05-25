@@ -155,7 +155,10 @@ public struct RecordCollectionHostView: View {
             selectedViewMode: $selectedViewMode,
             supportedViewModes: configuration.supportedViewModes,
             primaryActionTitle: primaryCreateActionTitle,
-            onPrimaryAction: createDocumentAction,
+            // Primary create lives in the hero header; surfacing it here too
+            // would render two identical "+ New <DocType>" buttons on every
+            // workspace.
+            onPrimaryAction: nil,
             overflowMenuContent: workspaceOverflowMenu
         )
     }
