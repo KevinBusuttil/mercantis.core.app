@@ -15,8 +15,24 @@ struct CreateRecordSheet: View {
     let docType: DocType
     @Binding var draft: Document
     let onCreate: (Document) throws -> Void
+    let linkSearchProvider: ((String, String) -> [Document])?
+    let childDocTypeProvider: ((String) -> DocType?)?
 
     @State private var errorMessage: String?
+
+    init(
+        docType: DocType,
+        draft: Binding<Document>,
+        onCreate: @escaping (Document) throws -> Void,
+        linkSearchProvider: ((String, String) -> [Document])? = nil,
+        childDocTypeProvider: ((String) -> DocType?)? = nil
+    ) {
+        self.docType = docType
+        self._draft = draft
+        self.onCreate = onCreate
+        self.linkSearchProvider = linkSearchProvider
+        self.childDocTypeProvider = childDocTypeProvider
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,8 +48,13 @@ struct CreateRecordSheet: View {
                     .background(MercantisTheme.fillSoft(for: .danger))
             }
 
-            GenericFormView(docType: docType, document: $draft)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GenericFormView(
+                docType: docType,
+                document: $draft,
+                linkSearchProvider: linkSearchProvider,
+                childDocTypeProvider: childDocTypeProvider
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
             footer
