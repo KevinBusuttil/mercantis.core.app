@@ -81,6 +81,11 @@ public struct ChildTableField: View {
         }
     }
 
+    // Shared between header and data rows so column edges line up exactly —
+    // any drift here multiplies across N columns and pushes the header out
+    // of register with its data cells.
+    private static let cellHPadding: CGFloat = 8
+
     // MARK: - Header
 
     private func headerRow(docType: DocType) -> some View {
@@ -93,9 +98,9 @@ public struct ChildTableField: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(minWidth: minWidth(for: f), maxWidth: .infinity, alignment: alignment(for: f))
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, Self.cellHPadding)
             }
-            trailingCell { EmptyView() }
+            trailingCell { Color.clear }
         }
         .padding(.vertical, 8)
         .background(MercantisTheme.surfaceMuted)
@@ -114,8 +119,12 @@ public struct ChildTableField: View {
             }
             ForEach(docType.fields) { f in
                 childFieldCell(field: f, rowIdx: rowIdx)
-                    .frame(minWidth: minWidth(for: f), maxWidth: .infinity, alignment: alignment(for: f))
-                    .padding(.horizontal, 8)
+                    // No `alignment:` here — the control inside already
+                    // fills the cell via `.frame(maxWidth: .infinity)`, so
+                    // any text alignment happens via
+                    // `.multilineTextAlignment(...)` inside the control.
+                    .frame(minWidth: minWidth(for: f), maxWidth: .infinity)
+                    .padding(.horizontal, Self.cellHPadding)
             }
             trailingCell {
                 if !isReadOnly {
@@ -143,6 +152,11 @@ public struct ChildTableField: View {
 
     @ViewBuilder
     private func childFieldCell(field f: FieldDefinition, rowIdx: Int) -> some View {
+        // `.frame(maxWidth: .infinity)` on each control forces the visible
+        // chrome (rounded input background, date picker, toggle) to fill the
+        // cell allocation, so column edges line up with the header `Text`
+        // above. Without this, controls sit at their ideal content width and
+        // shift left/right relative to the column.
         switch f.type {
         case .number, .decimal, .currency:
             TextField(f.label, text: numberCellBinding(field: f, idx: rowIdx))
@@ -152,10 +166,12 @@ public struct ChildTableField: View {
                 .keyboardType(.decimalPad)
 #endif
                 .disabled(isReadOnly)
+                .frame(maxWidth: .infinity)
         case .boolean:
             Toggle("", isOn: boolCellBinding(field: f, idx: rowIdx))
                 .labelsHidden()
                 .disabled(isReadOnly)
+                .frame(maxWidth: .infinity)
         case .date, .datetime:
             DatePicker(
                 "",
@@ -164,10 +180,12 @@ public struct ChildTableField: View {
             )
             .labelsHidden()
             .disabled(isReadOnly)
+            .frame(maxWidth: .infinity, alignment: alignment(for: f))
         default:
             TextField(f.label, text: stringCellBinding(field: f, idx: rowIdx))
                 .mercantisInput()
                 .disabled(isReadOnly)
+                .frame(maxWidth: .infinity)
         }
     }
 
