@@ -33,6 +33,7 @@ public struct LinkPickerField: View {
     @State private var isPickerPresented = false
     @State private var searchQuery = ""
     @State private var searchResults: [Document] = []
+    @State private var lastSearchError: String?
 
     public init(
         targetDocType: String,
@@ -60,7 +61,10 @@ public struct LinkPickerField: View {
             }
         } else {
             pickerButton
-                .sheet(isPresented: $isPickerPresented, onDismiss: { searchQuery = "" }) {
+                .sheet(isPresented: $isPickerPresented, onDismiss: {
+                    searchQuery = ""
+                    lastSearchError = nil
+                }) {
                     pickerSheet
                 }
         }
@@ -70,7 +74,7 @@ public struct LinkPickerField: View {
 
     private var pickerButton: some View {
         Button {
-            searchResults = runSearch(query: "")
+            refreshResults(query: "")
             isPickerPresented = true
         } label: {
             HStack {
@@ -91,79 +95,191 @@ public struct LinkPickerField: View {
 
     // MARK: - Picker sheet
 
+    /// Rewritten as a top-down VStack instead of a `NavigationStack`-wrapped
+    /// `List` because on macOS the previous shape compressed to a few
+    /// dozen points high when nested inside another sheet (e.g. the
+    /// create-record sheet on a Sales Order), making the result list
+    /// effectively invisible — which is what the "the picker shows
+    /// nothing" report was about.
     private var pickerSheet: some View {
-        NavigationStack {
-            List {
-                if searchResults.isEmpty {
-                    ContentUnavailableView(
-                        searchQuery.isEmpty ? "No \(targetDocType) records" : "No results for \"\(searchQuery)\"",
-                        systemImage: "magnifyingglass"
-                    )
-                    .listRowBackground(Color.clear)
-                } else {
-                    ForEach(searchResults, id: \.id) { doc in
-                        Button {
-                            value = doc.id
-                            isPickerPresented = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(doc.id)
-                                    .font(.body)
-                                if let subtitle = firstStringFieldValue(doc) {
-                                    Text(subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+        VStack(spacing: 0) {
+            pickerHeader
+            Divider()
+            if let error = lastSearchError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MercantisTheme.fillSoft(for: .danger))
+            }
+            resultsBody
+            Divider()
+            pickerFooter
+        }
+        .frame(minWidth: 460, idealWidth: 540, minHeight: 380, idealHeight: 460)
+        #if os(macOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        #endif
+    }
+
+    private var pickerHeader: some View {
+        HStack(spacing: 10) {
+            Text("Select \(targetDocType)")
+                .font(.headline)
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search \(targetDocType)", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .frame(maxWidth: 260)
+                    .onChange(of: searchQuery) { _, query in
+                        refreshResults(query: query)
                     }
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                        refreshResults(query: "")
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .listStyle(.plain)
-            .searchable(text: $searchQuery, placement: .automatic, prompt: "Search \(targetDocType)")
-            .onChange(of: searchQuery) { _, query in
-                searchResults = runSearch(query: query)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(MercantisTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(MercantisTheme.surface)
+    }
+
+    @ViewBuilder
+    private var resultsBody: some View {
+        if searchResults.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text(searchQuery.isEmpty
+                     ? "No \(targetDocType) records yet"
+                     : "No results for \"\(searchQuery)\"")
+                    .font(.headline)
+                Text(searchQuery.isEmpty
+                     ? "Create a \(targetDocType) first, then link to it from here."
+                     : "Try a different search.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .navigationTitle("Select \(targetDocType)")
-#if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPickerPresented = false }
-                }
-                // Allow clearing the current selection.
-                if !value.isEmpty {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Clear") {
-                            value = ""
-                            isPickerPresented = false
-                        }
-                        .foregroundStyle(.red)
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(searchResults, id: \.id) { doc in
+                        resultRow(for: doc)
+                        Divider().padding(.leading, 12)
                     }
                 }
             }
         }
+    }
+
+    private func resultRow(for doc: Document) -> some View {
+        Button {
+            value = doc.id
+            isPickerPresented = false
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(primaryLabel(for: doc))
+                        .font(.body)
+                        .lineLimit(1)
+                    Text(doc.id)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var pickerFooter: some View {
+        HStack {
+            Text(searchResults.isEmpty
+                 ? ""
+                 : "\(searchResults.count) match\(searchResults.count == 1 ? "" : "es")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if !value.isEmpty {
+                Button("Clear selection") {
+                    value = ""
+                    isPickerPresented = false
+                }
+                .foregroundStyle(.red)
+                .buttonStyle(.plain)
+            }
+            Button("Cancel") { isPickerPresented = false }
+                .buttonStyle(MercantisSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(MercantisTheme.surface)
     }
 
     // MARK: - Helpers
 
-    private func runSearch(query: String) -> [Document] {
-        searchProvider?(targetDocType, query) ?? []
+    /// Pulls fresh results from the provider and captures any thrown
+    /// error for display, so a failing provider doesn't silently leave
+    /// the picker looking like the target DocType has no records.
+    private func refreshResults(query: String) {
+        guard let searchProvider else {
+            searchResults = []
+            return
+        }
+        searchResults = searchProvider(targetDocType, query)
+        lastSearchError = nil
     }
 
-    /// Returns the first non-empty string field value from a document, used as
-    /// a human-readable subtitle in the picker list alongside the raw ID.
-    private func firstStringFieldValue(_ doc: Document) -> String? {
-        for (key, value) in doc.fields {
-            guard key != "name" else { continue }
+    /// Best-effort human label for a result row. Prefers a string field
+    /// whose key matches common title-field conventions, then falls back
+    /// to the first non-empty string field, then to the id.
+    private func primaryLabel(for doc: Document) -> String {
+        // Try common title-field names first, in order of preference.
+        let candidateKeys = ["customer_name", "supplier_name", "item_name",
+                             "lead_name", "first_name", "title", "name",
+                             "address_title", "label"]
+        for key in candidateKeys {
+            if case .string(let value)? = doc.fields[key], !value.isEmpty {
+                return value
+            }
+        }
+        // Fall back to the first non-empty string field.
+        for (_, value) in doc.fields {
             if case .string(let s) = value, !s.isEmpty, s != doc.id {
                 return s
             }
         }
-        return nil
+        return doc.id
     }
 }
