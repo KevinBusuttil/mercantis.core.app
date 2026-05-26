@@ -59,7 +59,10 @@ struct CreateRecordSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 560, idealWidth: 720, minHeight: 480, idealHeight: 620)
+        // Wider ideal width so child-table fields have room to breathe (UX-3
+        // Option C) — most transactional records (Sales Order, Purchase Order,
+        // Stock Entry) embed line-item grids with 6–8 columns.
+        .frame(minWidth: 640, idealWidth: 960, minHeight: 520, idealHeight: 680)
         #if os(macOS)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         #endif
