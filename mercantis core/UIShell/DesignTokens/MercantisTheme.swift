@@ -26,6 +26,7 @@ public enum MercantisModuleTone: Hashable, Sendable {
     case buying
     case stock
     case accounting
+    case manufacturing
     case setup
     case platform
     case system
@@ -108,8 +109,9 @@ enum MercantisTheme {
         case .selling:    return Color(red: 0.13, green: 0.64, blue: 0.40) // green
         case .buying:     return Color(red: 0.90, green: 0.49, blue: 0.13) // orange
         case .stock:      return Color(red: 0.55, green: 0.34, blue: 0.85) // purple
-        case .accounting: return Color(red: 0.31, green: 0.27, blue: 0.80) // indigo
-        case .setup:      return Color(red: 0.42, green: 0.45, blue: 0.50) // slate gray
+        case .accounting:    return Color(red: 0.31, green: 0.27, blue: 0.80) // indigo
+        case .manufacturing: return Color(red: 0.83, green: 0.32, blue: 0.36) // rust red
+        case .setup:         return Color(red: 0.42, green: 0.45, blue: 0.50) // slate gray
         case .platform:   return Color(red: 0.10, green: 0.60, blue: 0.74) // cyan
         case .system:     return Color(red: 0.42, green: 0.45, blue: 0.50)
         case .neutral:    return textMuted
