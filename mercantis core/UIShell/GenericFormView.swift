@@ -57,13 +57,25 @@ public struct GenericFormView: View {
     }
 
     public var body: some View {
-        Form {
-            ForEach(resolvedSections) { section in
-                formSection(for: section)
+        // Hand-rolled card-style layout in place of SwiftUI's grouped `Form`.
+        // The grouped Form on macOS constrains every row to a narrow content
+        // column, which made wide child-table sections unusable and made the
+        // `FormLayoutSection.columns: 2` hint meaningless. Driving the layout
+        // ourselves lets `.table` fields claim the full sheet width (UX-3
+        // Option C) and lets compact sections lay out two fields per row.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(resolvedSections) { section in
+                    sectionCard(for: section)
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(MercantisTheme.surfaceMuted)
         #if os(macOS)
-        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         #endif
         .navigationTitle(docType.name)
     }
@@ -71,40 +83,132 @@ public struct GenericFormView: View {
     // MARK: - Section rendering
 
     @ViewBuilder
-    private func formSection(for section: ResolvedSection) -> some View {
-        Section {
-            ForEach(section.fields) { field in
-                fieldRow(for: field)
-            }
-        } header: {
+    private func sectionCard(for section: ResolvedSection) -> some View {
+        let containsTable = section.fields.contains { $0.type == .table }
+        VStack(alignment: .leading, spacing: 6) {
             if let title = section.title, !title.isEmpty {
-                Text(title)
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(MercantisTheme.textMuted)
+                    .padding(.horizontal, 4)
             }
-        } footer: {
+
+            sectionBody(for: section, containsTable: containsTable)
+                // Tables hug the card edges so their grid can spread out;
+                // regular sections get generous inner padding.
+                .padding(containsTable
+                    ? EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
+                    : EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(MercantisTheme.surface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
+                )
+
             if let help = section.helpText, !help.isEmpty {
                 Text(help)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
         }
     }
 
     @ViewBuilder
-    private func fieldRow(for field: FieldDefinition) -> some View {
+    private func sectionBody(for section: ResolvedSection, containsTable: Bool) -> some View {
+        // A section that mixes in a stacked `.table` field should still benefit
+        // from two-column layout on its compact siblings; the table itself
+        // always spans full width via `usesStackedLayout`.
+        if section.columns == 2 {
+            twoColumnLayout(fields: section.fields)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(section.fields) { field in
+                    fieldRow(for: field, stacked: false)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func twoColumnLayout(fields: [FieldDefinition]) -> some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 20, verticalSpacing: 14) {
+            ForEach(Array(pairedRows(fields).enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    switch row {
+                    case .pair(let lhs, let rhs):
+                        fieldRow(for: lhs, stacked: true)
+                        if let rhs {
+                            fieldRow(for: rhs, stacked: true)
+                        } else {
+                            // Empty placeholder keeps the left field at ~half
+                            // width instead of expanding to fill the row.
+                            Color.clear
+                        }
+                    case .full(let f):
+                        fieldRow(for: f, stacked: true)
+                            .gridCellColumns(2)
+                    }
+                }
+            }
+        }
+    }
+
+    private enum PairedRow {
+        case pair(FieldDefinition, FieldDefinition?)
+        case full(FieldDefinition)
+    }
+
+    /// Walk fields in order and bucket non-stacked compacts into pairs.
+    /// Stacked fields (table, longText, richText, multiselect, image) break
+    /// the pair and span both columns.
+    private func pairedRows(_ fields: [FieldDefinition]) -> [PairedRow] {
+        var rows: [PairedRow] = []
+        var pending: FieldDefinition?
+        for field in fields {
+            if usesStackedLayout(field) {
+                if let p = pending {
+                    rows.append(.pair(p, nil))
+                    pending = nil
+                }
+                rows.append(.full(field))
+            } else if let p = pending {
+                rows.append(.pair(p, field))
+                pending = nil
+            } else {
+                pending = field
+            }
+        }
+        if let p = pending { rows.append(.pair(p, nil)) }
+        return rows
+    }
+
+    @ViewBuilder
+    private func fieldRow(for field: FieldDefinition, stacked: Bool) -> some View {
         let isReadOnly = isReadOnly(field: field)
 
-        if usesStackedLayout(field) {
-            VStack(alignment: .leading, spacing: 6) {
+        if stacked || usesStackedLayout(field) {
+            VStack(alignment: .leading, spacing: 5) {
                 fieldLabel(for: field)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MercantisTheme.textMuted)
                 fieldControl(for: field, isReadOnly: isReadOnly)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            LabeledContent {
-                fieldControl(for: field, isReadOnly: isReadOnly)
-            } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 fieldLabel(for: field)
+                    .font(.system(size: 12))
+                    .foregroundStyle(MercantisTheme.textPrimary)
+                    .frame(width: 150, alignment: .leading)
+                fieldControl(for: field, isReadOnly: isReadOnly)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -175,6 +279,7 @@ public struct GenericFormView: View {
         let id: String
         let title: String?
         let helpText: String?
+        let columns: Int
         let fields: [FieldDefinition]
     }
 
@@ -198,6 +303,7 @@ public struct GenericFormView: View {
                 id: section.key,
                 title: section.title,
                 helpText: section.helpText,
+                columns: section.columns,
                 fields: resolvedFields
             )
         }
@@ -221,6 +327,7 @@ public struct GenericFormView: View {
                 id: key,
                 title: key,
                 helpText: nil,
+                columns: 1,
                 fields: fields
             )
         }
