@@ -224,6 +224,14 @@ private struct MercantisBuilderSelectionModifier: ViewModifier {
 private struct MercantisInputModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
+            // Strip the platform-default TextField chrome and external label.
+            // Without these, macOS Form contexts render the TextField's `title`
+            // argument as an external left-aligned label, which collapses into
+            // unreadable per-character columns inside narrow cells (e.g. child
+            // tables with many columns). Both modifiers are safe no-ops for
+            // non-TextField/labelled views.
+            .textFieldStyle(.plain)
+            .labelsHidden()
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
