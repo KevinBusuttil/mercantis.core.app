@@ -63,6 +63,10 @@ public struct GenericFormView: View {
         // `FormLayoutSection.columns: 2` hint meaningless. Driving the layout
         // ourselves lets `.table` fields claim the full sheet width (UX-3
         // Option C) and lets compact sections lay out two fields per row.
+        //
+        // No explicit background — the sheet's natural surface shows through
+        // and cards differentiate via their stroke alone. Matches the modern
+        // macOS HIG sheet pattern (System Settings, Notes).
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(resolvedSections) { section in
@@ -73,7 +77,6 @@ public struct GenericFormView: View {
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(MercantisTheme.surfaceMuted)
         #if os(macOS)
         .scrollContentBackground(.hidden)
         #endif
@@ -101,13 +104,16 @@ public struct GenericFormView: View {
                     ? EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
                     : EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // With no muted backdrop behind us, the card is the same
+                // surface as the sheet — the stroke alone has to carry the
+                // visual grouping, so it runs at full opacity.
                 .background(
                     RoundedRectangle(cornerRadius: 10)
                         .fill(MercantisTheme.surface)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(MercantisTheme.border.opacity(0.8), lineWidth: 1)
+                        .stroke(MercantisTheme.border, lineWidth: 1)
                 )
 
             if let help = section.helpText, !help.isEmpty {
