@@ -457,7 +457,7 @@ private struct ChildRowEditor: View {
     }
 
     private var summaryLine: String {
-        if let titleKey = docType.titleField, let v = row.fields[titleKey] {
+        if !docType.titleField.isEmpty, let v = row.fields[docType.titleField] {
             return stringify(v)
         }
         if let first = docType.fields.first, let v = row.fields[first.key] {
