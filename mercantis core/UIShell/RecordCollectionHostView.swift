@@ -41,6 +41,7 @@ public struct RecordCollectionHostView: View {
     let detailHeader: ((Document) -> AnyView)?
     let externalCreateTrigger: Binding<Bool>?
     let linkSearchProvider: ((String, String) -> [Document])?
+    let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
     let detailEditor: ((DocType, Binding<Document>) -> AnyView)?
 
@@ -78,6 +79,7 @@ public struct RecordCollectionHostView: View {
         detailHeader: ((Document) -> AnyView)? = nil,
         externalCreateTrigger: Binding<Bool>? = nil,
         linkSearchProvider: ((String, String) -> [Document])? = nil,
+        linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil,
         detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil
     ) {
@@ -104,6 +106,7 @@ public struct RecordCollectionHostView: View {
         self.detailHeader = detailHeader
         self.externalCreateTrigger = externalCreateTrigger
         self.linkSearchProvider = linkSearchProvider
+        self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
         self.detailEditor = detailEditor
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
@@ -125,6 +128,7 @@ public struct RecordCollectionHostView: View {
                 ),
                 onCreate: performCreate(_:),
                 linkSearchProvider: linkSearchProvider,
+                linkResolveProvider: linkResolveProvider,
                 childDocTypeProvider: childDocTypeProvider
             )
         }
@@ -310,6 +314,7 @@ public struct RecordCollectionHostView: View {
                         docType: effectiveDocType,
                         document: selectedDocumentBinding,
                         linkSearchProvider: linkSearchProvider,
+                        linkResolveProvider: linkResolveProvider,
                         childDocTypeProvider: childDocTypeProvider
                     )
                     .disabled(!allowsDetailEditing)

@@ -16,6 +16,7 @@ struct CreateRecordSheet: View {
     @Binding var draft: Document
     let onCreate: (Document) throws -> Void
     let linkSearchProvider: ((String, String) -> [Document])?
+    let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
 
     @State private var errorMessage: String?
@@ -25,12 +26,14 @@ struct CreateRecordSheet: View {
         draft: Binding<Document>,
         onCreate: @escaping (Document) throws -> Void,
         linkSearchProvider: ((String, String) -> [Document])? = nil,
+        linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil
     ) {
         self.docType = docType
         self._draft = draft
         self.onCreate = onCreate
         self.linkSearchProvider = linkSearchProvider
+        self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
     }
 
@@ -52,6 +55,7 @@ struct CreateRecordSheet: View {
                 docType: docType,
                 document: $draft,
                 linkSearchProvider: linkSearchProvider,
+                linkResolveProvider: linkResolveProvider,
                 childDocTypeProvider: childDocTypeProvider
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
