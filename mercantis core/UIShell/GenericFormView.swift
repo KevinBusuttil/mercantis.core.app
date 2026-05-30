@@ -38,6 +38,9 @@ public struct GenericFormView: View {
     let userRoles: Set<String>
     let expressionEvaluator: ExpressionEvaluator
     let linkSearchProvider: ((String, String) -> [Document])?
+    /// Resolves a single linked document by (targetDocType, id) so link fields
+    /// can render a human label for the current selection instead of its id.
+    let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
 
     public init(
@@ -46,6 +49,7 @@ public struct GenericFormView: View {
         userRoles: Set<String> = [],
         expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
         linkSearchProvider: ((String, String) -> [Document])? = nil,
+        linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil
     ) {
         self.docType = docType
@@ -53,6 +57,7 @@ public struct GenericFormView: View {
         self.userRoles = userRoles
         self.expressionEvaluator = expressionEvaluator
         self.linkSearchProvider = linkSearchProvider
+        self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
     }
 
@@ -464,14 +469,20 @@ public struct GenericFormView: View {
         // W4: delegate to LinkPickerField. When linkSearchProvider is nil the
         // picker falls back to plain text entry (no behaviour change for callers
         // that haven't wired a provider yet).
+        let target = field.linkedDocType ?? ""
         let provider: ((String, String) -> [Document])? = linkSearchProvider.map { base in
-            { _, query in base(field.linkedDocType ?? "", query) }
+            { _, query in base(target, query) }
+        }
+        let resolve: ((String) -> Document?)? = linkResolveProvider.map { base in
+            { id in base(target, id) }
         }
         return LinkPickerField(
-            targetDocType: field.linkedDocType ?? "Link",
+            targetDocType: target.isEmpty ? "Link" : target,
             value: stringBinding(for: field),
             isReadOnly: isReadOnly,
-            searchProvider: provider
+            targetMeta: childDocTypeProvider?(target),
+            searchProvider: provider,
+            resolveDocument: resolve
         )
     }
 

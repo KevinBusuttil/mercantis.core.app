@@ -28,7 +28,15 @@ public struct LinkPickerField: View {
     let targetDocType: String
     @Binding var value: String
     let isReadOnly: Bool
+    /// Resolved metadata for the target DocType, used to pick its `titleField`
+    /// when rendering display labels. `nil` falls back to convention-based
+    /// label resolution (see `LinkLabel`).
+    let targetMeta: DocType?
     let searchProvider: ((String, String) -> [Document])?
+    /// Fetches the currently-linked document by its stored id so the collapsed
+    /// field can show a human label instead of the raw id. `nil` falls back to
+    /// displaying the stored id verbatim.
+    let resolveDocument: ((String) -> Document?)?
 
     @State private var isPickerPresented = false
     @State private var searchQuery = ""
@@ -39,17 +47,32 @@ public struct LinkPickerField: View {
         targetDocType: String,
         value: Binding<String>,
         isReadOnly: Bool,
-        searchProvider: ((String, String) -> [Document])?
+        targetMeta: DocType? = nil,
+        searchProvider: ((String, String) -> [Document])?,
+        resolveDocument: ((String) -> Document?)? = nil
     ) {
         self.targetDocType = targetDocType
         self._value = value
         self.isReadOnly = isReadOnly
+        self.targetMeta = targetMeta
         self.searchProvider = searchProvider
+        self.resolveDocument = resolveDocument
+    }
+
+    /// Human-facing label for the current selection. Resolves the stored id to
+    /// its target document and reads the title field; falls back to the raw id
+    /// when no resolver is wired or the target can't be found.
+    private var displayLabel: String {
+        guard !value.isEmpty else { return "" }
+        if let resolveDocument, let doc = resolveDocument(value) {
+            return LinkLabel.title(for: doc, meta: targetMeta)
+        }
+        return value
     }
 
     public var body: some View {
         if isReadOnly {
-            Text(value.isEmpty ? "—" : value)
+            Text(value.isEmpty ? "—" : displayLabel)
                 .foregroundStyle(.secondary)
         } else if searchProvider == nil {
             // No provider: plain text entry (backwards-compatible fallback).
@@ -78,7 +101,7 @@ public struct LinkPickerField: View {
             isPickerPresented = true
         } label: {
             HStack {
-                Text(value.isEmpty ? "Select \(targetDocType)…" : value)
+                Text(value.isEmpty ? "Select \(targetDocType)…" : displayLabel)
                     .foregroundStyle(value.isEmpty ? .tertiary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.up.chevron.down")
@@ -261,25 +284,10 @@ public struct LinkPickerField: View {
         lastSearchError = nil
     }
 
-    /// Best-effort human label for a result row. Prefers a string field
-    /// whose key matches common title-field conventions, then falls back
-    /// to the first non-empty string field, then to the id.
+    /// Human label for a result row, resolved from the target DocType's
+    /// declared `titleField` (with convention/id fallbacks). Shared with the
+    /// collapsed-field label via `LinkLabel` so both render identically.
     private func primaryLabel(for doc: Document) -> String {
-        // Try common title-field names first, in order of preference.
-        let candidateKeys = ["customer_name", "supplier_name", "item_name",
-                             "lead_name", "first_name", "title", "name",
-                             "address_title", "label"]
-        for key in candidateKeys {
-            if case .string(let value)? = doc.fields[key], !value.isEmpty {
-                return value
-            }
-        }
-        // Fall back to the first non-empty string field.
-        for (_, value) in doc.fields {
-            if case .string(let s) = value, !s.isEmpty, s != doc.id {
-                return s
-            }
-        }
-        return doc.id
+        LinkLabel.title(for: doc, meta: targetMeta)
     }
 }
