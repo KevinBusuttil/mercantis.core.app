@@ -222,10 +222,10 @@ public struct MercantisPrimaryButtonStyle: ButtonStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        ButtonBody(configuration: configuration)
     }
 
-    private struct Body: View {
+    private struct ButtonBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.isEnabled) private var isEnabled
 
@@ -260,10 +260,10 @@ public struct MercantisSecondaryButtonStyle: ButtonStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        ButtonBody(configuration: configuration)
     }
 
-    private struct Body: View {
+    private struct ButtonBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.isEnabled) private var isEnabled
 
@@ -293,10 +293,10 @@ public struct MercantisDestructiveButtonStyle: ButtonStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        ButtonBody(configuration: configuration)
     }
 
-    private struct Body: View {
+    private struct ButtonBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.isEnabled) private var isEnabled
 
