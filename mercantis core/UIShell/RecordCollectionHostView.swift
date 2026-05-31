@@ -47,6 +47,10 @@ public struct RecordCollectionHostView: View {
     /// Optional built-in / saved list views (e.g. Hub's "Unpaid", "Overdue").
     /// When empty the list synthesises status chips from the loaded data.
     let listViews: [RecordListViewDefinition]
+    /// Host-injected business-wording layer forwarded to the list so row
+    /// badges / status chips show document-specific labels. Defaults to
+    /// `.passthrough` (raw status strings).
+    let displayPolicy: DocumentDisplayPolicy
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
@@ -85,7 +89,8 @@ public struct RecordCollectionHostView: View {
         linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil,
         detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil,
-        listViews: [RecordListViewDefinition] = []
+        listViews: [RecordListViewDefinition] = [],
+        displayPolicy: DocumentDisplayPolicy = .passthrough
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -114,6 +119,7 @@ public struct RecordCollectionHostView: View {
         self.childDocTypeProvider = childDocTypeProvider
         self.detailEditor = detailEditor
         self.listViews = listViews
+        self.displayPolicy = displayPolicy
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
     }
 
@@ -293,7 +299,8 @@ public struct RecordCollectionHostView: View {
             preferenceKey: preferenceKey,
             linkSearchProvider: linkSearchProvider,
             linkResolveProvider: linkResolveProvider,
-            linkTargetMetaProvider: childDocTypeProvider
+            linkTargetMetaProvider: childDocTypeProvider,
+            displayPolicy: displayPolicy
         )
     }
 
