@@ -13,10 +13,22 @@ public struct MercantisSidebarIconChip: View {
     public let tone: MercantisModuleTone?
     public var isSelected: Bool
 
+    /// Mirrors the row: `.increased` when the platform paints the strong accent
+    /// selection behind us, so the chip can switch to a white-on-translucent
+    /// treatment rather than keeping its module colour on a blue background.
+    @Environment(\.backgroundProminence) private var backgroundProminence
+
     public init(systemImage: String, tone: MercantisModuleTone? = nil, isSelected: Bool = false) {
         self.systemImage = systemImage
         self.tone = tone
         self.isSelected = isSelected
+    }
+
+    private var emphasis: MercantisTheme.SidebarRowEmphasis {
+        MercantisTheme.sidebarRowEmphasis(
+            isSelected: isSelected,
+            isEmphasized: backgroundProminence == .increased
+        )
     }
 
     public var body: some View {
@@ -32,17 +44,35 @@ public struct MercantisSidebarIconChip: View {
     }
 
     private var fill: Color {
-        if let tone {
-            return MercantisTheme.moduleFill(tone)
+        // On a selected row the module colour is dropped: a brand/module chip on
+        // top of the accent selection is the blue-on-blue bug. Use a subtle
+        // white translucent fill on the strong selection, an accent-soft fill on
+        // the muted selection, and only show the module tint when unselected.
+        switch emphasis {
+        case .emphasizedSelection:
+            return Color.white.opacity(0.22)
+        case .mutedSelection:
+            return MercantisTheme.accentFillSoft
+        case .normal:
+            if let tone {
+                return MercantisTheme.moduleFill(tone)
+            }
+            return Color.secondary.opacity(0.08)
         }
-        return isSelected ? MercantisTheme.accentFillSoft : Color.secondary.opacity(0.08)
     }
 
     private var tint: Color {
-        if let tone {
-            return MercantisTheme.moduleTint(tone)
+        switch emphasis {
+        case .emphasizedSelection:
+            return MercantisTheme.selectionForegroundEmphasized
+        case .mutedSelection:
+            return MercantisTheme.accent
+        case .normal:
+            if let tone {
+                return MercantisTheme.moduleTint(tone)
+            }
+            return MercantisTheme.textMuted
         }
-        return isSelected ? MercantisTheme.accent : MercantisTheme.textMuted
     }
 }
 
@@ -57,6 +87,11 @@ public struct MercantisSidebarRow: View {
     public var isSelected: Bool
     public var badge: String?
     public var indentation: CGFloat
+
+    /// `.increased` when the parent `List(selection:)` is painting the strong
+    /// (focused) accent selection behind this row; `.standard` for an unfocused
+    /// / muted selection or a normal row. Drives the high-contrast foreground.
+    @Environment(\.backgroundProminence) private var backgroundProminence
 
     public init(
         title: String,
@@ -74,8 +109,20 @@ public struct MercantisSidebarRow: View {
         self.indentation = indentation
     }
 
+    private var emphasis: MercantisTheme.SidebarRowEmphasis {
+        MercantisTheme.sidebarRowEmphasis(
+            isSelected: isSelected,
+            isEmphasized: backgroundProminence == .increased
+        )
+    }
+
     public var body: some View {
-        HStack(spacing: 9) {
+        // On the strong accent selection the leading rule, badge and any fill
+        // switch to the high-contrast (white) treatment so nothing reads as
+        // blue/purple-on-blue; the unfocused selection keeps the accent tones.
+        let highContrast = emphasis.usesHighContrastForeground
+
+        return HStack(spacing: 9) {
             MercantisSidebarIconChip(
                 systemImage: systemImage,
                 tone: tone,
@@ -95,34 +142,52 @@ public struct MercantisSidebarRow: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
-                        isSelected
-                            ? MercantisTheme.accentFillSoft
-                            : Color.secondary.opacity(0.14),
+                        badgeBackground(highContrast: highContrast),
                         in: Capsule()
                     )
-                    .foregroundStyle(isSelected ? MercantisTheme.accent : .secondary)
+                    .foregroundStyle(badgeForeground(highContrast: highContrast))
             }
         }
         .padding(.leading, indentation)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .background(
+            // Only draw our own soft fill for the muted/unfocused selection;
+            // the strong selection background is owned by the native list, so
+            // layering an accent wash there would muddy it.
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? MercantisTheme.accentFillSoft : Color.clear)
+                .fill(emphasis == .mutedSelection ? MercantisTheme.accentFillSoft : Color.clear)
         )
         .overlay(alignment: .leading) {
+            // Colour is never the only selection signal: keep a leading rule on
+            // every selected row, tinted white on the strong selection and
+            // accent on the muted one so it stays visible against either fill.
             if isSelected {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(MercantisTheme.accent)
+                    .fill(highContrast ? MercantisTheme.selectionForegroundEmphasized : MercantisTheme.accent)
                     .frame(width: 2.5)
                     .padding(.vertical, 5)
                     .padding(.leading, indentation)
             }
         }
-        .foregroundStyle(isSelected ? MercantisTheme.selectionForeground : MercantisTheme.textPrimary)
+        .foregroundStyle(emphasis.foreground)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func badgeBackground(highContrast: Bool) -> Color {
+        if highContrast {
+            return Color.white.opacity(0.22)
+        }
+        return isSelected ? MercantisTheme.accentFillSoft : Color.secondary.opacity(0.14)
+    }
+
+    private func badgeForeground(highContrast: Bool) -> Color {
+        if highContrast {
+            return MercantisTheme.selectionForegroundEmphasized
+        }
+        return isSelected ? MercantisTheme.accent : .secondary
     }
 }
 
@@ -316,5 +381,36 @@ public struct MercantisSidebarBrandHeader: View {
     }
     .listStyle(.sidebar)
     .frame(width: 260, height: 360)
+}
+
+/// Verifies the selected-row foreground stays high-contrast on the strong
+/// accent selection (the blue-on-blue regression). The strong selection sets
+/// `\.backgroundProminence` to `.increased`; here we force it so the selected
+/// rows render with white text + a white-translucent chip rather than the
+/// module/accent tint — readable in both light and dark mode.
+#Preview("Selected row contrast") {
+    func rows() -> some View {
+        List {
+            Section {
+                MercantisSidebarRow(title: "Account", systemImage: "list.bullet.rectangle", tone: .accounting, isSelected: true)
+                MercantisSidebarRow(title: "Customers", systemImage: "person.2", tone: .crm, isSelected: true, badge: "124")
+                MercantisSidebarRow(title: "Stock Movements", systemImage: "tray.full", tone: .stock, isSelected: true)
+            } header: {
+                MercantisSidebarModuleHeader(title: "Selected (emphasized)", systemImage: "checkmark", tone: .accounting)
+            }
+        }
+        .listStyle(.sidebar)
+        // Paint the strong accent behind the rows and mark the selection as
+        // emphasized so the preview matches a focused native sidebar selection.
+        .scrollContentBackground(.hidden)
+        .background(MercantisTheme.accent)
+        .environment(\.backgroundProminence, .increased)
+        .frame(width: 260, height: 200)
+    }
+
+    return VStack(spacing: 0) {
+        rows().environment(\.colorScheme, .light)
+        rows().environment(\.colorScheme, .dark)
+    }
 }
 #endif
