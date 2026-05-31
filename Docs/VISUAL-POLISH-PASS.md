@@ -21,21 +21,30 @@ exposed publicly on `MercantisTheme` so Hub (and any third-party consumer of
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `brandPrimary` | `#295CC7` | `#3366D9` | Primary buttons, product identity (sidebar logo square, hero header chip) |
-| `brandPrimaryHover` | lighter | lighter | Optional hover state |
-| `brandPrimaryPressed` | darker | darker | Primary button pressed state |
+| `brandPrimary` | `#4338CA` (indigo-700) | `#4F46E5` (indigo-600) | Primary buttons, product identity (sidebar logo square, hero header chip) |
+| `brandPrimaryHover` | `#4F46E5` | `#6366F1` | Optional hover state |
+| `brandPrimaryPressed` | `#3730A3` (indigo-800) | `#4338CA` | Primary button pressed state |
 | `brandPrimarySoft` | `brandPrimary @ 12%` | — | Tinted cards / identity chips / soft fills |
 | `brandPrimaryBorder` | `brandPrimary @ 32%` | — | Hairline ring on tinted surfaces |
-| `brandSecondary` | blue-teal | blue-teal | Sparing secondary accent |
+| `brandSecondary` | blue-teal | blue-teal | Sparing secondary accent (the indigo's partner) |
 | `brandAccent` | cyan | cyan | Rare highlight (focus glints) |
 
-**Direction:** a deep, trustworthy blue-indigo. Not bright, not SaaS. All brand
-colours are **adaptive** (light/dark) via `MercantisTheme.adaptive(light:dark:)`,
-which builds a dynamic `NSColor`/`UIColor` — the package ships no asset catalog.
+**Direction:** a deep **indigo** — deliberately distinct from the stock macOS
+azure accent so Mercantis reads as its own product colour, while staying in the
+trustworthy blue-indigo enterprise family. Its partner is the blue-teal
+`brandSecondary`. Not bright, not SaaS. All brand colours are **adaptive**
+(light/dark) via `MercantisTheme.adaptive(light:dark:)`, which builds a dynamic
+`NSColor`/`UIColor` — the package ships no asset catalog.
 
-**Contrast:** `brandPrimary` is tuned so **white text clears WCAG AA** in both
-appearances (≈6.1:1 light, ≈5.2:1 dark). If you ever darken/brighten it, re-check
+**Contrast:** `brandPrimary` is tuned so **white text clears WCAG AAA** in both
+appearances (≈7.9:1 light, ≈6.3:1 dark). If you ever darken/brighten it, re-check
 white-on-brand contrast stays ≥ 4.5:1.
+
+**Note:** the Accounting module tone is also indigo-ish; since the brand now
+leans indigo, the two can look related in a side-by-side. They live in different
+contexts (brand on buttons/identity, module on small sidebar chips), so this is
+acceptable — but if it ever reads as muddy, nudge the Accounting module tone
+toward blue-violet to re-separate them.
 
 ### What still uses the system accent
 

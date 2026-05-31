@@ -64,27 +64,30 @@ public enum MercantisTheme {
 
     // MARK: - Brand palette
 
-    /// Mercantis brand primary — a deep, trustworthy blue-indigo. Used for
-    /// primary buttons and product identity (header / logo square, hero
-    /// chrome). Tuned so white text clears WCAG AA in both appearances
-    /// (≈6.1:1 light, ≈5.2:1 dark).
+    /// Mercantis brand primary — a deep indigo. Chosen to read as a distinct
+    /// product colour rather than the stock macOS azure accent, while staying
+    /// in the trustworthy blue-indigo enterprise family. Used for primary
+    /// buttons and product identity (header / logo square, hero chrome).
+    /// White text clears WCAG AAA in both appearances (≈7.9:1 light, ≈6.3:1
+    /// dark).
     public static let brandPrimary = adaptive(
-        light: (0.16, 0.36, 0.78),
-        dark:  (0.20, 0.40, 0.85)
+        light: (0.263, 0.220, 0.792),
+        dark:  (0.310, 0.275, 0.898)
     )
     public static let brandPrimaryHover = adaptive(
-        light: (0.20, 0.42, 0.84),
-        dark:  (0.27, 0.49, 0.93)
+        light: (0.310, 0.275, 0.898),
+        dark:  (0.388, 0.400, 0.945)
     )
     public static let brandPrimaryPressed = adaptive(
-        light: (0.12, 0.30, 0.66),
-        dark:  (0.16, 0.34, 0.74)
+        light: (0.215, 0.188, 0.639),
+        dark:  (0.263, 0.220, 0.792)
     )
     /// Low-opacity brand fill for tinted cards, identity chips, and selected
     /// indicators where the system accent would feel non-native.
     public static let brandPrimarySoft = brandPrimary.opacity(0.12)
     public static let brandPrimaryBorder = brandPrimary.opacity(0.32)
-    /// Secondary brand tone (blue-teal) for sparing accents / illustrations.
+    /// Secondary brand tone (blue-teal) — the indigo's partner, for sparing
+    /// accents / illustrations.
     public static let brandSecondary = adaptive(
         light: (0.05, 0.45, 0.55),
         dark:  (0.22, 0.63, 0.73)
