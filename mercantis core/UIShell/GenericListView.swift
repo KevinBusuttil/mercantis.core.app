@@ -594,12 +594,10 @@ public struct GenericListView: View {
     }
 
     private func statusBadge(for status: String) -> some View {
-        Text(status.isEmpty ? "Draft" : status)
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(MercantisTheme.primary.opacity(0.12))
-            .clipShape(Capsule())
+        // Semantic, business-like status treatment: colour + glyph + text so
+        // operational states (Draft / Submitted / Paid / Overdue / …) can be
+        // scanned at a glance and never rely on colour alone.
+        MercantisStatusBadge(status)
     }
 
     private func symbol(for type: FieldType) -> String {
