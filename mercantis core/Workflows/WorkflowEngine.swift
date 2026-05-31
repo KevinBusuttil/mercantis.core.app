@@ -94,7 +94,13 @@ public final class WorkflowEngine {
 
         let previousState = document.status
         document.status = matched.to
-        document.updatedAt = Date()
+        // Intentionally do NOT stamp `updatedAt` here. Callers persist the
+        // transitioned document via `DocumentEngine.save`, whose optimistic
+        // concurrency check compares the incoming `updatedAt` against the
+        // stored row and then writes its own fresh timestamp. Pre-stamping a
+        // new `Date()` made a just-fetched document look stale and could throw
+        // `concurrencyConflict` once a wall-clock second elapsed. The
+        // transition's own audit timestamp lives on `WorkflowTransitionHistory`.
 
         let history = WorkflowTransitionHistory(
             transitionId: UUID().uuidString,
