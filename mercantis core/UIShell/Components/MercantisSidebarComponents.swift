@@ -244,7 +244,9 @@ public struct MercantisSidebarBrandHeader: View {
     public var body: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(tint ?? MercantisTheme.accent)
+                // Brand colour by default so the product identity square is
+                // recognisably Mercantis rather than the user's system accent.
+                .fill(tint ?? MercantisTheme.brandPrimary)
                 .frame(width: 28, height: 28)
                 .overlay {
                     Image(systemName: systemImage)

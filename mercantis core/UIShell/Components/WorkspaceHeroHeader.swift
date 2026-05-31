@@ -103,13 +103,19 @@ public struct WorkspaceHeroHeader: View {
     }
 
     private var iconBadge: some View {
+        // Brand-tinted identity chip so every workspace header reads as part
+        // of the Mercantis product rather than a generic accent-coloured view.
         Image(systemName: symbol)
             .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(MercantisTheme.accent)
+            .foregroundStyle(MercantisTheme.brandPrimary)
             .frame(width: 36, height: 36)
             .background(
-                RoundedRectangle(cornerRadius: MercantisSpacing.controlCornerRadius)
-                    .fill(MercantisTheme.accentFillSoft)
+                RoundedRectangle(cornerRadius: MercantisSpacing.controlCornerRadius, style: .continuous)
+                    .fill(MercantisTheme.brandPrimarySoft)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: MercantisSpacing.controlCornerRadius, style: .continuous)
+                    .stroke(MercantisTheme.brandPrimaryBorder, lineWidth: 0.5)
             )
     }
 }
