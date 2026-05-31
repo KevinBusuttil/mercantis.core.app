@@ -22,6 +22,16 @@ public struct ChildTableField: View {
     let childDocType: DocType?
     @Binding var rows: [ChildRow]
     let isReadOnly: Bool
+    /// Link providers for `.link` fields inside child rows. Mirror the ones
+    /// `GenericFormView` passes to top-level `LinkPickerField`s so a child-row
+    /// link cell renders the same searchable picker rather than a plain text
+    /// field. All optional: when `nil`, link cells degrade to plain text entry
+    /// exactly as before (backwards-compatible for unwired callers).
+    let linkSearchProvider: ((String, String) -> [Document])?
+    let linkResolveProvider: ((String, String) -> Document?)?
+    /// Resolves target-DocType metadata so the picker can read the target's
+    /// `titleField` for display labels.
+    let childDocTypeProvider: ((String) -> DocType?)?
 
     @State private var popoverRowID: String?
 
@@ -29,12 +39,18 @@ public struct ChildTableField: View {
         field: FieldDefinition,
         childDocType: DocType?,
         rows: Binding<[ChildRow]>,
-        isReadOnly: Bool
+        isReadOnly: Bool,
+        linkSearchProvider: ((String, String) -> [Document])? = nil,
+        linkResolveProvider: ((String, String) -> Document?)? = nil,
+        childDocTypeProvider: ((String) -> DocType?)? = nil
     ) {
         self.field = field
         self.childDocType = childDocType
         self._rows = rows
         self.isReadOnly = isReadOnly
+        self.linkSearchProvider = linkSearchProvider
+        self.linkResolveProvider = linkResolveProvider
+        self.childDocTypeProvider = childDocTypeProvider
     }
 
     public var body: some View {
@@ -181,12 +197,37 @@ public struct ChildTableField: View {
             .labelsHidden()
             .disabled(isReadOnly)
             .frame(maxWidth: .infinity, alignment: alignment(for: f))
+        case .link where linkSearchProvider != nil || isReadOnly:
+            // Render the same searchable picker used for top-level link
+            // fields. We only take this branch when a search provider is
+            // wired (so editing works) or when read-only (so we can still
+            // show a resolved label); otherwise fall through to plain text
+            // so unwired callers keep their previous behaviour.
+            linkCell(field: f, rowIdx: rowIdx)
+                .frame(maxWidth: .infinity)
         default:
             TextField(f.label, text: stringCellBinding(field: f, idx: rowIdx))
                 .mercantisInput()
                 .disabled(isReadOnly)
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    /// Builds a `LinkPickerField` bound to `rows[rowIdx].fields[field.key]`,
+    /// resolving the target DocType from `field.linkedDocType` and reusing the
+    /// injected providers (scoped to that target). Shared shape with
+    /// `GenericFormView.linkField` so child-row links behave identically.
+    @ViewBuilder
+    private func linkCell(field f: FieldDefinition, rowIdx: Int) -> some View {
+        let target = f.linkedDocType ?? ""
+        LinkPickerField(
+            targetDocType: target.isEmpty ? "Link" : target,
+            value: stringCellBinding(field: f, idx: rowIdx),
+            isReadOnly: isReadOnly,
+            targetMeta: childDocTypeProvider?(target),
+            searchProvider: linkSearchProvider.map { base in { _, query in base(target, query) } },
+            resolveDocument: linkResolveProvider.map { base in { id in base(target, id) } }
+        )
     }
 
     // MARK: - Row actions / popover
@@ -223,6 +264,9 @@ public struct ChildTableField: View {
                     }
                 ),
                 isReadOnly: isReadOnly,
+                linkSearchProvider: linkSearchProvider,
+                linkResolveProvider: linkResolveProvider,
+                childDocTypeProvider: childDocTypeProvider,
                 onRemove: {
                     popoverRowID = nil
                     guard rowIdx < rows.count else { return }
@@ -409,6 +453,9 @@ private struct ChildRowEditor: View {
     let rowIndex: Int
     @Binding var row: ChildRow
     let isReadOnly: Bool
+    let linkSearchProvider: ((String, String) -> [Document])?
+    let linkResolveProvider: ((String, String) -> Document?)?
+    let childDocTypeProvider: ((String) -> DocType?)?
     let onRemove: () -> Void
     let onDone: () -> Void
 
@@ -524,6 +571,18 @@ private struct ChildRowEditor: View {
                         .stroke(MercantisTheme.border, lineWidth: 1)
                 )
                 .disabled(isReadOnly)
+        case .link where linkSearchProvider != nil || isReadOnly:
+            // Same searchable picker as the inline grid, bound to this row's
+            // field. Falls through to plain text when no provider is wired.
+            let target = field.linkedDocType ?? ""
+            LinkPickerField(
+                targetDocType: target.isEmpty ? "Link" : target,
+                value: stringBinding(for: field),
+                isReadOnly: isReadOnly,
+                targetMeta: childDocTypeProvider?(target),
+                searchProvider: linkSearchProvider.map { base in { _, query in base(target, query) } },
+                resolveDocument: linkResolveProvider.map { base in { id in base(target, id) } }
+            )
         default:
             TextField(field.label, text: stringBinding(for: field))
                 .mercantisInput()

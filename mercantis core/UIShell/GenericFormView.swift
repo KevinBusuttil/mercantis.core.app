@@ -495,7 +495,13 @@ public struct GenericFormView: View {
                 get: { document.children[field.key, default: []] },
                 set: { document.children[field.key] = $0 }
             ),
-            isReadOnly: false
+            isReadOnly: false,
+            // Thread the same link providers used for top-level link fields so
+            // `.link` columns inside child rows render the searchable picker
+            // instead of a plain text field. (Child-table link support.)
+            linkSearchProvider: linkSearchProvider,
+            linkResolveProvider: linkResolveProvider,
+            childDocTypeProvider: childDocTypeProvider
         )
     }
 
