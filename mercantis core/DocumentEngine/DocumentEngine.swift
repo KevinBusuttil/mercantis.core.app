@@ -432,7 +432,12 @@ public final class DocumentEngine {
         }
 
         document.docStatus = 1
-        document.updatedAt = Date()
+        // NOTE: do not stamp `updatedAt` here. `save(...)` enforces optimistic
+        // concurrency by requiring the incoming `updatedAt` to match the stored
+        // row, then writes its own fresh `updatedAt`. Pre-stamping a new `Date()`
+        // made a freshly-fetched document look stale and threw
+        // `concurrencyConflict` whenever a second had elapsed since the last
+        // save (ISO8601 second-truncation only hid it within the same second).
         try save(document)
 
         try writeLifecycleAuditEntry(
@@ -473,7 +478,9 @@ public final class DocumentEngine {
         }
 
         document.docStatus = 2
-        document.updatedAt = Date()
+        // See `submit(...)`: leave `updatedAt` untouched so the optimistic
+        // concurrency check in `save(...)` compares like-for-like against the
+        // stored row and stamps its own fresh timestamp.
         try save(document)
 
         try writeLifecycleAuditEntry(
