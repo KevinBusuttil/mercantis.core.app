@@ -152,6 +152,13 @@ public enum MercantisTheme {
     )
     public static let selectionBackground = accentFillSoft
     public static let selectionForeground = accent
+    /// High-contrast foreground for a row drawn on the *strong* (emphasized,
+    /// key-window) selection fill — the saturated accent that macOS paints
+    /// behind a focused sidebar/list selection. White clears the accent in
+    /// both light and dark appearances, mirroring Finder's selected sidebar
+    /// text, and is deliberately *not* the accent so selected text never
+    /// shares the selected background's semantic colour (the blue-on-blue bug).
+    public static let selectionForegroundEmphasized = Color.white
     public static let mutedBadge = Color.secondary.opacity(0.16)
     public static let inspectorHighlight = brandPrimary.opacity(0.08)
     public static let subtleSeparatorOpacity = 0.15
@@ -313,6 +320,50 @@ public enum MercantisTheme {
 
     public static func moduleBorder(_ tone: MercantisModuleTone) -> Color {
         moduleTint(tone).opacity(0.22)
+    }
+
+    // MARK: - Sidebar selection treatment
+
+    /// How a selectable sidebar/list row should colour its content, derived
+    /// from whether the row is selected and how prominently the platform is
+    /// painting the selection background.
+    ///
+    /// SwiftUI sets `\.backgroundProminence` to `.increased` for a row whose
+    /// selection is drawn with the strong (focused, key-window) accent fill,
+    /// and `.standard` for an unfocused/muted grey selection. Driving the
+    /// foreground off that environment value is the macOS-native way to keep
+    /// selected content readable in every state instead of forcing one colour.
+    public enum SidebarRowEmphasis: Equatable, Sendable {
+        /// Not selected — normal label colour on a clear/hover background.
+        case normal
+        /// Selected on the strong accent fill — needs a high-contrast (white)
+        /// foreground so text and icon stay legible on the saturated accent.
+        case emphasizedSelection
+        /// Selected on a muted/unfocused fill — keeps the primary label colour
+        /// because white would wash out on the light grey background.
+        case mutedSelection
+
+        /// Foreground colour for the row's text and icon in this state.
+        public var foreground: Color {
+            switch self {
+            case .normal:              return MercantisTheme.textPrimary
+            case .emphasizedSelection: return MercantisTheme.selectionForegroundEmphasized
+            case .mutedSelection:      return MercantisTheme.textPrimary
+            }
+        }
+
+        /// Whether this state draws the strong accent selection (and therefore
+        /// uses the white, high-contrast content treatment).
+        public var usesHighContrastForeground: Bool {
+            self == .emphasizedSelection
+        }
+    }
+
+    /// Resolves the selection treatment for a row. `isEmphasized` should come
+    /// from `@Environment(\.backgroundProminence) == .increased`.
+    public static func sidebarRowEmphasis(isSelected: Bool, isEmphasized: Bool) -> SidebarRowEmphasis {
+        guard isSelected else { return .normal }
+        return isEmphasized ? .emphasizedSelection : .mutedSelection
     }
 }
 
