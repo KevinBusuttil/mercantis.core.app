@@ -44,6 +44,9 @@ public struct RecordCollectionHostView: View {
     let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
     let detailEditor: ((DocType, Binding<Document>) -> AnyView)?
+    /// Optional built-in / saved list views (e.g. Hub's "Unpaid", "Overdue").
+    /// When empty the list synthesises status chips from the loaded data.
+    let listViews: [RecordListViewDefinition]
 
     @State private var selectedDocument: Document?
     @State private var selectedDocumentID: String?
@@ -81,7 +84,8 @@ public struct RecordCollectionHostView: View {
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil,
-        detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil
+        detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil,
+        listViews: [RecordListViewDefinition] = []
     ) {
         self.preferenceKey = preferenceKey
         self.docType = docType
@@ -109,6 +113,7 @@ public struct RecordCollectionHostView: View {
         self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
         self.detailEditor = detailEditor
+        self.listViews = listViews
         _selectedViewMode = State(initialValue: configuration.defaultViewMode)
     }
 
@@ -283,7 +288,12 @@ public struct RecordCollectionHostView: View {
             documents: documents,
             selectedDocumentID: selectedDocument?.id,
             onSelect: selectDocument(_:),
-            onCreate: handleCreateDocument
+            onCreate: handleCreateDocument,
+            listViews: listViews,
+            preferenceKey: preferenceKey,
+            linkSearchProvider: linkSearchProvider,
+            linkResolveProvider: linkResolveProvider,
+            linkTargetMetaProvider: childDocTypeProvider
         )
     }
 
