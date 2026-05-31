@@ -168,6 +168,7 @@ public enum MercantisTheme {
     public static let border = Color(NSColor.separatorColor)
     public static let textPrimary = Color(NSColor.labelColor)
     public static let textMuted = Color(NSColor.secondaryLabelColor)
+    public static let textTertiary = Color(NSColor.tertiaryLabelColor)
     #else
     public static let background = Color(UIColor.systemGroupedBackground)
     public static let surface = Color(UIColor.secondarySystemGroupedBackground)
@@ -176,7 +177,79 @@ public enum MercantisTheme {
     public static let border = Color(UIColor.separator)
     public static let textPrimary = Color(UIColor.label)
     public static let textMuted = Color(UIColor.secondaryLabel)
+    public static let textTertiary = Color(UIColor.tertiaryLabel)
     #endif
+
+    // MARK: - Polished business surface & text tokens
+    //
+    // Named aliases that map the "clean business dashboard" vocabulary used by
+    // Hub screens (app background, sidebar, card surface, hairline, KPI
+    // indicators, table hover/selection) onto the native semantic colours
+    // above. Everything resolves per appearance — there is no light-only path.
+    // Call-sites should prefer these names so the design intent is explicit.
+
+    /// The full-window canvas behind dashboards, lists, and workspaces.
+    public static let appBackground = background
+    /// Sidebar canvas. Native sidebars apply their own translucent material via
+    /// `.listStyle(.sidebar)`; this token is the opaque fallback used when a
+    /// custom sidebar surface is drawn (e.g. POS category rail).
+    #if os(macOS)
+    public static let sidebarBackground = Color(NSColor.windowBackgroundColor)
+    #else
+    public static let sidebarBackground = Color(UIColor.systemGroupedBackground)
+    #endif
+    /// Standard card/panel fill (KPI cards, dashboard widgets, inspector cards).
+    public static let surfaceCard = surface
+    /// Secondary text alias (mirrors `textMuted`) for call-sites that think in
+    /// primary/secondary/tertiary terms.
+    public static let textSecondary = textMuted
+    /// Hairline border for cards, table rows, and separators — deliberately
+    /// lighter than the raw `border` so large card grids stay calm.
+    public static let hairline = border.opacity(0.7)
+    /// Soft card shadow colour. Used sparingly (one shallow layer) and only on
+    /// floating surfaces — never to outline every card. Kept very subtle in
+    /// light mode and effectively suppressed in dark mode where borders carry
+    /// elevation instead.
+    public static let cardShadow = adaptiveOpacity(light: 0.10, dark: 0.0)
+
+    // MARK: - Table tokens
+
+    /// Pointer-hover wash for table/list rows (very subtle, neutral). `.primary`
+    /// already inverts per appearance (near-black in light, near-white in dark),
+    /// so a single low opacity reads correctly in both.
+    public static let tableRowHover = Color.primary.opacity(0.05)
+    /// Selected-row background — reuses the native selection tint so the table
+    /// still respects the user's macOS accent.
+    public static let tableRowSelection = accentFillSoft
+    /// Header strip behind a table's column titles.
+    public static let tableHeaderBackground = surfaceMuted
+
+    // MARK: - KPI indicators
+
+    /// Positive delta (sales up, profit up). Success green.
+    public static let kpiPositive = success
+    /// Negative delta (receivables overdue, profit down). Danger red.
+    public static let kpiNegative = danger
+    /// Flat / unchanged delta.
+    public static let kpiNeutral = textMuted
+
+    /// Builds an adaptive black overlay whose *opacity* differs per appearance —
+    /// used for soft card shadows that should soften (or vanish) in dark mode
+    /// where hairline borders carry elevation instead.
+    static func adaptiveOpacity(light: Double, dark: Double) -> Color {
+        #if os(macOS)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(srgbRed: 0, green: 0, blue: 0, alpha: isDark ? dark : light)
+        })
+        #elseif os(iOS)
+        return Color(uiColor: UIColor { traits in
+            UIColor(white: 0, alpha: traits.userInterfaceStyle == .dark ? dark : light)
+        })
+        #else
+        return Color.black.opacity(light)
+        #endif
+    }
 
     public static func tint(for tone: MercantisSemanticTone) -> Color {
         switch tone {
