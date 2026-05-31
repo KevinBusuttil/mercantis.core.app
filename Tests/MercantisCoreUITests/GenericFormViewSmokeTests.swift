@@ -204,7 +204,7 @@ final class GenericFormViewSmokeTests: XCTestCase {
         let document = TestHarness.makeSalesOrderDocument(items: rows)
         try harness.engine.save(document)
 
-        let fetched = try harness.engine.fetch(id: document.id, docType: docType.id)
+        let fetched = try XCTUnwrap(harness.engine.fetch(docType: docType.id, id: document.id))
         XCTAssertEqual(fetched.children["items"]?.count, 2)
     }
 
@@ -234,6 +234,74 @@ final class GenericFormViewSmokeTests: XCTestCase {
         rows.remove(at: 0)
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0].fields["item_code"], .string("Y"))
+    }
+
+    // MARK: - Child-table link field
+
+    /// A child table whose row contains a `.link` field (`item → Item`) must
+    /// instantiate with both the child-doctype and link providers wired —
+    /// proving the child-row link picker path compiles end-to-end rather than
+    /// falling through to a plain text field.
+    func testChildTableLinkFieldRendersWithWiredProviders() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        // Target DocType for the child-row link + one record to resolve to.
+        let itemTarget = TestHarness.makeItemDocType()
+        try harness.registry.register(itemTarget)
+        try harness.engine.save(TestHarness.makeItemDocument(id: "ITEM-001", name: "Widget"))
+
+        // Child DocType carrying the `.link` column, and its parent.
+        let childWithLink = TestHarness.makeSalesItemDocTypeWithLink()
+        try harness.registry.register(childWithLink)
+        let parent = TestHarness.makeSalesOrderDocTypeLinkingChild()
+        try harness.registry.register(parent)
+
+        var document = TestHarness.makeSalesOrderWithLinkedItemRow(itemId: "ITEM-001")
+        try harness.engine.save(document)
+
+        let binding = Binding<Document>(get: { document }, set: { document = $0 })
+
+        let form = GenericFormView(
+            docType: parent,
+            document: binding,
+            linkSearchProvider: { targetDocType, _ in
+                (try? harness.engine.list(docType: targetDocType)) ?? []
+            },
+            linkResolveProvider: { targetDocType, id in
+                try? harness.engine.fetch(docType: targetDocType, id: id)
+            },
+            childDocTypeProvider: { id in id == childWithLink.id ? childWithLink : nil }
+        )
+        XCTAssertNotNil(form)
+    }
+
+    /// `ChildTableField` instantiates directly with link providers and a
+    /// read-only flag — exercising the child-table public init the
+    /// child-row link work added (and the read-only label path).
+    func testChildTableFieldInitWithLinkProvidersReadOnly() throws {
+        let harness = try TestHarness.make()
+        defer { harness.cleanUp() }
+
+        let childWithLink = TestHarness.makeSalesItemDocTypeWithLink()
+        var rows = [TestHarness.makeLinkedItemRow(itemId: "ITEM-001")]
+        let binding = Binding<[ChildRow]>(get: { rows }, set: { rows = $0 })
+
+        let field = FieldDefinition(
+            key: "items", label: "Items", type: .table,
+            required: false, childDocType: childWithLink.id
+        )
+
+        let table = ChildTableField(
+            field: field,
+            childDocType: childWithLink,
+            rows: binding,
+            isReadOnly: true,
+            linkSearchProvider: { _, _ in [] },
+            linkResolveProvider: { _, _ in nil },
+            childDocTypeProvider: { _ in childWithLink }
+        )
+        XCTAssertNotNil(table)
     }
 
     func testGenericListViewInstantiatesAgainstInMemoryDocumentEngine() throws {
@@ -568,6 +636,103 @@ private enum TestHarness {
                 "qty": .int(qty),
                 "rate": .double(rate)
             ]
+        )
+    }
+
+    // MARK: - Child-table link fixtures (item → Item)
+
+    private static let systemManagerPermission = PermissionRule(
+        role: "System Manager",
+        canRead: true, canWrite: true, canCreate: true,
+        canDelete: true, canSubmit: true, canAmend: true
+    )
+
+    /// Link-target master DocType.
+    static func makeItemDocType() -> DocType {
+        DocType(
+            id: "Item",
+            name: "Item",
+            module: "Selling",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            fields: [
+                FieldDefinition(key: "item_name", label: "Item Name", type: .text, required: true)
+            ],
+            permissions: [systemManagerPermission],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["item_name"],
+            titleField: "item_name"
+        )
+    }
+
+    static func makeItemDocument(id: String, name: String) -> Document {
+        let now = Date()
+        return Document(
+            id: id, docType: "Item", company: "", status: "",
+            createdAt: now, updatedAt: now, syncVersion: 0, syncState: .local,
+            fields: ["item_name": .string(name)], children: [:]
+        )
+    }
+
+    /// Child DocType with a `.link` field (`item → Item`).
+    static func makeSalesItemDocTypeWithLink() -> DocType {
+        DocType(
+            id: "SalesItem",
+            name: "Sales Item",
+            module: "Selling",
+            appId: "app.mercantis.test",
+            isChildTable: true,
+            fields: [
+                FieldDefinition(key: "item", label: "Item", type: .link,
+                                required: true, linkedDocType: "Item"),
+                FieldDefinition(key: "qty", label: "Qty", type: .decimal, required: true),
+                FieldDefinition(key: "rate", label: "Rate", type: .currency, required: false)
+            ],
+            permissions: [systemManagerPermission],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["item"],
+            titleField: "item"
+        )
+    }
+
+    /// Parent DocType whose `items` table points at the link-bearing child.
+    static func makeSalesOrderDocTypeLinkingChild() -> DocType {
+        DocType(
+            id: "SalesOrderL",
+            name: "Sales Order",
+            module: "Selling",
+            appId: "app.mercantis.test",
+            isChildTable: false,
+            fields: [
+                FieldDefinition(key: "customer", label: "Customer", type: .text, required: true),
+                FieldDefinition(key: "items", label: "Items", type: .table,
+                                required: false, childDocType: "SalesItem")
+            ],
+            permissions: [systemManagerPermission],
+            syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+            indexes: [],
+            searchFields: ["customer"],
+            titleField: "customer"
+        )
+    }
+
+    static func makeLinkedItemRow(itemId: String) -> ChildRow {
+        ChildRow(
+            id: UUID().uuidString,
+            rowIndex: 0,
+            fields: ["item": .string(itemId), "qty": .double(1), "rate": .double(0)]
+        )
+    }
+
+    static func makeSalesOrderWithLinkedItemRow(itemId: String) -> Document {
+        let now = Date()
+        return Document(
+            id: UUID().uuidString, docType: "SalesOrderL", company: "", status: "",
+            createdAt: now, updatedAt: now, syncVersion: 0, syncState: .local,
+            fields: ["customer": .string("Test Customer")],
+            children: ["items": [makeLinkedItemRow(itemId: itemId)]]
         )
     }
 }
