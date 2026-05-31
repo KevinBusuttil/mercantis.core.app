@@ -36,6 +36,11 @@ public struct GenericListView: View {
     let linkSearchProvider: ((String, String) -> [Document])?
     let linkResolveProvider: ((String, String) -> Document?)?
     let linkTargetMetaProvider: ((String) -> DocType?)?
+    /// Host-injected business-wording layer. Defaults to `.passthrough` so
+    /// existing callers keep showing raw status strings. When a host supplies
+    /// a policy, row badges and synthesised status chips display
+    /// document-specific labels (e.g. "Posted" instead of "Submitted").
+    let displayPolicy: DocumentDisplayPolicy
 
     @State private var searchText = ""
     @State private var selectedViewID: String = "all"
@@ -81,7 +86,8 @@ public struct GenericListView: View {
         preferenceKey: String? = nil,
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         linkResolveProvider: ((String, String) -> Document?)? = nil,
-        linkTargetMetaProvider: ((String) -> DocType?)? = nil
+        linkTargetMetaProvider: ((String) -> DocType?)? = nil,
+        displayPolicy: DocumentDisplayPolicy = .passthrough
     ) {
         self.docType = docType
         self.documents = documents
@@ -93,6 +99,7 @@ public struct GenericListView: View {
         self.linkSearchProvider = linkSearchProvider
         self.linkResolveProvider = linkResolveProvider
         self.linkTargetMetaProvider = linkTargetMetaProvider
+        self.displayPolicy = displayPolicy
     }
 
     public var body: some View {
@@ -355,7 +362,7 @@ public struct GenericListView: View {
                                 .fontWeight(isSelected ? .bold : .semibold)
                                 .foregroundStyle(isSelected ? MercantisTheme.accent : MercantisTheme.textPrimary)
                             Spacer()
-                            statusBadge(for: doc.status)
+                            statusBadge(for: doc)
                         }
 
                         ForEach(displayFields, id: \.key) { field in
@@ -415,16 +422,24 @@ public struct GenericListView: View {
     private var synthesisedStatusViews: [RecordListViewDefinition] {
         var views: [RecordListViewDefinition] = [.all()]
         if docType.isSubmittable {
+            // Chips keep their docStatus predicates but show the host's
+            // business wording (e.g. "Posted" instead of "Submitted").
             views.append(RecordListViewDefinition(
-                id: "draft", label: "Draft", systemImage: "pencil",
+                id: "draft",
+                label: displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: 0).label,
+                systemImage: "pencil",
                 predicates: [ListFilter("docStatus", .eq(.int(0)))]
             ))
             views.append(RecordListViewDefinition(
-                id: "submitted", label: "Submitted", systemImage: "checkmark.seal",
+                id: "submitted",
+                label: displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: 1).label,
+                systemImage: "checkmark.seal",
                 predicates: [ListFilter("docStatus", .eq(.int(1)))]
             ))
             views.append(RecordListViewDefinition(
-                id: "cancelled", label: "Cancelled", systemImage: "xmark.seal",
+                id: "cancelled",
+                label: displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: 2).label,
+                systemImage: "xmark.seal",
                 predicates: [ListFilter("docStatus", .eq(.int(2)))]
             ))
         }
@@ -434,7 +449,8 @@ public struct GenericListView: View {
         let statuses = Set(documents.map(\.status)).subtracting(covered).filter { !$0.isEmpty }
         for status in statuses.sorted() {
             views.append(RecordListViewDefinition(
-                id: "status:\(status)", label: status,
+                id: "status:\(status)",
+                label: displayPolicy.statusDisplay(docTypeId: docType.id, state: status).label,
                 predicates: [ListFilter("status", .eq(.string(status)))]
             ))
         }
@@ -593,11 +609,21 @@ public struct GenericListView: View {
             .joined(separator: " ")
     }
 
-    private func statusBadge(for status: String) -> some View {
+    private func statusBadge(for doc: Document) -> some View {
         // Semantic, business-like status treatment: colour + glyph + text so
-        // operational states (Draft / Submitted / Paid / Overdue / …) can be
-        // scanned at a glance and never rely on colour alone.
-        MercantisStatusBadge(status)
+        // operational states can be scanned at a glance and never rely on
+        // colour alone. The injected display policy maps raw workflow states
+        // (e.g. "Submitted") onto document-specific business wording
+        // (e.g. "Posted"); for submittable docs with no workflow string yet we
+        // fall back to the lifecycle (docStatus) label.
+        let display: DocumentStatusDisplay
+        let trimmed = doc.status.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty && docType.isSubmittable {
+            display = displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: doc.docStatus)
+        } else {
+            display = displayPolicy.statusDisplay(docTypeId: docType.id, state: doc.status)
+        }
+        return MercantisStatusBadge(display: display)
     }
 
     private func symbol(for type: FieldType) -> String {

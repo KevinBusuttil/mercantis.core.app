@@ -16,6 +16,31 @@ public enum MercantisSemanticTone: Sendable {
     case danger
     case info
     case muted
+
+    /// Bridges the SwiftUI-free `DocumentStatusTone` (declared in
+    /// `MercantisCore`) onto the design-system semantic tone so host-supplied
+    /// `DocumentDisplayPolicy` results can drive badge colours.
+    public init(documentTone: DocumentStatusTone) {
+        switch documentTone {
+        case .muted:   self = .muted
+        case .info:    self = .info
+        case .brand:   self = .brand
+        case .success: self = .success
+        case .warning: self = .warning
+        case .danger:  self = .danger
+        }
+    }
+
+    /// Spoken description for accessibility labels on status badges.
+    public var statusAccessibilityDescription: String {
+        switch self {
+        case .success: return "positive status"
+        case .info, .brand, .accent: return "in-progress status"
+        case .warning: return "attention status"
+        case .danger: return "problem status"
+        case .muted: return "neutral status"
+        }
+    }
 }
 
 /// Semantic colour identity for a navigation module / domain. Used by the
@@ -637,15 +662,18 @@ public enum MercantisStatusTone: Sendable, Hashable {
 /// in both light and dark mode. Subtle by design — it should not shout.
 public struct MercantisStatusBadge: View {
     private let text: String
-    private let tone: MercantisStatusTone
+    private let semantic: MercantisSemanticTone
+    private let symbol: String
     private let showsSymbol: Bool
 
     /// Builds a badge by classifying a raw status string. Empty strings render
     /// as "Draft" so unsaved records still read sensibly.
     public init(_ status: String, showsSymbol: Bool = true) {
         let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tone = MercantisStatusTone(status: trimmed)
         self.text = trimmed.isEmpty ? "Draft" : trimmed
-        self.tone = MercantisStatusTone(status: trimmed)
+        self.semantic = tone.semantic
+        self.symbol = tone.symbol
         self.showsSymbol = showsSymbol
     }
 
@@ -653,15 +681,27 @@ public struct MercantisStatusBadge: View {
     /// derived the state from a typed lifecycle value rather than a string).
     public init(text: String, tone: MercantisStatusTone, showsSymbol: Bool = true) {
         self.text = text
-        self.tone = tone
+        self.semantic = tone.semantic
+        self.symbol = tone.symbol
+        self.showsSymbol = showsSymbol
+    }
+
+    /// Builds a badge from a host-resolved `DocumentStatusDisplay`. The colour
+    /// comes from the display policy's semantic tone, while the glyph is still
+    /// derived from the (business) label so user-facing wording keeps a
+    /// recognisable icon. Colour is never the only signal — `label` always shows.
+    public init(display: DocumentStatusDisplay, showsSymbol: Bool = true) {
+        self.text = display.label
+        self.semantic = MercantisSemanticTone(documentTone: display.tone)
+        self.symbol = MercantisStatusTone(status: display.label).symbol
         self.showsSymbol = showsSymbol
     }
 
     public var body: some View {
-        let colour = MercantisTheme.tint(for: tone.semantic)
+        let colour = MercantisTheme.tint(for: semantic)
         return HStack(spacing: 4) {
             if showsSymbol {
-                Image(systemName: tone.symbol)
+                Image(systemName: symbol)
                     .font(.system(size: 9, weight: .semibold))
             }
             Text(text)
@@ -670,10 +710,10 @@ public struct MercantisStatusBadge: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .foregroundStyle(colour)
-        .background(MercantisTheme.fillSoft(for: tone.semantic), in: Capsule())
+        .background(MercantisTheme.fillSoft(for: semantic), in: Capsule())
         .overlay(Capsule().stroke(colour.opacity(0.22), lineWidth: 0.5))
         .accessibilityElement()
-        .accessibilityLabel(Text("\(text), \(tone.accessibilityDescription)"))
+        .accessibilityLabel(Text("\(text), \(semantic.statusAccessibilityDescription)"))
     }
 }
 
