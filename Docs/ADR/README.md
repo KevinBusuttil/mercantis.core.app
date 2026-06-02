@@ -57,6 +57,7 @@ ADRs document significant architectural decisions: the context that motivated th
 | [ADR-047](ADR-047-filesystem-cloud-adapter.md) | Filesystem Reference `CloudAdapter` | Accepted |
 | [ADR-048](ADR-048-notification-log-persistence.md) | Persistent Notification Log + In-App Inbox | Accepted |
 | [ADR-049](ADR-049-report-role-filtering-and-view.md) | `ReportEngine` Role Filtering + `GenericReportView` | Accepted |
+| [ADR-050](ADR-050-saved-report-infrastructure.md) | Generic Saved-Report Infrastructure | Accepted |
 
 ## How to Read an ADR
 
