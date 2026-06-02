@@ -85,38 +85,10 @@ public final class ReportEngine {
         // Build the result rows from the declared columns.
         let rows: [[String?]] = documents.map { doc in
             report.columns.map { columnKey in
-                self.formatValue(doc.fields[columnKey])
+                ReportValueFormatter.string(from: doc.fields[columnKey])
             }
         }
 
         return ReportResult(columns: report.columns, rows: rows)
     }
-
-    // MARK: - Helpers
-
-    private func formatValue(_ value: FieldValue?) -> String? {
-        switch value {
-        case .string(let s): return s
-        case .int(let i):    return "\(i)"
-        case .double(let d): return String(format: "%.2f", d)
-        case .bool(let b):   return b ? "Yes" : "No"
-        case .date(let d):   return Self.dateFormatter.string(from: d)
-        case .dateTime(let d): return Self.dateTimeFormatter.string(from: d)
-        case .data(let d):   return "<\(d.count) bytes>"
-        case .array(let xs): return "[\(xs.count) items]"
-        case .null, nil:     return nil
-        }
-    }
-
-    private static let dateFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withFullDate]
-        return f
-    }()
-
-    private static let dateTimeFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
 }
