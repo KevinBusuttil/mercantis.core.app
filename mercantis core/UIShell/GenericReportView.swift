@@ -23,17 +23,23 @@ public struct GenericReportView: View {
 
     public let title: String
     public let result: ReportResult
+    /// When `false`, the header omits the title text but keeps the row count
+    /// and action buttons. Hosts that already show the report name elsewhere
+    /// (e.g. a navigation bar) use this to avoid a duplicate title.
+    public let showsTitle: Bool
     public let onRefresh: (() -> Void)?
     public let onExportCSV: (() -> Void)?
 
     public init(
         title: String,
         result: ReportResult,
+        showsTitle: Bool = true,
         onRefresh: (() -> Void)? = nil,
         onExportCSV: (() -> Void)? = nil
     ) {
         self.title = title
         self.result = result
+        self.showsTitle = showsTitle
         self.onRefresh = onRefresh
         self.onExportCSV = onExportCSV
     }
@@ -47,14 +53,20 @@ public struct GenericReportView: View {
                 resultsTable
             }
         }
+        // Fill the available space and keep content pinned to the top so the
+        // table sits directly under the header rather than floating in the
+        // vertical centre when there are only a few rows.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Sub-views
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text(title)
-                .font(.title3.weight(.semibold))
+            if showsTitle {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+            }
             Spacer()
             Text(rowCountLabel)
                 .font(.subheadline)
