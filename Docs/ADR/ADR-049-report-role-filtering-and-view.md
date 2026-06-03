@@ -77,3 +77,21 @@ filter state and re-execution loop.
   across the engine.
 - Sort order is `name`-ascending. Hosts that want different
   orderings can re-sort; the engine's order is documented.
+
+## Update — report-view polish (2026-06-03)
+
+Follow-up refinements after Hub started rendering user-customised and
+from-scratch reports through this view:
+
+- **`GenericReportView` top-aligns its content.** The body now fills the
+  available space and pins the header + table to the top, instead of letting
+  a short table float in the vertical centre.
+- **`showsTitle: Bool = true`.** Hosts that already display the report name
+  (e.g. in a navigation bar) can pass `showsTitle: false` to drop the
+  duplicate in-view title while keeping the row count and Refresh /
+  Export-CSV actions. Default `true` keeps every existing call site
+  unchanged.
+- **`ReportResult.csvString()`** moves CSV serialisation into `MercantisCore`
+  (RFC-4180 escaping). It lives in the engine layer, not the UI layer, so the
+  CLI / headless exporters can produce CSV without importing SwiftUI; the host
+  app still owns how the file is delivered (save panel, share sheet).
