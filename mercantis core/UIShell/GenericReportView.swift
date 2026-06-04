@@ -99,44 +99,57 @@ public struct GenericReportView: View {
     }
 
     private var resultsTable: some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 0) {
-                tableHeaderRow
-                Divider()
-                ForEach(Array(result.rows.enumerated()), id: \.offset) { (index, row) in
-                    tableBodyRow(cells: row, isAlternate: index.isMultiple(of: 2))
-                    if index < result.rows.count - 1 {
-                        Divider().opacity(0.4)
+        // Two nested single-axis scroll views rather than one two-axis
+        // `ScrollView([.horizontal, .vertical])`: a combined-axis scroll view
+        // centres content that is smaller than its bounds, which left a short
+        // report floating in the vertical middle of the pane. Single-axis
+        // scroll views pin their content to the top (vertical) and leading
+        // (horizontal) edges, so the grid sits directly under the header.
+        ScrollView(.vertical) {
+            ScrollView(.horizontal) {
+                // A `Grid` (not a stack of independent `HStack`s) so every
+                // column shares one width across the header and all rows.
+                // Independent stacks sized each row to its own content, so a
+                // wide cell (e.g. a long email) pushed that row's later columns
+                // out of register with the header and the other rows.
+                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 0) {
+                    tableHeaderRow
+                    Divider()
+                    ForEach(Array(result.rows.enumerated()), id: \.offset) { (index, row) in
+                        tableBodyRow(cells: row, isAlternate: index.isMultiple(of: 2))
+                        if index < result.rows.count - 1 {
+                            Divider().opacity(0.4)
+                        }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
         }
     }
 
     private var tableHeaderRow: some View {
-        HStack(spacing: 16) {
+        GridRow {
             ForEach(Array(result.columns.enumerated()), id: \.offset) { (_, column) in
                 Text(humanise(column))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 100, alignment: .leading)
+                    .padding(.vertical, 8)
             }
         }
-        .padding(.vertical, 8)
     }
 
     private func tableBodyRow(cells: [String?], isAlternate: Bool) -> some View {
-        HStack(spacing: 16) {
+        GridRow {
             ForEach(Array(cells.enumerated()), id: \.offset) { (_, cell) in
                 Text(cell ?? "—")
                     .font(.callout)
                     .foregroundStyle(cell == nil ? .secondary : .primary)
                     .frame(minWidth: 100, alignment: .leading)
+                    .padding(.vertical, 6)
             }
         }
-        .padding(.vertical, 6)
         .background(
             isAlternate
                 ? Color.secondary.opacity(0.05)
