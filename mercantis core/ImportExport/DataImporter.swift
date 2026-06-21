@@ -106,14 +106,16 @@ public final class DataImporter: @unchecked Sendable {
         if raw.isEmpty { return .null }
         switch type {
         case .text, .longText, .richText, .email, .phone, .select, .multiselect,
-             .link, .status, .barcode, .image, .attachment:
+             .link, .status, .barcode, .image, .attachment,
+             .password, .code, .color, .signature, .geolocation,
+             .autocomplete, .dynamicLink, .tableMultiSelect:
             return .string(raw)
-        case .number:
+        case .number, .rating, .duration:
             guard let v = Int(raw) else {
                 throw ImportExportError.malformedCSV(line: 0, reason: "expected integer for \(type.rawValue), got '\(raw)'")
             }
             return .int(v)
-        case .decimal, .currency:
+        case .decimal, .currency, .percent:
             guard let v = Double(raw) else {
                 throw ImportExportError.malformedCSV(line: 0, reason: "expected number for \(type.rawValue), got '\(raw)'")
             }
@@ -130,14 +132,15 @@ public final class DataImporter: @unchecked Sendable {
                 throw ImportExportError.malformedCSV(line: 0, reason: "expected ISO 8601 date, got '\(raw)'")
             }
             return .date(d)
-        case .datetime:
+        case .datetime, .time:
             guard let d = ISO8601DateFormatter().date(from: raw) else {
                 throw ImportExportError.malformedCSV(line: 0, reason: "expected ISO 8601 dateTime, got '\(raw)'")
             }
             return .dateTime(d)
-        case .table, .formula:
-            // CSV cannot losslessly carry child tables / formula results.
-            // Skip the cell so the rest of the row still imports.
+        case .table, .formula, .heading, .sectionBreak, .columnBreak:
+            // CSV cannot losslessly carry child tables / formula results, and
+            // layout separators carry no value. Skip the cell so the rest of
+            // the row still imports.
             return .null
         }
     }
