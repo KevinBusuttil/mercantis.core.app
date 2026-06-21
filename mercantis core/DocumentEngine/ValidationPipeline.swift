@@ -359,9 +359,16 @@ public struct RequiredFieldStage: ValidationStage {
         var errors: [DocumentValidationError] = []
 
         for field in context.docType.fields where field.required {
-            let value = document.fields[field.key]
+            // Child-table rows live in `document.children`, not in `fields`, so a
+            // required `.table` is satisfied by having at least one child row.
+            let isEmpty: Bool
+            if field.type == .table {
+                isEmpty = (document.children[field.key] ?? []).isEmpty
+            } else {
+                isEmpty = isValueEmpty(document.fields[field.key])
+            }
 
-            if isValueEmpty(value) {
+            if isEmpty {
                 errors.append(DocumentValidationError(
                     stage: stageName,
                     field: field.key,
