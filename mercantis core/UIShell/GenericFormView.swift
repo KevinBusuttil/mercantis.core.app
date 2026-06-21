@@ -469,6 +469,27 @@ public struct GenericFormView: View {
         )
         .labelsHidden()
         .disabled(isReadOnly)
+        .onAppear {
+            // A DatePicker can't represent "no value" — it always shows today.
+            // For a required date with nothing stored, persist that displayed
+            // default so it's actually saved; otherwise the record validates as
+            // missing even though the user sees a date.
+            guard !isReadOnly, field.required, isDateValueEmpty(document.fields[field.key]) else { return }
+            let now = Date()
+            document.fields[field.key] = field.type == .datetime ? .dateTime(now) : .date(now)
+        }
+    }
+
+    /// Whether a date field has no usable stored value (nil / null / blank string).
+    private func isDateValueEmpty(_ value: FieldValue?) -> Bool {
+        switch value {
+        case .none, .null:
+            return true
+        case .string(let s):
+            return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default:
+            return false
+        }
     }
 
     private func selectField(field: FieldDefinition, isReadOnly: Bool) -> some View {
