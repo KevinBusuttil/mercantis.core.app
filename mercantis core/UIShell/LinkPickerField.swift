@@ -212,7 +212,7 @@ public struct LinkPickerField: View {
         )
     }
 
-    nonisolated private static func emptyDraft(for docType: String) -> Document {
+    private static func emptyDraft(for docType: String) -> Document {
         let now = Date()
         return Document(
             id: "",
