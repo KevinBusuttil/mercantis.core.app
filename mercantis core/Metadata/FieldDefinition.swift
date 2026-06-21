@@ -29,6 +29,25 @@ public enum FieldType: String, Codable, Sendable, CaseIterable {
     case barcode
     case status
     case formula
+    // P-parity: field types ported from the Flutter `FieldType` enum so the
+    // Swift `GenericFormView` renders the same set of editors. Names are kept
+    // in the existing Swift camelCase style (e.g. `datetime`, `multiselect`)
+    // rather than the Dart spellings.
+    case percent
+    case time
+    case password
+    case autocomplete
+    case dynamicLink
+    case tableMultiSelect
+    case signature
+    case color
+    case duration
+    case rating
+    case code
+    case geolocation
+    case heading
+    case sectionBreak
+    case columnBreak
 }
 
 /// A value that can be assigned to a field.

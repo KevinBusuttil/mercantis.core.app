@@ -33,6 +33,58 @@ final class DocTypeToolingContext: ObservableObject {
     /// list / mutate fields on the active DocType.
     private(set) lazy var customFieldStore = CustomFieldStore(database: database)
 
+    /// Persistent notification inbox + log. Surfaced so the shell's Inbox
+    /// section can render real entries (mirrors the `customFieldStore` pattern).
+    private(set) lazy var notificationInbox = NotificationInbox(database: database)
+
+    /// Build a `DashboardEngine` wired to the current document/report engines and
+    /// pre-registered with every dashboard known to the workspace. The report
+    /// engine is rebuilt on each `reload()`, so this is created on demand rather
+    /// than cached.
+    func makeDashboardEngine() -> DashboardEngine {
+        let engine = DashboardEngine(
+            documentEngine: documentEngine,
+            reportEngine: reportEngine
+        )
+        dashboards.forEach { engine.register($0) }
+        return engine
+    }
+
+    /// The acting user id used for engine writes (attach/detach audit rows, etc).
+    /// Mirrors the id the document engine is constructed with.
+    var currentUserId: String { "local-user" }
+
+    /// Audit/history reader used by the record Timeline tab.
+    func makeAuditLogWriter() -> AuditLogWriter {
+        AuditLogWriter(database: database)
+    }
+
+    /// Attachment manager for the record Attachments tab. Returns `nil` if the
+    /// on-disk attachment store can't be opened beside the database.
+    func makeAttachmentManager() -> AttachmentManager? {
+        guard let store = try? AttachmentStore(beside: database) else { return nil }
+        return AttachmentManager(
+            database: database,
+            store: store,
+            auditWriter: makeAuditLogWriter()
+        )
+    }
+
+    /// CSV/JSON bulk exporter for the list Import/Export menu.
+    func makeDataExporter() -> DataExporter {
+        DataExporter(documentEngine: documentEngine, registry: registry)
+    }
+
+    /// CSV/JSON bulk importer for the list Import/Export menu.
+    func makeDataImporter() -> DataImporter {
+        DataImporter(documentEngine: documentEngine, registry: registry)
+    }
+
+    /// Print/PDF service for the record Print button (default renderers include PDF).
+    func makePrintService() -> PrintService {
+        PrintService()
+    }
+
     init() {
         let dbURL = Self.databaseURL()
         do {
@@ -1030,6 +1082,21 @@ public struct DocTypeBuilderView: View {
         case .image:                    return "photo"
         case .barcode:                  return "barcode"
         case .status:                   return "flag"
+        case .percent:                  return "percent"
+        case .time:                     return "clock"
+        case .password:                 return "lock"
+        case .autocomplete:             return "text.magnifyingglass"
+        case .dynamicLink:              return "link.badge.plus"
+        case .tableMultiSelect:         return "tablecells.badge.ellipsis"
+        case .signature:                return "signature"
+        case .color:                    return "paintpalette"
+        case .duration:                 return "timer"
+        case .rating:                   return "star"
+        case .code:                     return "chevron.left.forwardslash.chevron.right"
+        case .geolocation:              return "mappin.and.ellipse"
+        case .heading:                  return "textformat.size"
+        case .sectionBreak:             return "rectangle.split.1x2"
+        case .columnBreak:              return "rectangle.split.2x1"
         }
     }
 

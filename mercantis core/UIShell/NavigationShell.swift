@@ -317,21 +317,11 @@ public struct NavigationShell: View {
     }
 
     private var settingsContext: some View {
-        List {
-            Label("Metadata-Driven UI", systemImage: "checkmark.seal")
-            Label("Sync Engine", systemImage: "arrow.triangle.2.circlepath")
-            Label("Workspace Settings", systemImage: "gear")
-        }
-        .navigationTitle("Settings")
+        SettingsView()
     }
 
     private var inboxContext: some View {
-        List {
-            Label("Workflow Approvals", systemImage: "tray")
-            Label("Mentions", systemImage: "at")
-            Label("System Alerts", systemImage: "bell")
-        }
-        .navigationTitle("Inbox")
+        NotificationInboxView(inbox: tooling.notificationInbox)
     }
 
     private var homeDetail: some View {
@@ -443,27 +433,12 @@ public struct NavigationShell: View {
     private func reportDetail(reportId: String) -> some View {
         if let report = tooling.report(withId: reportId),
            let result = tooling.executeReport(report) {
-            List {
-                Section {
-                    Text("\(result.rowCount) rows")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(result.rows.enumerated()), id: \.offset) { _, row in
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(result.columns.enumerated()), id: \.offset) { index, column in
-                            HStack {
-                                Text(column)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(row[index] ?? "—")
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+            ReportResultView(
+                title: report.name,
+                result: result,
+                showsTitle: false,
+                onRefresh: nil
+            )
             .navigationTitle(report.name)
         } else {
             ContentUnavailableView("Report unavailable", systemImage: "chart.bar")
@@ -472,35 +447,19 @@ public struct NavigationShell: View {
 
     @ViewBuilder
     private func dashboardDetail(dashboardId: String) -> some View {
-        if let dashboard = tooling.dashboard(withId: dashboardId) {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                    ForEach(Array(dashboard.widgets.enumerated()), id: \.offset) { _, widget in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(widget.title)
-                                .font(.headline)
-                            if let docType = widget.docType {
-                                Text("\(tooling.listDocuments(docTypeId: docType).count) records")
-                                    .foregroundStyle(.secondary)
-                                Button("Open \(docType)") {
-                                    router.openDocType(docType, module: tooling.docType(withId: docType)?.module)
-                                }
-                                .buttonStyle(MercantisSecondaryButtonStyle())
-                            } else if let reportId = widget.reportId {
-                                Button("Open Report") {
-                                    router.openReport(reportId, module: tooling.report(withId: reportId).flatMap(moduleForReport))
-                                }
-                                .buttonStyle(MercantisSecondaryButtonStyle())
-                            } else {
-                                Text(widget.type.capitalized)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .mercantisCard()
+        if tooling.dashboard(withId: dashboardId) != nil {
+            DashboardResultGrid(
+                engine: tooling.makeDashboardEngine(),
+                dashboardId: dashboardId,
+                userRoles: [],
+                onShortcut: { target in
+                    if let dt = tooling.docType(withId: target) {
+                        router.openDocType(target, module: dt.module)
+                    } else if let report = tooling.report(withId: target) {
+                        router.openReport(target, module: moduleForReport(report))
                     }
                 }
-                .padding()
-            }
+            )
             .navigationTitle(dashboard.name)
         } else {
             ContentUnavailableView("Dashboard unavailable", systemImage: "rectangle.3.group")
@@ -993,6 +952,91 @@ struct WorkspaceDefinition: Identifiable, Hashable {
     ]
 }
 
+/// Detail-pane tab container that surfaces the record's Form, audit Timeline,
+/// and Attachments alongside each other. Introduced at the shell call site
+/// (rather than baked into `RecordCollectionHostView`) so the host's
+/// `RecordViewMode` stays list/browse/detail.
+private struct RecordDetailTabs: View {
+    let docType: DocType
+    @Binding var document: Document
+    let attachmentManager: AttachmentManager?
+    let auditLog: AuditLogWriter
+    let userId: String
+
+    private enum Tab: String, CaseIterable, Identifiable {
+        case form, timeline, files
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .form: return "Form"
+            case .timeline: return "Timeline"
+            case .files: return "Attachments"
+            }
+        }
+    }
+
+    @State private var tab: Tab = .form
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("", selection: $tab) {
+                ForEach(Tab.allCases) { t in
+                    Text(t.title).tag(t)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+
+            switch tab {
+            case .form:
+                GenericFormView(docType: docType, document: $document)
+            case .timeline:
+                DocumentTimelineView(documentId: document.id, auditLog: auditLog)
+            case .files:
+                if let attachmentManager {
+                    AttachmentsPanel(
+                        documentId: document.id,
+                        docType: document.docType,
+                        manager: attachmentManager,
+                        userId: userId
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "Attachments unavailable",
+                        systemImage: "paperclip",
+                        description: Text("The attachment store could not be opened.")
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// Builds a sensible default `PrintFormat` for a record: a heading, a grid over
+/// the scalar fields, and a section per child table. Mirrors the Flutter
+/// auto-format used by the print button.
+private func autoPrintFormat(for document: Document, docType: DocType) -> PrintFormat {
+    let scalarKeys = docType.fields
+        .filter { $0.type != .table && $0.type != .formula }
+        .map(\.key)
+    let tableKeys = docType.fields
+        .filter { $0.type == .table }
+        .map(\.key)
+    var sections: [PrintSection] = [
+        .heading(text: docType.name),
+        .fields(keys: scalarKeys)
+    ]
+    sections.append(contentsOf: tableKeys.map { PrintSection.table(tableKey: $0, columns: []) })
+    return PrintFormat(
+        id: "auto-\(docType.id)",
+        name: docType.name,
+        docType: docType.id,
+        sections: sections
+    )
+}
+
 /// Small wrapper that owns the per-DocType custom-field state and bridges
 /// the tooling context to `RecordCollectionHostView`. Extracted from
 /// `NavigationShell.docTypeDetail` because the host's customize hooks
@@ -1011,6 +1055,14 @@ private struct DocTypeWorkspaceContainer: View {
 
     var body: some View {
         let documents = tooling.listDocuments(docTypeId: docType.id)
+        // Engines backing the record workspace capstones (attachments, timeline,
+        // print, import/export). Lightweight wrappers built from the tooling context.
+        let attachmentManager = tooling.makeAttachmentManager()
+        let auditLog = tooling.makeAuditLogWriter()
+        let printService = tooling.makePrintService()
+        let exporter = tooling.makeDataExporter()
+        let importer = tooling.makeDataImporter()
+        let actingUserId = tooling.currentUserId
         return VStack(spacing: 0) {
             if let errorMessage {
                 Text(errorMessage)
@@ -1033,6 +1085,16 @@ private struct DocTypeWorkspaceContainer: View {
                     let draft = tooling.createDraftDocument(for: docType)
                     onRecordTouched(docType.id)
                     return draft
+                },
+                workspaceOverflowMenu: {
+                    AnyView(
+                        ImportExportMenu(
+                            docType: docType.id,
+                            exporter: exporter,
+                            importer: importer,
+                            onChanged: { tooling.objectWillChange.send() }
+                        )
+                    )
                 },
                 onSaveDocument: { document in
                     let saved = try tooling.saveDocument(document)
@@ -1066,8 +1128,40 @@ private struct DocTypeWorkspaceContainer: View {
                         onRecordTouched(selected.id)
                     }
                 },
-                detailHeader: detailHeaderForModule,
-                externalCreateTrigger: externalCreateTrigger
+                detailHeader: { document in
+                    // Module workspace keeps its bespoke header; every other DocType
+                    // gets a record header carrying the Print/PDF action.
+                    if let detailHeaderForModule {
+                        return detailHeaderForModule(document)
+                    }
+                    return AnyView(
+                        SelectedRecordHeader(
+                            title: document.id.isEmpty ? "New \(docType.name)" : document.id,
+                            subtitle: document.status,
+                            actions: {
+                                AnyView(
+                                    PrintRecordButton(
+                                        document: document,
+                                        printService: printService,
+                                        formatResolver: { doc in autoPrintFormat(for: doc, docType: docType) }
+                                    )
+                                )
+                            }
+                        )
+                    )
+                },
+                externalCreateTrigger: externalCreateTrigger,
+                detailEditor: { dt, documentBinding in
+                    AnyView(
+                        RecordDetailTabs(
+                            docType: dt,
+                            document: documentBinding,
+                            attachmentManager: attachmentManager,
+                            auditLog: auditLog,
+                            userId: actingUserId
+                        )
+                    )
+                }
             )
         }
         .onAppear { reloadCustomFields() }
