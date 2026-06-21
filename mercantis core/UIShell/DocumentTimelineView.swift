@@ -202,7 +202,7 @@ private struct TimelineItem: Identifiable {
         self.diffs = Self.decodeDiffs(from: entry.payloadJSON)
     }
 
-    private static func style(forAction action: String) -> (title: String, symbol: String, tone: MercantisSemanticTone) {
+    nonisolated private static func style(forAction action: String) -> (title: String, symbol: String, tone: MercantisSemanticTone) {
         switch action.lowercased() {
         case "save":       return ("Saved", "square.and.pencil", .info)
         case "submit":     return ("Submitted", "paperplane.fill", .success)
@@ -221,7 +221,7 @@ private struct TimelineItem: Identifiable {
     /// written by `AuditLogWriter.append(... before:after:)` into a list of
     /// human-readable field diffs. Non-diff payloads (e.g. attachment
     /// summaries) decode to an empty list and just show the title.
-    private static func decodeDiffs(from json: String) -> [TimelineFieldDiff] {
+    nonisolated private static func decodeDiffs(from json: String) -> [TimelineFieldDiff] {
         guard let data = json.data(using: .utf8) else { return [] }
         struct Wrapper: Decodable {
             let before: [String: FieldValue]?
@@ -246,7 +246,7 @@ private struct TimelineItem: Identifiable {
         }
     }
 
-    private static func display(_ value: FieldValue) -> String {
+    nonisolated private static func display(_ value: FieldValue) -> String {
         switch value {
         case .string(let s): return s.isEmpty ? "—" : s
         case .int(let i):    return String(i)
