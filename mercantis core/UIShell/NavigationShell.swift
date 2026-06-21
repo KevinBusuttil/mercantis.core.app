@@ -447,7 +447,7 @@ public struct NavigationShell: View {
 
     @ViewBuilder
     private func dashboardDetail(dashboardId: String) -> some View {
-        if tooling.dashboard(withId: dashboardId) != nil {
+        if let dashboard = tooling.dashboard(withId: dashboardId) {
             DashboardResultGrid(
                 engine: tooling.makeDashboardEngine(),
                 dashboardId: dashboardId,

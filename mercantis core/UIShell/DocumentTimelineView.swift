@@ -264,7 +264,7 @@ private struct TimelineItem: Identifiable {
     }
 
     /// Humanise a snake_case / camelCase key into a label.
-    private static func humanLabel(_ key: String) -> String {
+    nonisolated private static func humanLabel(_ key: String) -> String {
         guard !key.isEmpty else { return key }
         var spaced = ""
         for (i, ch) in key.enumerated() {
