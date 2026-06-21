@@ -609,6 +609,7 @@ public struct GenericListView: View {
             .joined(separator: " ")
     }
 
+    @ViewBuilder
     private func statusBadge(for doc: Document) -> some View {
         // Semantic, business-like status treatment: colour + glyph + text so
         // operational states can be scanned at a glance and never rely on
@@ -616,14 +617,19 @@ public struct GenericListView: View {
         // (e.g. "Submitted") onto document-specific business wording
         // (e.g. "Posted"); for submittable docs with no workflow string yet we
         // fall back to the lifecycle (docStatus) label.
-        let display: DocumentStatusDisplay
+        //
+        // Non-submittable master data (Item, UOM, …) has no Draft/Submitted
+        // lifecycle — so with no explicit status string it shows no badge
+        // rather than a misleading "Draft".
         let trimmed = doc.status.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty && docType.isSubmittable {
-            display = displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: doc.docStatus)
+        if trimmed.isEmpty && !docType.isSubmittable {
+            EmptyView()
         } else {
-            display = displayPolicy.statusDisplay(docTypeId: docType.id, state: doc.status)
+            let display: DocumentStatusDisplay = trimmed.isEmpty
+                ? displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: doc.docStatus)
+                : displayPolicy.statusDisplay(docTypeId: docType.id, state: doc.status)
+            MercantisStatusBadge(display: display)
         }
-        return MercantisStatusBadge(display: display)
     }
 
     private func symbol(for type: FieldType) -> String {
