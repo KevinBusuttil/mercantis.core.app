@@ -185,7 +185,7 @@ private struct TimelineItem: Identifiable {
     let tone: MercantisSemanticTone
     let diffs: [TimelineFieldDiff]
 
-    init(entry: AuditLogEntry) {
+    nonisolated init(entry: AuditLogEntry) {
         self.id = entry.id
         let style = Self.style(forAction: entry.action)
         self.symbol = style.symbol
