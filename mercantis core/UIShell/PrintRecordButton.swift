@@ -98,23 +98,21 @@ public struct PrintRecordButton: View {
     }
 
     #if os(macOS)
-    /// Write the PDF to a temp file and present `NSPrintOperation` over a
-    /// `PDFView` so the user gets the native print dialog.
+    /// Render the PDF into a `PDFView` and run a native `NSPrintOperation`
+    /// over it so the user gets the standard print dialog.
     private func printPDF(_ result: PrintRenderResult) throws {
         guard let pdfDoc = PDFDocument(data: result.data) else {
             throw PrintUIError.invalidPDF
         }
-        let pdfView = PDFView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
+        let pageSize = pdfDoc.page(at: 0)?.bounds(for: .mediaBox).size
+            ?? NSSize(width: 612, height: 792)
+        let pdfView = PDFView(frame: NSRect(origin: .zero, size: pageSize))
         pdfView.document = pdfDoc
+        pdfView.autoScales = true
 
-        let info = NSPrintInfo.shared
-        let operation = pdfView.printOperation(
-            for: info,
-            scalingMode: .pageScaleDownToFit,
-            autoRotate: true
-        )
-        operation?.showsPrintPanel = true
-        operation?.run()
+        let operation = NSPrintOperation(view: pdfView, printInfo: NSPrintInfo.shared)
+        operation.showsPrintPanel = true
+        operation.run()
     }
 
     /// Write the PDF to a temp file and offer the native share picker.
