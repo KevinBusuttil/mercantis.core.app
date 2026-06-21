@@ -1,0 +1,153 @@
+//
+//  PrintRecordButton.swift
+//  mercantis core
+//
+//  UI for the print engine (ADR-044). Renders a record to a real PDF via
+//  `PrintService` and either prints it (`NSPrintOperation`) or shares it
+//  (`NSSharingServicePicker`).
+//
+//  Mirrors the Flutter `print_record_button.dart`. The caller supplies a
+//  `formatResolver` that returns the `PrintFormat` to use for a given
+//  document (e.g. an auto-format built from the DocType's fields, or a
+//  manifest-declared format). The button registers that format with the
+//  service before rendering, matching the Flutter `registerFormat` step.
+//
+
+import SwiftUI
+#if canImport(MercantisCore)
+import MercantisCore
+#endif
+#if os(macOS)
+import AppKit
+import PDFKit
+#endif
+
+/// A menu button that renders the given record to PDF and prints or shares
+/// it through the platform's native facilities.
+public struct PrintRecordButton: View {
+
+    /// The record to print. An empty `id` disables the control.
+    private let document: Document
+    private let printService: PrintService
+    /// Resolves the `PrintFormat` to render `document` with. The button
+    /// registers the returned format with the service before rendering.
+    private let formatResolver: (Document) -> PrintFormat
+
+    @State private var errorMessage: String?
+    @State private var showError = false
+
+    public init(
+        document: Document,
+        printService: PrintService,
+        formatResolver: @escaping (Document) -> PrintFormat
+    ) {
+        self.document = document
+        self.printService = printService
+        self.formatResolver = formatResolver
+    }
+
+    public var body: some View {
+        Menu {
+            Button {
+                run(.print)
+            } label: {
+                Label("Print…", systemImage: "printer")
+            }
+            Button {
+                run(.share)
+            } label: {
+                Label("Share PDF", systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            Label("Print", systemImage: "printer")
+        }
+        .disabled(document.id.isEmpty)
+        .accessibilityLabel("Print or share this record")
+        .alert("Print failed", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private enum Action { case print, share }
+
+    private func run(_ action: Action) {
+        #if os(macOS)
+        do {
+            let format = formatResolver(document)
+            // Ensure the resolved format is known to the service before render.
+            printService.register(format: format)
+            let result = try printService.render(
+                formatId: format.id,
+                document: document,
+                as: .pdf
+            )
+            switch action {
+            case .print:
+                try printPDF(result)
+            case .share:
+                try sharePDF(result)
+            }
+        } catch {
+            present((error as NSError).localizedDescription)
+        }
+        #else
+        present("Printing is not available on this platform yet.")
+        #endif
+    }
+
+    #if os(macOS)
+    /// Write the PDF to a temp file and present `NSPrintOperation` over a
+    /// `PDFView` so the user gets the native print dialog.
+    private func printPDF(_ result: PrintRenderResult) throws {
+        guard let pdfDoc = PDFDocument(data: result.data) else {
+            throw PrintUIError.invalidPDF
+        }
+        let pdfView = PDFView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
+        pdfView.document = pdfDoc
+
+        let info = NSPrintInfo.shared
+        let operation = pdfView.printOperation(
+            for: info,
+            scalingMode: .pageScaleDownToFit,
+            autoRotate: true
+        )
+        operation?.showsPrintPanel = true
+        operation?.run()
+    }
+
+    /// Write the PDF to a temp file and offer the native share picker.
+    private func sharePDF(_ result: PrintRenderResult) throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(result.suggestedFileName)
+        try result.data.write(to: url, options: .atomic)
+
+        let picker = NSSharingServicePicker(items: [url])
+        if let window = NSApp.keyWindow, let contentView = window.contentView {
+            picker.show(
+                relativeTo: .zero,
+                of: contentView,
+                preferredEdge: .minY
+            )
+        } else {
+            // Fall back to opening in the default viewer (Preview).
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private enum PrintUIError: LocalizedError {
+        case invalidPDF
+        var errorDescription: String? {
+            switch self {
+            case .invalidPDF: return "The renderer produced data that isn't a valid PDF."
+            }
+        }
+    }
+    #endif
+
+    private func present(_ message: String) {
+        errorMessage = message
+        showError = true
+    }
+}

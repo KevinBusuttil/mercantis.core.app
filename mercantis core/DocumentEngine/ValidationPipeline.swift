@@ -291,6 +291,39 @@ public struct TypeCoercionStage: ValidationStage {
         case .table:
             // Table fields are stored in children, not in the fields dictionary.
             return true
+        case .password, .code, .color, .signature, .geolocation, .autocomplete, .dynamicLink:
+            // String-backed editors (secure text, code, hex colour, signature JSON,
+            // lat/long string, autocomplete/dynamic-link selections).
+            if case .string = value { return true }
+            return false
+        case .tableMultiSelect:
+            // Stored as a string list today; accept the string or array shapes.
+            switch value {
+            case .string, .array: return true
+            default: return false
+            }
+        case .percent:
+            switch value {
+            case .int, .double: return true
+            case .string(let s): return Double(s) != nil
+            default: return false
+            }
+        case .rating, .duration:
+            // Whole-number editors (star count / total seconds).
+            switch value {
+            case .int, .double: return true
+            case .string(let s): return Int(s) != nil || Double(s) != nil
+            default: return false
+            }
+        case .time:
+            switch value {
+            case .dateTime, .date: return true
+            case .string(let s): return Self.parseDateTime(s) != nil || Self.parseDate(s) != nil
+            default: return false
+            }
+        case .heading, .sectionBreak, .columnBreak:
+            // Layout-only separators carry no persisted value.
+            return true
         }
     }
 

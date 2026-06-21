@@ -203,7 +203,12 @@ public struct GenericFormView: View {
     private func fieldRow(for field: FieldDefinition, stacked: Bool) -> some View {
         let isReadOnly = isReadOnly(field: field)
 
-        if stacked || usesStackedLayout(field) {
+        if isLayoutSeparator(field) {
+            // Headings / section / column breaks are pure layout — they carry
+            // their own label and span the full width with no leading label cell.
+            layoutSeparator(field: field)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if stacked || usesStackedLayout(field) {
             VStack(alignment: .leading, spacing: 5) {
                 fieldLabel(for: field)
                     .font(.system(size: 11, weight: .medium))
@@ -243,7 +248,9 @@ public struct GenericFormView: View {
 
     private func usesStackedLayout(_ field: FieldDefinition) -> Bool {
         switch field.type {
-        case .longText, .richText, .table, .multiselect, .image:
+        case .longText, .richText, .table, .multiselect, .image,
+             .code, .signature, .tableMultiSelect,
+             .heading, .sectionBreak, .columnBreak:
             return true
         default:
             return false
@@ -255,22 +262,55 @@ public struct GenericFormView: View {
         switch field.type {
         case .text, .email, .phone:
             textField(field: field, isReadOnly: isReadOnly)
-        case .longText:
-            longTextField(field: field, isReadOnly: isReadOnly)
+        case .longText, .code:
+            // `.code` renders a monospaced multi-line editor; `.longText` keeps
+            // the plain TextEditor below.
+            if field.type == .code {
+                codeField(field: field, isReadOnly: isReadOnly)
+            } else {
+                longTextField(field: field, isReadOnly: isReadOnly)
+            }
         case .richText:
             richTextField(field: field, isReadOnly: isReadOnly)
         case .number, .decimal, .currency:
             numberField(field: field, isReadOnly: isReadOnly)
+        case .percent:
+            percentField(field: field, isReadOnly: isReadOnly)
         case .boolean:
             toggleField(field: field, isReadOnly: isReadOnly)
         case .date, .datetime:
             dateField(field: field, isReadOnly: isReadOnly)
+        case .time:
+            timeField(field: field, isReadOnly: isReadOnly)
         case .select, .status:
             selectField(field: field, isReadOnly: isReadOnly)
-        case .multiselect:
+        case .multiselect, .tableMultiSelect:
+            // `.tableMultiSelect` has no dedicated Swift editor yet; it falls
+            // back to the chip-style multiselect (closest existing editor),
+            // matching the Flutter app's graceful degradation.
             multiselectField(field: field, isReadOnly: isReadOnly)
-        case .link:
+        case .link, .dynamicLink:
+            // `.dynamicLink` falls back to the standard link picker.
             linkField(field: field, isReadOnly: isReadOnly)
+        case .autocomplete:
+            // No bespoke autocomplete editor; degrade to plain text entry.
+            textField(field: field, isReadOnly: isReadOnly)
+        case .password:
+            passwordField(field: field, isReadOnly: isReadOnly)
+        case .rating:
+            ratingField(field: field, isReadOnly: isReadOnly)
+        case .duration:
+            durationField(field: field, isReadOnly: isReadOnly)
+        case .color:
+            colorField(field: field, isReadOnly: isReadOnly)
+        case .signature:
+            signatureField(field: field, isReadOnly: isReadOnly)
+        case .geolocation:
+            // No map picker yet; degrade to plain text entry (lat,lng string),
+            // matching the Flutter app's text-based geolocation fallback.
+            textField(field: field, isReadOnly: isReadOnly)
+        case .heading, .sectionBreak, .columnBreak:
+            layoutSeparator(field: field)
         case .formula:
             formulaField(field: field)
         case .table:
@@ -536,6 +576,108 @@ public struct GenericFormView: View {
         BarcodeField(value: stringBinding(for: field), isReadOnly: isReadOnly)
     }
 
+    // MARK: - Parity field controls
+
+    /// `.percent` — numeric entry with a trailing `%` suffix. Stores a Double.
+    private func percentField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let strBinding = numberBinding(for: field)
+        return Group {
+            if isReadOnly {
+                Text(strBinding.wrappedValue.isEmpty ? "—" : "\(strBinding.wrappedValue)%")
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 4) {
+                    TextField(field.label, text: strBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+#if os(iOS)
+                        .keyboardType(.decimalPad)
+#endif
+                    Text("%").foregroundStyle(MercantisTheme.textMuted)
+                }
+            }
+        }
+    }
+
+    /// `.password` — masked entry backed by `SecureField`. Stores a String.
+    private func passwordField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        let binding = stringBinding(for: field)
+        return Group {
+            if isReadOnly {
+                Text(binding.wrappedValue.isEmpty ? "—" : "••••••••")
+                    .foregroundStyle(.secondary)
+            } else {
+                SecureField(field.label, text: binding)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+            }
+        }
+    }
+
+    /// `.time` — time-only picker. Persists the selection as the typed
+    /// `.dateTime` FieldValue (only the hour/minute components are displayed).
+    private func timeField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        DatePicker(
+            "",
+            selection: timeBinding(for: field),
+            displayedComponents: [.hourAndMinute]
+        )
+        .labelsHidden()
+        .disabled(isReadOnly)
+    }
+
+    private func ratingField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        RatingField(value: intBinding(for: field), isReadOnly: isReadOnly)
+    }
+
+    private func durationField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        DurationField(seconds: intBinding(for: field), isReadOnly: isReadOnly)
+    }
+
+    private func codeField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        CodeField(value: stringBinding(for: field), isReadOnly: isReadOnly)
+    }
+
+    private func colorField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        ColorField(value: stringBinding(for: field), isReadOnly: isReadOnly)
+    }
+
+    private func signatureField(field: FieldDefinition, isReadOnly: Bool) -> some View {
+        SignatureField(value: stringBinding(for: field), isReadOnly: isReadOnly)
+    }
+
+    private func isLayoutSeparator(_ field: FieldDefinition) -> Bool {
+        switch field.type {
+        case .heading, .sectionBreak, .columnBreak: return true
+        default: return false
+        }
+    }
+
+    /// `.heading` / `.sectionBreak` / `.columnBreak` — non-editable layout
+    /// separators. A heading renders its label as a bold title; the breaks
+    /// render a divider (with the label as a caption when present).
+    @ViewBuilder
+    private func layoutSeparator(field: FieldDefinition) -> some View {
+        switch field.type {
+        case .heading:
+            Text(field.label)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(MercantisTheme.textPrimary)
+                .padding(.top, 4)
+        default:
+            VStack(alignment: .leading, spacing: 4) {
+                if !field.label.isEmpty {
+                    Text(field.label.uppercased())
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.5)
+                        .foregroundStyle(MercantisTheme.textMuted)
+                }
+                Divider()
+            }
+        }
+    }
+
     private func formulaField(field: FieldDefinition) -> some View {
         let computed = field.formulaExpression.flatMap { expr in
             try? expressionEvaluator.evaluateFormula(expression: expr, context: document.fields)
@@ -610,6 +752,41 @@ public struct GenericFormView: View {
                 default:
                     document.fields[field.key] = .string(ISO8601DateFormatter().string(from: newValue))
                 }
+            }
+        )
+    }
+
+    /// Integer-backed binding used by rating (stars) and duration (seconds).
+    /// Tolerates a stored Double or numeric String and always writes `.int`.
+    private func intBinding(for field: FieldDefinition) -> Binding<Int> {
+        Binding<Int>(
+            get: {
+                switch document.fields[field.key] {
+                case .int(let i): return i
+                case .double(let d): return Int(d.rounded())
+                case .string(let s): return Int(s) ?? 0
+                default: return 0
+                }
+            },
+            set: { newValue in
+                document.fields[field.key] = .int(newValue)
+            }
+        )
+    }
+
+    /// Time-only binding. Reads/writes the typed `.dateTime` FieldValue; only
+    /// the hour/minute components are surfaced through the picker.
+    private func timeBinding(for field: FieldDefinition) -> Binding<Date> {
+        Binding<Date>(
+            get: {
+                switch document.fields[field.key] {
+                case .dateTime(let d), .date(let d): return d
+                case .string(let s): return ISO8601DateFormatter().date(from: s) ?? Date()
+                default: return Date()
+                }
+            },
+            set: { newValue in
+                document.fields[field.key] = .dateTime(newValue)
             }
         )
     }
