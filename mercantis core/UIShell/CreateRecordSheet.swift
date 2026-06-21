@@ -18,6 +18,8 @@ struct CreateRecordSheet: View {
     let linkSearchProvider: ((String, String) -> [Document])?
     let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
+    let linkCreateProvider: ((String) -> Document?)?
+    let linkCommitProvider: ((Document) throws -> Document)?
 
     @State private var errorMessage: String?
 
@@ -27,7 +29,9 @@ struct CreateRecordSheet: View {
         onCreate: @escaping (Document) throws -> Void,
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         linkResolveProvider: ((String, String) -> Document?)? = nil,
-        childDocTypeProvider: ((String) -> DocType?)? = nil
+        childDocTypeProvider: ((String) -> DocType?)? = nil,
+        linkCreateProvider: ((String) -> Document?)? = nil,
+        linkCommitProvider: ((Document) throws -> Document)? = nil
     ) {
         self.docType = docType
         self._draft = draft
@@ -35,6 +39,8 @@ struct CreateRecordSheet: View {
         self.linkSearchProvider = linkSearchProvider
         self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
+        self.linkCreateProvider = linkCreateProvider
+        self.linkCommitProvider = linkCommitProvider
     }
 
     var body: some View {
@@ -56,7 +62,9 @@ struct CreateRecordSheet: View {
                 document: $draft,
                 linkSearchProvider: linkSearchProvider,
                 linkResolveProvider: linkResolveProvider,
-                childDocTypeProvider: childDocTypeProvider
+                childDocTypeProvider: childDocTypeProvider,
+                linkCreateProvider: linkCreateProvider,
+                linkCommitProvider: linkCommitProvider
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
