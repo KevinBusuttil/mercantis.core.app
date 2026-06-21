@@ -42,6 +42,11 @@ public struct GenericFormView: View {
     /// can render a human label for the current selection instead of its id.
     let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
+    /// Builds a blank draft of a target DocType so link fields can offer inline
+    /// "create new" record creation in their picker.
+    let linkCreateProvider: ((String) -> Document?)?
+    /// Persists an inline-created draft and returns the saved document.
+    let linkCommitProvider: ((Document) throws -> Document)?
 
     public init(
         docType: DocType,
@@ -50,7 +55,9 @@ public struct GenericFormView: View {
         expressionEvaluator: ExpressionEvaluator = ExpressionEvaluator(),
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         linkResolveProvider: ((String, String) -> Document?)? = nil,
-        childDocTypeProvider: ((String) -> DocType?)? = nil
+        childDocTypeProvider: ((String) -> DocType?)? = nil,
+        linkCreateProvider: ((String) -> Document?)? = nil,
+        linkCommitProvider: ((Document) throws -> Document)? = nil
     ) {
         self.docType = docType
         self._document = document
@@ -59,6 +66,8 @@ public struct GenericFormView: View {
         self.linkSearchProvider = linkSearchProvider
         self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
+        self.linkCreateProvider = linkCreateProvider
+        self.linkCommitProvider = linkCommitProvider
     }
 
     public var body: some View {
@@ -516,13 +525,18 @@ public struct GenericFormView: View {
         let resolve: ((String) -> Document?)? = linkResolveProvider.map { base in
             { id in base(target, id) }
         }
+        let make: (() -> Document?)? = linkCreateProvider.map { base in
+            { base(target) }
+        }
         return LinkPickerField(
             targetDocType: target.isEmpty ? "Link" : target,
             value: stringBinding(for: field),
             isReadOnly: isReadOnly,
             targetMeta: childDocTypeProvider?(target),
             searchProvider: provider,
-            resolveDocument: resolve
+            resolveDocument: resolve,
+            makeDraft: make,
+            commitDraft: linkCommitProvider
         )
     }
 

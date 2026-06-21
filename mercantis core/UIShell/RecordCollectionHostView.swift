@@ -43,6 +43,8 @@ public struct RecordCollectionHostView: View {
     let linkSearchProvider: ((String, String) -> [Document])?
     let linkResolveProvider: ((String, String) -> Document?)?
     let childDocTypeProvider: ((String) -> DocType?)?
+    let linkCreateProvider: ((String) -> Document?)?
+    let linkCommitProvider: ((Document) throws -> Document)?
     let detailEditor: ((DocType, Binding<Document>) -> AnyView)?
     /// Optional built-in / saved list views (e.g. Hub's "Unpaid", "Overdue").
     /// When empty the list synthesises status chips from the loaded data.
@@ -88,6 +90,8 @@ public struct RecordCollectionHostView: View {
         linkSearchProvider: ((String, String) -> [Document])? = nil,
         linkResolveProvider: ((String, String) -> Document?)? = nil,
         childDocTypeProvider: ((String) -> DocType?)? = nil,
+        linkCreateProvider: ((String) -> Document?)? = nil,
+        linkCommitProvider: ((Document) throws -> Document)? = nil,
         detailEditor: ((DocType, Binding<Document>) -> AnyView)? = nil,
         listViews: [RecordListViewDefinition] = [],
         displayPolicy: DocumentDisplayPolicy = .passthrough
@@ -117,6 +121,8 @@ public struct RecordCollectionHostView: View {
         self.linkSearchProvider = linkSearchProvider
         self.linkResolveProvider = linkResolveProvider
         self.childDocTypeProvider = childDocTypeProvider
+        self.linkCreateProvider = linkCreateProvider
+        self.linkCommitProvider = linkCommitProvider
         self.detailEditor = detailEditor
         self.listViews = listViews
         self.displayPolicy = displayPolicy
@@ -140,7 +146,9 @@ public struct RecordCollectionHostView: View {
                 onCreate: performCreate(_:),
                 linkSearchProvider: linkSearchProvider,
                 linkResolveProvider: linkResolveProvider,
-                childDocTypeProvider: childDocTypeProvider
+                childDocTypeProvider: childDocTypeProvider,
+                linkCreateProvider: linkCreateProvider,
+                linkCommitProvider: linkCommitProvider
             )
         }
         .onAppear {
@@ -332,7 +340,9 @@ public struct RecordCollectionHostView: View {
                         document: selectedDocumentBinding,
                         linkSearchProvider: linkSearchProvider,
                         linkResolveProvider: linkResolveProvider,
-                        childDocTypeProvider: childDocTypeProvider
+                        childDocTypeProvider: childDocTypeProvider,
+                        linkCreateProvider: linkCreateProvider,
+                        linkCommitProvider: linkCommitProvider
                     )
                     .disabled(!allowsDetailEditing)
                 }
