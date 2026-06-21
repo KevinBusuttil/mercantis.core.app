@@ -145,7 +145,7 @@ private struct TimelineRow: View {
 }
 
 private struct FieldDiffRow: View {
-    let diff: FieldDiff
+    let diff: TimelineFieldDiff
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -170,7 +170,7 @@ private struct FieldDiffRow: View {
 
 // MARK: - View models
 
-private struct FieldDiff: Identifiable {
+private struct TimelineFieldDiff: Identifiable {
     let id = UUID()
     let label: String
     let before: String?
@@ -183,7 +183,7 @@ private struct TimelineItem: Identifiable {
     let subtitle: String
     let symbol: String
     let tone: MercantisSemanticTone
-    let diffs: [FieldDiff]
+    let diffs: [TimelineFieldDiff]
 
     init(entry: AuditLogEntry) {
         self.id = entry.id
@@ -221,7 +221,7 @@ private struct TimelineItem: Identifiable {
     /// written by `AuditLogWriter.append(... before:after:)` into a list of
     /// human-readable field diffs. Non-diff payloads (e.g. attachment
     /// summaries) decode to an empty list and just show the title.
-    private static func decodeDiffs(from json: String) -> [FieldDiff] {
+    private static func decodeDiffs(from json: String) -> [TimelineFieldDiff] {
         guard let data = json.data(using: .utf8) else { return [] }
         struct Wrapper: Decodable {
             let before: [String: FieldValue]?
@@ -242,7 +242,7 @@ private struct TimelineItem: Identifiable {
             let aStr = a.map(Self.display)
             // Skip keys that didn't actually change.
             if bStr == aStr { return nil }
-            return FieldDiff(label: Self.humanLabel(key), before: bStr, after: aStr)
+            return TimelineFieldDiff(label: Self.humanLabel(key), before: bStr, after: aStr)
         }
     }
 
