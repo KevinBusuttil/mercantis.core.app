@@ -92,7 +92,8 @@ enum TestSupport {
             canCreate: true,
             canDelete: true,
             canSubmit: true,
-            canAmend: true
+            canAmend: true,
+            canCancel: true
         )
     }
 

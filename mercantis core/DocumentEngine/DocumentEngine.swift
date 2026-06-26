@@ -559,6 +559,7 @@ public final class DocumentEngine {
                 from: document.docStatus, to: 1, id: document.id
             )
         }
+        try enforceLifecyclePermission(.submit, on: docType, context: ctx)
 
         document.docStatus = 1
         // NOTE: do not stamp `updatedAt` here. `save(...)` enforces optimistic
@@ -601,6 +602,7 @@ public final class DocumentEngine {
                 from: document.docStatus, to: 2, id: document.id
             )
         }
+        try enforceLifecyclePermission(.cancel, on: docType, context: ctx)
 
         let blockingDocuments = try findLinkedSubmittedDocuments(documentId: document.id)
         if !blockingDocuments.isEmpty {
@@ -644,6 +646,7 @@ public final class DocumentEngine {
                 from: document.docStatus, to: 0, id: document.id
             )
         }
+        try enforceLifecyclePermission(.amend, on: docType, context: ctx)
 
         let newId = UUID().uuidString
         let now = Date()
@@ -1309,6 +1312,71 @@ public final class DocumentEngine {
     }
 
     // MARK: - Private Helpers
+
+    /// Enforce the lifecycle-specific permission (`.submit` / `.cancel` /
+    /// `.amend`) before applying a docStatus transition. `save(...)` only checks
+    /// `.write`, so without this the per-rule `canSubmit` / `canCancel` /
+    /// `canAmend` rights are never consulted. Mirrors `PermissionStage`'s
+    /// decision logic: system actions are never gated; a fail-closed submittable
+    /// DocType demands an explicit granting role; otherwise the role set must
+    /// grant the operation. (P0.4 — distinct lifecycle rights)
+    private func enforceLifecyclePermission(
+        _ operation: DocumentOperation,
+        on docType: DocType,
+        context ctx: ExecutionContext
+    ) throws {
+        if ctx.isSystemOperation { return }
+
+        let requiresExplicitGrant = failClosedForSubmittable && docType.isSubmittable
+
+        if ctx.roles.isEmpty {
+            // Permissive only for the legacy fallback (no caller identity) and
+            // only when a fail-closed submittable rule doesn't apply; an
+            // explicit operator with no roles fails closed.
+            if ctx.isLegacyFallback && !requiresExplicitGrant { return }
+            if docType.permissions.isEmpty && !requiresExplicitGrant { return }
+            throw lifecyclePermissionError(
+                operation, docType: docType,
+                reason: "requires an authenticated operator with a granting role"
+            )
+        }
+
+        if docType.permissions.isEmpty {
+            if requiresExplicitGrant {
+                throw lifecyclePermissionError(
+                    operation, docType: docType,
+                    reason: "declares no permission rules, so no role may \(Self.describe(operation)) it"
+                )
+            }
+            return
+        }
+
+        if !permissionEngine.canPerform(operation: operation, on: docType, userRoles: ctx.roles) {
+            throw lifecyclePermissionError(operation, docType: docType, reason: nil)
+        }
+    }
+
+    private func lifecyclePermissionError(
+        _ operation: DocumentOperation, docType: DocType, reason: String?
+    ) -> DocumentEngineError {
+        let base = "User does not have permission to \(Self.describe(operation)) '\(docType.name)' documents."
+        let message = reason.map { "\(base) (\($0))" } ?? base
+        return .validationFailed(errors: [
+            DocumentValidationError(stage: "Permission", field: nil, message: message)
+        ])
+    }
+
+    private static func describe(_ operation: DocumentOperation) -> String {
+        switch operation {
+        case .read:   return "read"
+        case .write:  return "save"
+        case .create: return "create"
+        case .delete: return "delete"
+        case .submit: return "submit"
+        case .cancel: return "cancel"
+        case .amend:  return "amend"
+        }
+    }
 
     private func runValidationPipeline(
         on document: Document,

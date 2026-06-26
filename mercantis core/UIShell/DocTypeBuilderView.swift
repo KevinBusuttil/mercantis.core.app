@@ -447,6 +447,7 @@ struct EditablePermission: Identifiable, Hashable {
     var canDelete: Bool
     var canSubmit: Bool
     var canAmend: Bool
+    var canCancel: Bool
 
     nonisolated init(
         role: String = "",
@@ -455,7 +456,8 @@ struct EditablePermission: Identifiable, Hashable {
         canCreate: Bool = false,
         canDelete: Bool = false,
         canSubmit: Bool = false,
-        canAmend: Bool = false
+        canAmend: Bool = false,
+        canCancel: Bool = false
     ) {
         self.role = role
         self.canRead = canRead
@@ -464,6 +466,7 @@ struct EditablePermission: Identifiable, Hashable {
         self.canDelete = canDelete
         self.canSubmit = canSubmit
         self.canAmend = canAmend
+        self.canCancel = canCancel
     }
 
     nonisolated init(_ permission: PermissionRule) {
@@ -474,7 +477,8 @@ struct EditablePermission: Identifiable, Hashable {
             canCreate: permission.canCreate,
             canDelete: permission.canDelete,
             canSubmit: permission.canSubmit,
-            canAmend: permission.canAmend
+            canAmend: permission.canAmend,
+            canCancel: permission.canCancel
         )
     }
 
@@ -486,7 +490,8 @@ struct EditablePermission: Identifiable, Hashable {
             canCreate: canCreate,
             canDelete: canDelete,
             canSubmit: canSubmit,
-            canAmend: canAmend
+            canAmend: canAmend,
+            canCancel: canCancel
         )
     }
 }
@@ -906,6 +911,7 @@ public struct DocTypeBuilderView: View {
                     if permission.canCreate  { permBadge("C") }
                     if permission.canDelete  { permBadge("D") }
                     if permission.canSubmit  { permBadge("S") }
+                    if permission.canCancel  { permBadge("X") }
                     if permission.canAmend   { permBadge("A") }
                 }
 
@@ -932,6 +938,7 @@ public struct DocTypeBuilderView: View {
             checkboxRow("Create", isOn: permission.canCreate)
             checkboxRow("Delete", isOn: permission.canDelete)
             checkboxRow("Submit", isOn: permission.canSubmit)
+            checkboxRow("Cancel", isOn: permission.canCancel)
             checkboxRow("Amend",  isOn: permission.canAmend)
 
             HStack {
