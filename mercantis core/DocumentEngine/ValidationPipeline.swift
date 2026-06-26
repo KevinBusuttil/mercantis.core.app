@@ -72,6 +72,17 @@ public struct ValidationContext: Sendable {
     /// declared child DocType. Default: always nil (no child validation).
     public let childDocTypeProvider: @Sendable (String) -> DocType?
 
+    /// Whether this operation is an explicit system / import / migration action.
+    /// When true, `PermissionStage` does not gate it. (P0.4)
+    public let isSystemOperation: Bool
+
+    /// When true, submittable (financial / transactional) DocTypes are
+    /// fail-CLOSED in `PermissionStage`: an empty role set or a DocType with no
+    /// declared permission rules is denied rather than allowed. Defaults to
+    /// false so the legacy permissive behaviour is unchanged until a deployment
+    /// opts in (Hub does so once roles + operator propagation are wired). (P0.4)
+    public let failClosedForSubmittable: Bool
+
     public init(
         docType: DocType,
         userId: String = "",
@@ -83,7 +94,9 @@ public struct ValidationContext: Sendable {
         uniqueConflictExists: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false },
         workflowProvider: @escaping @Sendable (String) -> WorkflowDefinition? = { _ in nil },
         previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil },
-        childDocTypeProvider: @escaping @Sendable (String) -> DocType? = { _ in nil }
+        childDocTypeProvider: @escaping @Sendable (String) -> DocType? = { _ in nil },
+        isSystemOperation: Bool = false,
+        failClosedForSubmittable: Bool = false
     ) {
         self.docType = docType
         self.userId = userId
@@ -96,6 +109,8 @@ public struct ValidationContext: Sendable {
         self.workflowProvider = workflowProvider
         self.previousStatus = previousStatus
         self.childDocTypeProvider = childDocTypeProvider
+        self.isSystemOperation = isSystemOperation
+        self.failClosedForSubmittable = failClosedForSubmittable
     }
 }
 
@@ -741,8 +756,34 @@ public struct PermissionStage: ValidationStage {
     public init() {}
 
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
-        guard !context.userRoles.isEmpty else { return [] }
-        guard !context.docType.permissions.isEmpty else { return [] }
+        // Explicit system / import / migration operations are never gated. (P0.4)
+        if context.isSystemOperation { return [] }
+
+        // Submittable (financial / transactional) DocTypes are fail-CLOSED when a
+        // deployment opts in: they must not silently allow an unauthenticated or
+        // unconstrained write. Non-submittable masters keep the legacy permissive
+        // behaviour, and the whole tightening is off by default. (P0.4)
+        let requiresExplicitGrant = context.failClosedForSubmittable && context.docType.isSubmittable
+
+        guard !context.userRoles.isEmpty else {
+            if requiresExplicitGrant {
+                return [deniedError(
+                    context,
+                    reason: "requires an authenticated operator with a granting role"
+                )]
+            }
+            return []
+        }
+
+        guard !context.docType.permissions.isEmpty else {
+            if requiresExplicitGrant {
+                return [deniedError(
+                    context,
+                    reason: "declares no permission rules, so no role may \(describe(context.operation)) it"
+                )]
+            }
+            return []
+        }
 
         let allowed = context.permissionEngine.canPerform(
             operation: context.operation,
@@ -750,13 +791,18 @@ public struct PermissionStage: ValidationStage {
             userRoles: context.userRoles
         )
         if !allowed {
-            return [DocumentValidationError(
-                stage: stageName,
-                field: nil,
-                message: "User does not have permission to \(describe(context.operation)) '\(context.docType.name)' documents."
-            )]
+            return [deniedError(context, reason: nil)]
         }
         return []
+    }
+
+    private func deniedError(_ context: ValidationContext, reason: String?) -> DocumentValidationError {
+        let base = "User does not have permission to \(describe(context.operation)) '\(context.docType.name)' documents."
+        return DocumentValidationError(
+            stage: stageName,
+            field: nil,
+            message: reason.map { "\(base) (\($0))" } ?? base
+        )
     }
 
     private func describe(_ operation: DocumentOperation) -> String {

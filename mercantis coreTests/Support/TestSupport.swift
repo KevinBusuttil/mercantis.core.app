@@ -169,7 +169,8 @@ enum TestSupport {
     static func makeHarness(
         deviceId: String = "test-device",
         userId: String = "test-user",
-        pipeline: ValidationPipeline? = nil
+        pipeline: ValidationPipeline? = nil,
+        failClosedForSubmittable: Bool = false
     ) throws -> Harness {
         let url = tempDatabaseURL()
         let database = try makeDatabase(at: url)
@@ -181,7 +182,8 @@ enum TestSupport {
             deviceId: deviceId,
             userId: userId,
             eventEmitter: emitter,
-            validationPipeline: pipeline ?? ValidationPipeline()
+            validationPipeline: pipeline ?? ValidationPipeline(),
+            failClosedForSubmittable: failClosedForSubmittable
         )
         return Harness(database: database, registry: registry, emitter: emitter, engine: engine, url: url)
     }

@@ -103,6 +103,9 @@ public final class DocumentEngine {
     private let attachmentManager: AttachmentManager?
     private let deviceId: String
     private let userId: String
+    /// When true, submittable DocTypes are fail-closed in the permission stage
+    /// (P0.4). Off by default so enabling it is a deliberate deployment choice.
+    private let failClosedForSubmittable: Bool
 
     public init(
         database: MercantisDatabase,
@@ -113,7 +116,8 @@ public final class DocumentEngine {
         validationPipeline: ValidationPipeline = ValidationPipeline(),
         namingService: NamingService = NamingService(),
         permissionEngine: PermissionEngine = PermissionEngine(),
-        attachmentManager: AttachmentManager? = nil
+        attachmentManager: AttachmentManager? = nil,
+        failClosedForSubmittable: Bool = false
     ) {
         self.database = database
         self.registry = registry
@@ -127,6 +131,7 @@ public final class DocumentEngine {
         self.attachmentManager = attachmentManager
         self.deviceId = deviceId
         self.userId = userId
+        self.failClosedForSubmittable = failClosedForSubmittable
     }
 
     // MARK: - Execution context (P0.1)
@@ -1259,7 +1264,9 @@ public final class DocumentEngine {
             },
             childDocTypeProvider: { [weak self] childTypeName in
                 self?.registry.get(childTypeName)
-            }
+            },
+            isSystemOperation: exec.isSystemOperation,
+            failClosedForSubmittable: failClosedForSubmittable
         )
         let errors = validationPipeline.validate(document: &document, context: ctx)
         if !errors.isEmpty {
