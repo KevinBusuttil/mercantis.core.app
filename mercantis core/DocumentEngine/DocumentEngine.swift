@@ -107,6 +107,13 @@ public final class DocumentEngine {
     /// (P0.4). Off by default so enabling it is a deliberate deployment choice.
     private let failClosedForSubmittable: Bool
 
+    /// Ambient execution-context provider (P0.2). When a call supplies no
+    /// explicit `context:`, the engine consults this before falling back to the
+    /// instance identity. Hub points it at the signed-in operator so audit and
+    /// permission checks reflect the live operator without threading a context
+    /// through every call site.
+    private var contextProvider: (() -> ExecutionContext?)?
+
     public init(
         database: MercantisDatabase,
         registry: MetadataRegistry,
@@ -117,7 +124,8 @@ public final class DocumentEngine {
         namingService: NamingService = NamingService(),
         permissionEngine: PermissionEngine = PermissionEngine(),
         attachmentManager: AttachmentManager? = nil,
-        failClosedForSubmittable: Bool = false
+        failClosedForSubmittable: Bool = false,
+        contextProvider: (() -> ExecutionContext?)? = nil
     ) {
         self.database = database
         self.registry = registry
@@ -132,15 +140,25 @@ public final class DocumentEngine {
         self.deviceId = deviceId
         self.userId = userId
         self.failClosedForSubmittable = failClosedForSubmittable
+        self.contextProvider = contextProvider
     }
 
-    // MARK: - Execution context (P0.1)
+    // MARK: - Execution context (P0.1 / P0.2)
 
-    /// Resolve the per-operation `ExecutionContext`. When a caller does not
-    /// supply one, fall back to a `.legacy(...)` context built from the
-    /// engine's constructor identity so pre-P0.1 call sites are unchanged.
+    /// Set (or replace) the ambient execution-context provider (P0.2). Hub uses
+    /// this to resolve the currently signed-in operator at call time.
+    public func setExecutionContextProvider(_ provider: (() -> ExecutionContext?)?) {
+        self.contextProvider = provider
+    }
+
+    /// Resolve the per-operation `ExecutionContext`. Precedence: an explicit
+    /// `context:` argument, then the ambient `contextProvider` (the live
+    /// operator), then a `.legacy(...)` context built from the engine's
+    /// constructor identity so pre-P0.1 call sites are unchanged.
     private func resolved(_ context: ExecutionContext?) -> ExecutionContext {
-        context ?? ExecutionContext.legacy(userId: userId, deviceId: deviceId)
+        if let context { return context }
+        if let provided = contextProvider?() { return provided }
+        return ExecutionContext.legacy(userId: userId, deviceId: deviceId)
     }
 
     // MARK: - Cross-document lookup (ADR-029, P2.2)
