@@ -175,13 +175,15 @@ public struct ChildTableField: View {
         // shift left/right relative to the column.
         switch f.type {
         case .number, .decimal, .currency:
+            // A field with a formula (e.g. Amount = qty * rate) is derived, so
+            // it renders read-only and recomputes as its inputs change.
             TextField(f.label, text: numberCellBinding(field: f, idx: rowIdx))
                 .mercantisInput()
                 .multilineTextAlignment(.trailing)
 #if os(iOS)
                 .keyboardType(.decimalPad)
 #endif
-                .disabled(isReadOnly)
+                .disabled(isReadOnly || f.formulaExpression != nil)
                 .frame(maxWidth: .infinity)
         case .boolean:
             Toggle("", isOn: boolCellBinding(field: f, idx: rowIdx))
@@ -222,7 +224,7 @@ public struct ChildTableField: View {
         let target = f.linkedDocType ?? ""
         LinkPickerField(
             targetDocType: target.isEmpty ? "Link" : target,
-            value: stringCellBinding(field: f, idx: rowIdx),
+            value: linkCellBinding(field: f, idx: rowIdx),
             isReadOnly: isReadOnly,
             targetMeta: childDocTypeProvider?(target),
             searchProvider: linkSearchProvider.map { base in { _, query in base(target, query) } },
@@ -292,6 +294,8 @@ public struct ChildTableField: View {
                 Button {
                     let newRow = blankRow(for: docType, index: rows.count)
                     rows.append(newRow)
+                    // Seed derived values (e.g. amount from default qty/rate).
+                    applyDerived(idx: rows.count - 1, changedKey: nil)
                 } label: {
                     Label("Add Row", systemImage: "plus.circle")
                         .font(.system(size: 12, weight: .medium))
@@ -372,6 +376,25 @@ public struct ChildTableField: View {
             set: { newValue in
                 guard idx < rows.count else { return }
                 rows[idx].fields[f.key] = .string(newValue)
+                applyDerived(idx: idx, changedKey: nil)
+            }
+        )
+    }
+
+    /// Link-cell binding that, on change, runs the declarative fetch-from /
+    /// formula recompute keyed to this link field — so picking an Item fills in
+    /// its description (and any other `fetchFrom` targets) and refreshes Amount.
+    private func linkCellBinding(field f: FieldDefinition, idx: Int) -> Binding<String> {
+        Binding<String>(
+            get: {
+                guard idx < rows.count else { return "" }
+                if case .string(let s) = rows[idx].fields[f.key] { return s }
+                return ""
+            },
+            set: { newValue in
+                guard idx < rows.count else { return }
+                rows[idx].fields[f.key] = .string(newValue)
+                applyDerived(idx: idx, changedKey: f.key)
             }
         )
     }
@@ -396,6 +419,7 @@ public struct ChildTableField: View {
                 } else {
                     rows[idx].fields[f.key] = .string(newValue)
                 }
+                applyDerived(idx: idx, changedKey: nil)
             }
         )
     }
@@ -410,6 +434,7 @@ public struct ChildTableField: View {
             set: { newValue in
                 guard idx < rows.count else { return }
                 rows[idx].fields[f.key] = .bool(newValue)
+                applyDerived(idx: idx, changedKey: nil)
             }
         )
     }
@@ -426,8 +451,47 @@ public struct ChildTableField: View {
             set: { newValue in
                 guard idx < rows.count else { return }
                 rows[idx].fields[f.key] = (f.type == .datetime) ? .dateTime(newValue) : .date(newValue)
+                applyDerived(idx: idx, changedKey: nil)
             }
         )
+    }
+
+    // MARK: - Derived values (fetch-from + formula recompute)
+
+    /// Shared so we don't rebuild the parse cache on every keystroke.
+    private static let derivedEvaluator = ExpressionEvaluator()
+
+    /// Recompute a row's derived values after an edit:
+    ///
+    /// 1. **Fetch-from** — when a link field changes (`changedKey` set), copy
+    ///    each `fetchFrom: "<changedKey>.<src>"` field's value from the freshly
+    ///    linked document (e.g. line `description` ← Item `description`). Scoped
+    ///    to the changed link so a fetched value stays editable afterwards.
+    /// 2. **Formula** — re-evaluate every `formulaExpression` field against the
+    ///    row's current values (e.g. `amount = qty * rate`).
+    private func applyDerived(idx: Int, changedKey: String?) {
+        guard idx < rows.count, let docType = childDocType else { return }
+
+        if let changedKey {
+            for f in docType.fields {
+                guard let spec = f.fetchFrom else { continue }
+                let parts = spec.split(separator: ".", maxSplits: 1)
+                guard parts.count == 2, String(parts[0]) == changedKey else { continue }
+                let linkField = docType.fields.first { $0.key == changedKey }
+                let target = linkField?.linkedDocType ?? ""
+                guard case .string(let id)? = rows[idx].fields[changedKey], !id.isEmpty,
+                      let source = linkResolveProvider?(target, id),
+                      let value = source.fields[String(parts[1])] else { continue }
+                rows[idx].fields[f.key] = value
+            }
+        }
+
+        for f in docType.fields {
+            guard let expr = f.formulaExpression, !expr.isEmpty,
+                  let value = try? Self.derivedEvaluator.evaluateFormula(
+                      expression: expr, context: rows[idx].fields) else { continue }
+            rows[idx].fields[f.key] = value
+        }
     }
 
     // MARK: - Blank row factory
@@ -550,7 +614,7 @@ private struct ChildRowEditor: View {
             TextField(field.label, text: numberBinding(for: field))
                 .mercantisInput()
                 .multilineTextAlignment(.trailing)
-                .disabled(isReadOnly)
+                .disabled(isReadOnly || field.formulaExpression != nil)
         case .boolean:
             Toggle("", isOn: boolBinding(for: field))
                 .labelsHidden()
@@ -577,7 +641,7 @@ private struct ChildRowEditor: View {
             let target = field.linkedDocType ?? ""
             LinkPickerField(
                 targetDocType: target.isEmpty ? "Link" : target,
-                value: stringBinding(for: field),
+                value: linkBinding(for: field),
                 isReadOnly: isReadOnly,
                 targetMeta: childDocTypeProvider?(target),
                 searchProvider: linkSearchProvider.map { base in { _, query in base(target, query) } },
@@ -603,7 +667,15 @@ private struct ChildRowEditor: View {
                 default: return ""
                 }
             },
-            set: { row.fields[f.key] = .string($0) }
+            set: { row.fields[f.key] = .string($0); applyDerived(changedKey: nil) }
+        )
+    }
+
+    /// Link binding that triggers fetch-from / formula recompute on change.
+    private func linkBinding(for f: FieldDefinition) -> Binding<String> {
+        Binding<String>(
+            get: { if case .string(let s) = row.fields[f.key] { return s } else { return "" } },
+            set: { row.fields[f.key] = .string($0); applyDerived(changedKey: f.key) }
         )
     }
 
@@ -625,6 +697,7 @@ private struct ChildRowEditor: View {
                 } else {
                     row.fields[f.key] = .string(newValue)
                 }
+                applyDerived(changedKey: nil)
             }
         )
     }
@@ -632,7 +705,7 @@ private struct ChildRowEditor: View {
     private func boolBinding(for f: FieldDefinition) -> Binding<Bool> {
         Binding<Bool>(
             get: { if case .bool(let b) = row.fields[f.key] { return b } else { return false } },
-            set: { row.fields[f.key] = .bool($0) }
+            set: { row.fields[f.key] = .bool($0); applyDerived(changedKey: nil) }
         )
     }
 
@@ -646,7 +719,34 @@ private struct ChildRowEditor: View {
             },
             set: { newValue in
                 row.fields[f.key] = (f.type == .datetime) ? .dateTime(newValue) : .date(newValue)
+                applyDerived(changedKey: nil)
             }
         )
+    }
+
+    // MARK: - Derived values (mirror ChildTableField, scoped to this row)
+
+    private static let derivedEvaluator = ExpressionEvaluator()
+
+    private func applyDerived(changedKey: String?) {
+        if let changedKey {
+            for f in docType.fields {
+                guard let spec = f.fetchFrom else { continue }
+                let parts = spec.split(separator: ".", maxSplits: 1)
+                guard parts.count == 2, String(parts[0]) == changedKey else { continue }
+                let linkField = docType.fields.first { $0.key == changedKey }
+                let target = linkField?.linkedDocType ?? ""
+                guard case .string(let id)? = row.fields[changedKey], !id.isEmpty,
+                      let source = linkResolveProvider?(target, id),
+                      let value = source.fields[String(parts[1])] else { continue }
+                row.fields[f.key] = value
+            }
+        }
+        for f in docType.fields {
+            guard let expr = f.formulaExpression, !expr.isEmpty,
+                  let value = try? Self.derivedEvaluator.evaluateFormula(
+                      expression: expr, context: row.fields) else { continue }
+            row.fields[f.key] = value
+        }
     }
 }
