@@ -163,7 +163,9 @@ public final class DocumentEngine {
     public func save(
         _ document: Document,
         userSuppliedName: String? = nil,
-        context: ExecutionContext? = nil
+        context: ExecutionContext? = nil,
+        lifecycleAudit: LifecycleAudit? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
     ) throws -> Document {
         let ctx = resolved(context)
         var document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
@@ -235,6 +237,25 @@ public final class DocumentEngine {
                 after: document.fields,
                 in: db
             )
+            // P0.8: the lifecycle audit row (submit/cancel/amend) commits in the
+            // SAME transaction as the docStatus change — no second transaction.
+            if let lifecycleAudit {
+                try auditLogWriter.append(
+                    AuditLogEntry(
+                        documentId: document.id,
+                        docType: document.docType,
+                        userId: ctx.operatorId,
+                        action: lifecycleAudit.action,
+                        payloadJSON: lifecycleAudit.extraJSON
+                    ),
+                    in: db
+                )
+            }
+            // P0.8: the unit-of-work seam. Anything the caller does here (Phase 1
+            // posting batches) commits atomically with the document.
+            if let inTransaction {
+                try inTransaction(UnitOfWork(db: db, context: ctx, auditLogWriter: auditLogWriter))
+            }
         }
 
         eventEmitter.publish(DocumentSavedEvent(
@@ -435,7 +456,11 @@ public final class DocumentEngine {
     // MARK: - Submit (ADR-013)
 
     /// Submit a document, transitioning it from Draft (docStatus 0) to Submitted (docStatus 1).
-    public func submit(_ document: inout Document, context: ExecutionContext? = nil) throws {
+    public func submit(
+        _ document: inout Document,
+        context: ExecutionContext? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
+    ) throws {
         let ctx = resolved(context)
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
@@ -456,13 +481,11 @@ public final class DocumentEngine {
         // made a freshly-fetched document look stale and threw
         // `concurrencyConflict` whenever a second had elapsed since the last
         // save (ISO8601 second-truncation only hid it within the same second).
-        try save(document, context: ctx)
-
-        try writeLifecycleAuditEntry(
-            documentId: document.id,
-            docType: document.docType,
-            action: "submit",
-            operatorId: ctx.operatorId
+        try save(
+            document,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(action: "submit"),
+            inTransaction: inTransaction
         )
 
         eventEmitter.publish(DocumentSubmittedEvent(
@@ -475,7 +498,11 @@ public final class DocumentEngine {
 
     /// Cancel a submitted document, transitioning it from Submitted (1) to Cancelled (2).
     /// Rejects if any downstream submitted document holds a Link field pointing here. (ADR-013)
-    public func cancel(_ document: inout Document, context: ExecutionContext? = nil) throws {
+    public func cancel(
+        _ document: inout Document,
+        context: ExecutionContext? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
+    ) throws {
         let ctx = resolved(context)
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
@@ -501,13 +528,11 @@ public final class DocumentEngine {
         // See `submit(...)`: leave `updatedAt` untouched so the optimistic
         // concurrency check in `save(...)` compares like-for-like against the
         // stored row and stamps its own fresh timestamp.
-        try save(document, context: ctx)
-
-        try writeLifecycleAuditEntry(
-            documentId: document.id,
-            docType: document.docType,
-            action: "cancel",
-            operatorId: ctx.operatorId
+        try save(
+            document,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(action: "cancel"),
+            inTransaction: inTransaction
         )
 
         eventEmitter.publish(DocumentCancelledEvent(
@@ -562,14 +587,13 @@ public final class DocumentEngine {
         }
         amended.children = newChildren
 
-        try save(amended, context: ctx)
-
-        try writeLifecycleAuditEntry(
-            documentId: amended.id,
-            docType: amended.docType,
-            action: "amend",
-            operatorId: ctx.operatorId,
-            extraJSON: "{\"amendedFrom\":\"\(document.id)\"}"
+        try save(
+            amended,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(
+                action: "amend",
+                extraJSON: "{\"amendedFrom\":\"\(document.id)\"}"
+            )
         )
 
         eventEmitter.publish(DocumentAmendedEvent(
@@ -579,30 +603,6 @@ public final class DocumentEngine {
         ))
 
         return amended
-    }
-
-    /// Append a single audit row for a lifecycle action (submit/cancel/amend).
-    /// Lives outside the save's atomic block — the save itself is durable, and
-    /// adding a follow-on audit row keeps the writer composable.
-    private func writeLifecycleAuditEntry(
-        documentId: String,
-        docType: String,
-        action: String,
-        operatorId: String,
-        extraJSON: String = "{}"
-    ) throws {
-        try database.write { db in
-            try auditLogWriter.append(
-                AuditLogEntry(
-                    documentId: documentId,
-                    docType: docType,
-                    userId: operatorId,
-                    action: action,
-                    payloadJSON: extraJSON
-                ),
-                in: db
-            )
-        }
     }
 
     // MARK: - Audit log readers (Phase A §3.2)
