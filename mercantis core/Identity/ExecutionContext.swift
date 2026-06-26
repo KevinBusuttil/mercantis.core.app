@@ -50,6 +50,14 @@ public struct ExecutionContext: Sendable, Equatable {
     /// be a deliberate choice at the call site so the bypass is auditable.
     public let isSystemOperation: Bool
 
+    /// `true` only for the synthesised pre-P0.1 fallback context (no caller
+    /// supplied an identity). It distinguishes "no operator at all" — which stays
+    /// permissive for backward compatibility — from "an explicit operator context
+    /// that happens to carry no roles", which must NOT bypass permission checks
+    /// (an authenticated operator with no granting role is denied). Callers
+    /// cannot set this; only `.legacy(...)` produces it.
+    public let isLegacyFallback: Bool
+
     public init(
         operatorId: String,
         companyId: String = "",
@@ -64,6 +72,38 @@ public struct ExecutionContext: Sendable, Equatable {
         self.deviceId = deviceId
         self.sessionId = sessionId
         self.isSystemOperation = isSystemOperation
+        self.isLegacyFallback = false
+    }
+
+    /// Private initialiser that can mark the context as the legacy fallback.
+    private init(
+        operatorId: String,
+        companyId: String,
+        roles: Set<String>,
+        deviceId: String,
+        sessionId: String,
+        isSystemOperation: Bool,
+        isLegacyFallback: Bool
+    ) {
+        self.operatorId = operatorId
+        self.companyId = companyId
+        self.roles = roles
+        self.deviceId = deviceId
+        self.sessionId = sessionId
+        self.isSystemOperation = isSystemOperation
+        self.isLegacyFallback = isLegacyFallback
+    }
+
+    fileprivate static func makeLegacy(operatorId: String, deviceId: String) -> ExecutionContext {
+        ExecutionContext(
+            operatorId: operatorId,
+            companyId: "",
+            roles: [],
+            deviceId: deviceId,
+            sessionId: "",
+            isSystemOperation: false,
+            isLegacyFallback: true
+        )
     }
 }
 
@@ -75,11 +115,7 @@ public extension ExecutionContext {
     /// operator and no roles are asserted (so role checks remain permissive for
     /// callers that have not yet adopted `ExecutionContext`).
     static func legacy(userId: String, deviceId: String) -> ExecutionContext {
-        ExecutionContext(
-            operatorId: userId,
-            deviceId: deviceId,
-            isSystemOperation: false
-        )
+        ExecutionContext.makeLegacy(operatorId: userId, deviceId: deviceId)
     }
 
     /// Explicit system / import context: audit-attributed to `operatorId`

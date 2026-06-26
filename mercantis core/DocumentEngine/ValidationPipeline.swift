@@ -76,6 +76,13 @@ public struct ValidationContext: Sendable {
     /// When true, `PermissionStage` does not gate it. (P0.4)
     public let isSystemOperation: Bool
 
+    /// Whether the driving context is the synthesised legacy fallback (no caller
+    /// identity). Only then does an empty role set stay permissive; an explicit
+    /// operator context with no roles fails closed. Defaults to `true` so
+    /// directly-constructed contexts keep the pre-P0.1 "empty roles = bypass"
+    /// convention. (P1 review fix)
+    public let isLegacyFallback: Bool
+
     /// When true, submittable (financial / transactional) DocTypes are
     /// fail-CLOSED in `PermissionStage`: an empty role set or a DocType with no
     /// declared permission rules is denied rather than allowed. Defaults to
@@ -96,7 +103,8 @@ public struct ValidationContext: Sendable {
         previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil },
         childDocTypeProvider: @escaping @Sendable (String) -> DocType? = { _ in nil },
         isSystemOperation: Bool = false,
-        failClosedForSubmittable: Bool = false
+        failClosedForSubmittable: Bool = false,
+        isLegacyFallback: Bool = true
     ) {
         self.docType = docType
         self.userId = userId
@@ -111,6 +119,7 @@ public struct ValidationContext: Sendable {
         self.childDocTypeProvider = childDocTypeProvider
         self.isSystemOperation = isSystemOperation
         self.failClosedForSubmittable = failClosedForSubmittable
+        self.isLegacyFallback = isLegacyFallback
     }
 }
 
@@ -761,18 +770,27 @@ public struct PermissionStage: ValidationStage {
 
         // Submittable (financial / transactional) DocTypes are fail-CLOSED when a
         // deployment opts in: they must not silently allow an unauthenticated or
-        // unconstrained write. Non-submittable masters keep the legacy permissive
-        // behaviour, and the whole tightening is off by default. (P0.4)
+        // unconstrained write. (P0.4)
         let requiresExplicitGrant = context.failClosedForSubmittable && context.docType.isSubmittable
 
-        guard !context.userRoles.isEmpty else {
-            if requiresExplicitGrant {
-                return [deniedError(
-                    context,
-                    reason: "requires an authenticated operator with a granting role"
-                )]
+        if context.userRoles.isEmpty {
+            // Empty role set. This stays permissive ONLY for the legacy fallback
+            // (no caller identity), and only when a fail-closed submittable rule
+            // doesn't apply. An *explicit* operator context with no roles fails
+            // closed — an authenticated operator without a granting role may not
+            // act on a DocType that declares permission rules. (P1 review fix)
+            if context.isLegacyFallback && !requiresExplicitGrant {
+                return []
             }
-            return []
+            // No rules to enforce on an otherwise-unconstrained DocType (unless a
+            // fail-closed submittable rule applies).
+            if context.docType.permissions.isEmpty && !requiresExplicitGrant {
+                return []
+            }
+            return [deniedError(
+                context,
+                reason: "requires an authenticated operator with a granting role"
+            )]
         }
 
         guard !context.docType.permissions.isEmpty else {
