@@ -96,4 +96,25 @@ final class PermissionFailClosedTests: XCTestCase {
         try h.registry.register(TestSupport.makeDocType(id: "Note", permissions: []))
         XCTAssertNoThrow(try h.engine.save(TestSupport.makeDocument(id: "n1", fields: ["title": .string("X")])))
     }
+
+    // MARK: - P1 review fix: explicit operator with no roles fails closed
+
+    /// Independent of the fail-closed flag: an authenticated operator context
+    /// that carries no roles must NOT bypass a DocType that declares rules.
+    func testExplicitOperatorWithoutRolesIsDeniedOnRuleBearingDocType() throws {
+        let h = try TestSupport.makeHarness() // flag OFF on purpose
+        defer { TestSupport.cleanUp(databaseURL: h.url) }
+        try h.registry.register(makeSubmittable(perms: [TestSupport.permissionRule(role: "Accountant")]))
+        let ctx = ExecutionContext(operatorId: "u", roles: [], deviceId: "d")
+        XCTAssertThrowsError(try h.engine.save(invoice("i7"), context: ctx)) { assertPermissionDenied($0) }
+    }
+
+    /// The legacy fallback (no caller context) stays permissive for backward
+    /// compatibility, even on a rule-bearing DocType, when the flag is off.
+    func testLegacyNoContextStaysPermissive() throws {
+        let h = try TestSupport.makeHarness() // flag OFF
+        defer { TestSupport.cleanUp(databaseURL: h.url) }
+        try h.registry.register(makeSubmittable(perms: [TestSupport.permissionRule(role: "Accountant")]))
+        XCTAssertNoThrow(try h.engine.save(invoice("i8")))
+    }
 }

@@ -27,7 +27,10 @@ final class ExecutionContextTests: XCTestCase {
         harness = nil
     }
 
-    private func context(_ operatorId: String, roles: Set<String> = []) -> ExecutionContext {
+    // Operator contexts carry a granting role: after the P1 review fix, an
+    // explicit operator context with no roles is denied on a DocType that
+    // declares permission rules (the test DocType grants "System Manager").
+    private func context(_ operatorId: String, roles: Set<String> = ["System Manager"]) -> ExecutionContext {
         ExecutionContext(
             operatorId: operatorId,
             companyId: "ACME",

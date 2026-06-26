@@ -1294,7 +1294,8 @@ public final class DocumentEngine {
                 self?.registry.get(childTypeName)
             },
             isSystemOperation: exec.isSystemOperation,
-            failClosedForSubmittable: failClosedForSubmittable
+            failClosedForSubmittable: failClosedForSubmittable,
+            isLegacyFallback: exec.isLegacyFallback
         )
         let errors = validationPipeline.validate(document: &document, context: ctx)
         if !errors.isEmpty {
