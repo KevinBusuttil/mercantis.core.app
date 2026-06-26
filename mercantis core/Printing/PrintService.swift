@@ -67,6 +67,22 @@ public final class PrintService: @unchecked Sendable {
         return formats.values.filter { $0.docType == docType }
     }
 
+    /// The default format for a DocType (the one flagged `isDefault`, else the
+    /// first registered), or nil when none are registered for it.
+    public func defaultFormat(forDocType docType: String) -> PrintFormat? {
+        let candidates = formats(forDocType: docType)
+        return candidates.first(where: \.isDefault) ?? candidates.first
+    }
+
+    /// All formats for a DocType, default first then by name — the order the
+    /// print menu lists them.
+    public func orderedFormats(forDocType docType: String) -> [PrintFormat] {
+        formats(forDocType: docType).sorted { lhs, rhs in
+            if lhs.isDefault != rhs.isDefault { return lhs.isDefault }
+            return lhs.name < rhs.name
+        }
+    }
+
     // MARK: - Render
 
     /// Render `document` with the format identified by `formatId` to bytes

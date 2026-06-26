@@ -29,13 +29,17 @@ public struct PrintRecordButton: View {
     /// The record to print. An empty `id` disables the control.
     private let document: Document
     private let printService: PrintService
-    /// Resolves the `PrintFormat` to render `document` with. The button
-    /// registers the returned format with the service before rendering.
-    private let formatResolver: (Document) -> PrintFormat
+    /// Resolves the candidate `PrintFormat`s for `document`, default first. The
+    /// button registers each with the service before rendering. When more than
+    /// one is returned the menu lets the operator pick; otherwise it prints the
+    /// single (default) format directly.
+    private let formatsResolver: (Document) -> [PrintFormat]
 
     @State private var errorMessage: String?
     @State private var showError = false
 
+    /// Single-format init (back-compat): renders `document` with exactly the
+    /// resolved format.
     public init(
         document: Document,
         printService: PrintService,
@@ -43,25 +47,47 @@ public struct PrintRecordButton: View {
     ) {
         self.document = document
         self.printService = printService
-        self.formatResolver = formatResolver
+        self.formatsResolver = { [formatResolver($0)] }
+    }
+
+    /// Multi-format init: the operator chooses among several formats (default
+    /// listed first). An empty result disables printing.
+    public init(
+        document: Document,
+        printService: PrintService,
+        formatsResolver: @escaping (Document) -> [PrintFormat]
+    ) {
+        self.document = document
+        self.printService = printService
+        self.formatsResolver = formatsResolver
     }
 
     public var body: some View {
-        Menu {
-            Button {
-                run(.print)
-            } label: {
-                Label("Print…", systemImage: "printer")
-            }
-            Button {
-                run(.share)
-            } label: {
-                Label("Share PDF", systemImage: "square.and.arrow.up")
+        let formats = formatsResolver(document)
+        return Menu {
+            if formats.count <= 1 {
+                Button { run(.print, formats.first) } label: {
+                    Label("Print…", systemImage: "printer")
+                }
+                Button { run(.share, formats.first) } label: {
+                    Label("Share PDF", systemImage: "square.and.arrow.up")
+                }
+            } else {
+                ForEach(formats) { format in
+                    Section(format.isDefault ? "\(format.name) · Default" : format.name) {
+                        Button { run(.print, format) } label: {
+                            Label("Print…", systemImage: "printer")
+                        }
+                        Button { run(.share, format) } label: {
+                            Label("Share PDF", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                }
             }
         } label: {
             Label("Print", systemImage: "printer")
         }
-        .disabled(document.id.isEmpty)
+        .disabled(document.id.isEmpty || formats.isEmpty)
         .accessibilityLabel("Print or share this record")
         .alert("Print failed", isPresented: $showError) {
             Button("OK", role: .cancel) { }
@@ -72,11 +98,14 @@ public struct PrintRecordButton: View {
 
     private enum Action { case print, share }
 
-    private func run(_ action: Action) {
+    private func run(_ action: Action, _ format: PrintFormat?) {
         #if os(macOS)
+        guard let format else {
+            present("No print format is available for this record.")
+            return
+        }
         do {
-            let format = formatResolver(document)
-            // Ensure the resolved format is known to the service before render.
+            // Ensure the chosen format is known to the service before render.
             printService.register(format: format)
             let result = try printService.render(
                 formatId: format.id,

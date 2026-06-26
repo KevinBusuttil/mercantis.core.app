@@ -40,6 +40,9 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
     public let name: String
     public let docType: String
     public let letterHeadId: String?
+    /// When several formats exist for a DocType, the one to use unless the
+    /// operator picks another. At most one per DocType should set this.
+    public let isDefault: Bool
     public let sections: [PrintSection]
 
     public init(
@@ -47,13 +50,29 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         name: String,
         docType: String,
         letterHeadId: String? = nil,
+        isDefault: Bool = false,
         sections: [PrintSection]
     ) {
         self.id = id
         self.name = name
         self.docType = docType
         self.letterHeadId = letterHeadId
+        self.isDefault = isDefault
         self.sections = sections
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, docType, letterHeadId, isDefault, sections
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        docType = try c.decode(String.self, forKey: .docType)
+        letterHeadId = try c.decodeIfPresent(String.self, forKey: .letterHeadId)
+        isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        sections = try c.decode([PrintSection].self, forKey: .sections)
     }
 }
 
