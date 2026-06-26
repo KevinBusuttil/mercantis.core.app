@@ -412,9 +412,12 @@ public struct ChildTableField: View {
             },
             set: { newValue in
                 guard idx < rows.count else { return }
-                if f.type == .number, let i = Int(newValue) {
+                let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty {
+                    rows[idx].fields[f.key] = .null
+                } else if f.type == .number, let i = Int(trimmed) {
                     rows[idx].fields[f.key] = .int(i)
-                } else if let d = Double(newValue) {
+                } else if let d = Double(trimmed) {
                     rows[idx].fields[f.key] = .double(d)
                 } else {
                     rows[idx].fields[f.key] = .string(newValue)
@@ -690,9 +693,12 @@ private struct ChildRowEditor: View {
                 }
             },
             set: { newValue in
-                if f.type == .number, let i = Int(newValue) {
+                let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty {
+                    row.fields[f.key] = .null
+                } else if f.type == .number, let i = Int(trimmed) {
                     row.fields[f.key] = .int(i)
-                } else if let d = Double(newValue) {
+                } else if let d = Double(trimmed) {
                     row.fields[f.key] = .double(d)
                 } else {
                     row.fields[f.key] = .string(newValue)
