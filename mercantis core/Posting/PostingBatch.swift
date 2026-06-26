@@ -76,7 +76,7 @@ public struct PostingBatch: Identifiable, Codable, Sendable, Equatable {
 public enum PostingBatchWriter {
 
     /// Insert or replace a batch row in the supplied transaction.
-    public static func upsert(_ batch: PostingBatch, in db: Database) throws {
+    public static nonisolated func upsert(_ batch: PostingBatch, in db: Database) throws {
         try db.execute(
             sql: """
                 INSERT OR REPLACE INTO posting_batches
@@ -100,7 +100,7 @@ public enum PostingBatchWriter {
     }
 
     /// Whether a batch with `id` already exists (idempotency guard), in-transaction.
-    public static func exists(id: String, in db: Database) throws -> Bool {
+    public static nonisolated func exists(id: String, in db: Database) throws -> Bool {
         try Int.fetchOne(
             db,
             sql: "SELECT 1 FROM posting_batches WHERE id = ? LIMIT 1",
@@ -108,7 +108,7 @@ public enum PostingBatchWriter {
         ) != nil
     }
 
-    static func batch(from row: Row) -> PostingBatch {
+    static nonisolated func batch(from row: Row) -> PostingBatch {
         let postedAtString: String? = row["postedAt"]
         return PostingBatch(
             id: row["id"] ?? "",
