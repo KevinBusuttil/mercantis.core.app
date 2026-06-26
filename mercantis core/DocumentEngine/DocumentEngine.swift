@@ -288,6 +288,59 @@ public final class DocumentEngine {
         return document
     }
 
+    // MARK: - In-transaction document write (Phase 1 posting)
+
+    /// Write a derived system document (a ledger / subledger row) inside an
+    /// existing `UnitOfWork`, so it commits atomically with the source
+    /// document's submit. Unlike `save(...)`, this performs no validation,
+    /// naming, optimistic-concurrency, or versioning: the document must already
+    /// carry its (deterministic) id and be a trusted, append-only derived
+    /// record. It upserts the row + child rows, appends a sync mutation, and
+    /// writes an audit row attributed to the unit of work's operator.
+    ///
+    /// Idempotency is the caller's responsibility — guard re-posting at the
+    /// `PostingBatch` boundary (`UnitOfWork.postingBatchExists`).
+    @discardableResult
+    public func writeDocument(_ document: Document, action: String = "post", in uow: UnitOfWork) throws -> Document {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let payloadString = String(data: try encoder.encode(document.fields), encoding: .utf8) ?? "{}"
+        let createdAtString = ISO8601DateFormatter().string(from: document.createdAt)
+        let updatedAtString = ISO8601DateFormatter().string(from: document.updatedAt)
+
+        let mutation = MutationRecord(
+            id: UUID(),
+            type: .upsertDocument,
+            payload: try encoder.encode(document),
+            deviceId: uow.context.deviceId,
+            userId: uow.context.operatorId,
+            localTimestamp: Date(),
+            syncVersion: document.syncVersion,
+            status: .pending
+        )
+
+        try upsertDocumentRow(
+            uow.db, document: document,
+            createdAt: createdAtString,
+            updatedAt: updatedAtString,
+            syncState: document.syncState,
+            payloadString: payloadString
+        )
+        try syncChildRows(uow.db, document: document, encoder: encoder)
+        try appendMutation(uow.db, mutation: mutation)
+        try auditLogWriter.append(
+            documentId: document.id,
+            docType: document.docType,
+            userId: uow.context.operatorId,
+            action: action,
+            before: nil,
+            after: document.fields,
+            in: uow.db
+        )
+        return document
+    }
+
     // MARK: - Naming (P1.1 / ADR-014)
 
     /// If `document.id` is empty, resolve it via `NamingService` and return a
