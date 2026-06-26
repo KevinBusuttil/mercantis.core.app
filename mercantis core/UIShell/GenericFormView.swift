@@ -837,9 +837,14 @@ public struct GenericFormView: View {
                 }
             },
             set: { newValue in
-                if field.type == .number, let intVal = Int(newValue) {
+                let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty {
+                    // An empty numeric field is "no value", not the string "" —
+                    // storing "" fails `.decimal` / `.currency` type validation.
+                    document.fields[field.key] = .null
+                } else if field.type == .number, let intVal = Int(trimmed) {
                     document.fields[field.key] = .int(intVal)
-                } else if let doubleVal = Double(newValue) {
+                } else if let doubleVal = Double(trimmed) {
                     document.fields[field.key] = .double(doubleVal)
                 } else {
                     document.fields[field.key] = .string(newValue)
