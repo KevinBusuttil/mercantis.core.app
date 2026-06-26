@@ -181,6 +181,12 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var visibilityExpression: String?   // boolean expression; field shown only when true
     public var readOnlyExpression: String?
     public var formulaExpression: String?      // for formula fields; arithmetic expression returning a value
+    /// Declarative "fetch from" source: `"<linkFieldKey>.<sourceFieldKey>"`.
+    /// When the named sibling link field is set (e.g. a line's `item`), the UI
+    /// resolves the linked document and copies its `<sourceFieldKey>` into this
+    /// field — the standard line-item auto-fill (description, default rate, …).
+    /// Only fires when the link itself changes, so the value stays editable.
+    public var fetchFrom: String?
     public var permissions: FieldPermission?
     public var isSearchable: Bool
     public var isSynced: Bool
@@ -202,6 +208,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         visibilityExpression: String? = nil,
         readOnlyExpression: String? = nil,
         formulaExpression: String? = nil,
+        fetchFrom: String? = nil,
         permissions: FieldPermission? = nil,
         isSearchable: Bool = false,
         isSynced: Bool = true,
@@ -222,6 +229,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         self.visibilityExpression = visibilityExpression
         self.readOnlyExpression = readOnlyExpression
         self.formulaExpression = formulaExpression
+        self.fetchFrom = fetchFrom
         self.permissions = permissions
         self.isSearchable = isSearchable
         self.isSynced = isSynced
@@ -234,7 +242,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case key, label, type, required, defaultValue, options
         case linkedDocType, childDocType, validationRules
-        case visibilityExpression, readOnlyExpression, formulaExpression
+        case visibilityExpression, readOnlyExpression, formulaExpression, fetchFrom
         case permissions, isSearchable, isSynced, allowOnSubmit
         case section, column, collapsible
     }
@@ -256,6 +264,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         visibilityExpression = try c.decodeIfPresent(String.self, forKey: .visibilityExpression)
         readOnlyExpression = try c.decodeIfPresent(String.self, forKey: .readOnlyExpression)
         formulaExpression = try c.decodeIfPresent(String.self, forKey: .formulaExpression)
+        fetchFrom = try c.decodeIfPresent(String.self, forKey: .fetchFrom)
         permissions = try c.decodeIfPresent(FieldPermission.self, forKey: .permissions)
         isSearchable = try c.decodeIfPresent(Bool.self, forKey: .isSearchable) ?? false
         isSynced = try c.decodeIfPresent(Bool.self, forKey: .isSynced) ?? true
