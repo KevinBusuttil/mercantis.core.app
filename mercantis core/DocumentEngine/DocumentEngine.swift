@@ -223,7 +223,8 @@ public final class DocumentEngine {
                 db, document: document,
                 savedAt: saveTimestamp,
                 savedBy: ctx.operatorId,
-                oldFields: oldFields
+                oldFields: oldFields,
+                oldChildren: existing?.children ?? [:]
             )
             try auditLogWriter.append(
                 documentId: document.id,
@@ -341,7 +342,8 @@ public final class DocumentEngine {
                 db, document: doc,
                 savedAt: savedAt,
                 savedBy: savedBy,
-                oldFields: oldFields
+                oldFields: oldFields,
+                oldChildren: existing?.children ?? [:]
             )
             try auditLogWriter.append(
                 documentId: doc.id,
@@ -1254,6 +1256,9 @@ public final class DocumentEngine {
             previousStatus: { [weak self] docTypeName, docId in
                 guard let self else { return nil }
                 return try? self.loadStatus(docType: docTypeName, id: docId)
+            },
+            childDocTypeProvider: { [weak self] childTypeName in
+                self?.registry.get(childTypeName)
             }
         )
         let errors = validationPipeline.validate(document: &document, context: ctx)
@@ -1294,24 +1299,51 @@ public final class DocumentEngine {
     private func loadExistingState(
         docType: String,
         id: String
-    ) throws -> (updatedAt: String?, fields: [String: FieldValue])? {
-        let row = try database.read { db in
-            try Row.fetchOne(
+    ) throws -> (updatedAt: String?, fields: [String: FieldValue], children: [String: [ChildRow]])? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let (row, childRows) = try database.read { db -> (Row?, [Row]) in
+            let row = try Row.fetchOne(
                 db,
                 sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
                 arguments: [id, docType]
             )
+            guard row != nil else { return (nil, []) }
+            let childRows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, tableName, rowIndex, payload FROM document_children
+                    WHERE parentId = ?
+                    ORDER BY tableName ASC, rowIndex ASC
+                    """,
+                arguments: [id]
+            )
+            return (row, childRows)
         }
         guard let row = row else { return nil }
+
         let updatedAt: String? = row["updatedAt"]
         var fields: [String: FieldValue] = [:]
         let payloadString: String = row["payload"] ?? "{}"
         if let data = payloadString.data(using: .utf8) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
             fields = (try? decoder.decode([String: FieldValue].self, from: data)) ?? [:]
         }
-        return (updatedAt, fields)
+
+        var children: [String: [ChildRow]] = [:]
+        for childRow in childRows {
+            let childId: String = childRow["id"] ?? ""
+            let tableName: String = childRow["tableName"] ?? ""
+            let rowIndex: Int = childRow["rowIndex"] ?? 0
+            let childPayload: String = childRow["payload"] ?? "{}"
+            let rowFields = (childPayload.data(using: .utf8)
+                .flatMap { try? decoder.decode([String: FieldValue].self, from: $0) }) ?? [:]
+            children[tableName, default: []].append(
+                ChildRow(id: childId, rowIndex: rowIndex, fields: rowFields)
+            )
+        }
+
+        return (updatedAt, fields, children)
     }
 
     private func upsertDocumentRow(
@@ -1428,9 +1460,13 @@ public final class DocumentEngine {
         document: Document,
         savedAt: Date,
         savedBy: String,
-        oldFields: [String: FieldValue]
+        oldFields: [String: FieldValue],
+        oldChildren: [String: [ChildRow]] = [:]
     ) throws {
-        let diffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
+        // Parent-field diffs plus child-row diffs (P0.6), so a submitted
+        // document's line-item edits are captured in version history too.
+        var diffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
+        diffs.append(contentsOf: computeChildDiffs(oldChildren: oldChildren, newChildren: document.children))
         guard !diffs.isEmpty else { return }
 
         let version = DocumentVersion(
@@ -1499,6 +1535,21 @@ public final class DocumentEngine {
             if oldValue != newValue && !allowedKeys.contains(key) {
                 throw DocumentEngineError.fieldImmutableAfterSubmit(
                     fieldKey: key, documentId: document.id
+                )
+            }
+        }
+
+        // Child rows are frozen after submit too (P0.6), unless the table field
+        // is explicitly `allowOnSubmit`. Rows are compared in (rowIndex, id)
+        // order so a stable reorder is not mistaken for an edit.
+        for field in docType.fields where field.type == .table && !field.allowOnSubmit {
+            let oldRows = (existing.children[field.key] ?? [])
+                .sorted { ($0.rowIndex, $0.id) < ($1.rowIndex, $1.id) }
+            let newRows = (document.children[field.key] ?? [])
+                .sorted { ($0.rowIndex, $0.id) < ($1.rowIndex, $1.id) }
+            if oldRows != newRows {
+                throw DocumentEngineError.fieldImmutableAfterSubmit(
+                    fieldKey: field.key, documentId: document.id
                 )
             }
         }

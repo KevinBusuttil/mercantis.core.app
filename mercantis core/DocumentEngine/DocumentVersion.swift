@@ -98,3 +98,58 @@ public func computeFieldDiffs(
 
     return diffs
 }
+
+/// Computes child-table diffs as flattened `FieldDiff` entries. (P0.6)
+///
+/// Before this, document versions captured only parent-field changes, so a
+/// submitted invoice's line-item edits (add/remove a row, change a qty or rate)
+/// left no version history. Each changed child cell is recorded with a
+/// `tableName[rowIndex].fieldKey` key; whole-row additions and removals are
+/// recorded as a `tableName[rowIndex]` entry whose value carries the row id.
+///
+/// Rows are matched by their stable `id` (not position) so reordering a table
+/// does not masquerade as a full rewrite.
+public func computeChildDiffs(
+    oldChildren: [String: [ChildRow]],
+    newChildren: [String: [ChildRow]]
+) -> [FieldDiff] {
+    var diffs: [FieldDiff] = []
+    let tables = Set(oldChildren.keys).union(newChildren.keys)
+
+    for table in tables.sorted() {
+        let oldRows = oldChildren[table] ?? []
+        let newRows = newChildren[table] ?? []
+        let oldById = Dictionary(oldRows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let newById = Dictionary(newRows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ids = Set(oldById.keys).union(newById.keys)
+
+        for id in ids.sorted() {
+            switch (oldById[id], newById[id]) {
+            case let (.some(oldRow), .some(newRow)):
+                for fd in computeFieldDiffs(oldFields: oldRow.fields, newFields: newRow.fields) {
+                    diffs.append(FieldDiff(
+                        fieldKey: "\(table)[\(newRow.rowIndex)].\(fd.fieldKey)",
+                        oldValue: fd.oldValue,
+                        newValue: fd.newValue
+                    ))
+                }
+            case let (.some(oldRow), .none):
+                diffs.append(FieldDiff(
+                    fieldKey: "\(table)[\(oldRow.rowIndex)]",
+                    oldValue: .string("row:\(id)"),
+                    newValue: nil
+                ))
+            case let (.none, .some(newRow)):
+                diffs.append(FieldDiff(
+                    fieldKey: "\(table)[\(newRow.rowIndex)]",
+                    oldValue: nil,
+                    newValue: .string("row:\(id)")
+                ))
+            case (.none, .none):
+                break
+            }
+        }
+    }
+
+    return diffs
+}
