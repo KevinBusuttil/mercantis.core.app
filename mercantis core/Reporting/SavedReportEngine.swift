@@ -117,6 +117,35 @@ public final class SavedReportEngine {
         runtimeFilterValues: [String: FieldValue] = [:],
         userRoles: Set<String> = []
     ) throws -> ReportResult {
+        let typed = try executeTyped(
+            savedReport: savedReport,
+            requestingUserId: requestingUserId,
+            runtimeFilterValues: runtimeFilterValues,
+            userRoles: userRoles
+        )
+        let rows = typed.rows.map { row in
+            row.map { ReportValueFormatter.string(from: $0) }
+        }
+        return ReportResult(columns: typed.columnLabels, rows: rows)
+    }
+
+    /// Raw, typed result of a saved report: the visible columns plus each
+    /// matching document's raw `FieldValue` per column. This is the basis the
+    /// host uses for grouping, aggregation and charts (which need numbers /
+    /// dates, not pre-formatted strings). `execute` formats this into the
+    /// string `ReportResult`.
+    public struct TypedReportResult: Sendable {
+        public let columnKeys: [String]
+        public let columnLabels: [String]
+        public let rows: [[FieldValue?]]
+    }
+
+    public func executeTyped(
+        savedReport: SavedReportDefinition,
+        requestingUserId: String? = nil,
+        runtimeFilterValues: [String: FieldValue] = [:],
+        userRoles: Set<String> = []
+    ) throws -> TypedReportResult {
         // Ownership / sharing gate.
         if let requestingUserId, !savedReport.canBeAccessed(byUserId: requestingUserId) {
             throw SavedReportError.notAuthorized(
@@ -174,14 +203,23 @@ public final class SavedReportEngine {
             listUserId: requestingUserId
         )
 
-        let columns = visibleColumns.map(\.resolvedLabel)
-        let rows: [[String?]] = documents.map { doc in
-            visibleColumns.map { column in
-                ReportValueFormatter.string(from: value(for: column.fieldKey, in: doc))
-            }
+        let rows: [[FieldValue?]] = documents.map { doc in
+            visibleColumns.map { column in value(for: column.fieldKey, in: doc) }
         }
 
-        return ReportResult(columns: columns, rows: rows)
+        return TypedReportResult(
+            columnKeys: visibleColumns.map(\.fieldKey),
+            columnLabels: visibleColumns.map(\.resolvedLabel),
+            rows: rows
+        )
+    }
+
+    /// Read a single document column value (exposed so hosts can resolve the
+    /// group-by / chart category & value fields, which need not be visible
+    /// columns). Honours the same user-field-then-system-column resolution as
+    /// the row builder.
+    public func columnValue(for key: String, in document: Document) -> FieldValue? {
+        value(for: key, in: document)
     }
 
     // MARK: - Validation
