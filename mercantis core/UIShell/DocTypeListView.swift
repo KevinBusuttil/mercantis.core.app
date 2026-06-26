@@ -192,7 +192,8 @@ public struct DocTypeListView: View {
                                 "canCreate": .bool(permission.canCreate),
                                 "canDelete": .bool(permission.canDelete),
                                 "canSubmit": .bool(permission.canSubmit),
-                                "canAmend": .bool(permission.canAmend)
+                                "canAmend": .bool(permission.canAmend),
+                                "canCancel": .bool(permission.canCancel)
                             ]
                         )
                     }

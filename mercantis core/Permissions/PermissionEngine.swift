@@ -29,6 +29,7 @@ public final class PermissionEngine {
             case .delete: if rule.canDelete { return true }
             case .submit: if rule.canSubmit { return true }
             case .amend:  if rule.canAmend  { return true }
+            case .cancel: if rule.canCancel { return true }
             }
         }
         return false
@@ -121,7 +122,7 @@ public final class PermissionEngine {
 // MARK: - Operation Types
 
 public enum DocumentOperation: Sendable {
-    case read, write, create, delete, submit, amend
+    case read, write, create, delete, submit, amend, cancel
 }
 
 public enum FieldOperation: Sendable {

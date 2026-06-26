@@ -117,4 +117,49 @@ final class PermissionFailClosedTests: XCTestCase {
         try h.registry.register(makeSubmittable(perms: [TestSupport.permissionRule(role: "Accountant")]))
         XCTAssertNoThrow(try h.engine.save(invoice("i8")))
     }
+
+    // MARK: - Distinct lifecycle rights (submit / cancel / amend)
+
+    /// A submittable transition consults its own right, not just `.write`: a
+    /// role that may create the draft but is not granted submit is denied.
+    func testSubmitDeniedForNonGrantingRole() throws {
+        let h = try TestSupport.makeHarness(failClosedForSubmittable: true)
+        defer { TestSupport.cleanUp(databaseURL: h.url) }
+        try h.registry.register(makeSubmittable(perms: [TestSupport.permissionRule(role: "Accountant")]))
+        let granting = ExecutionContext(operatorId: "u", roles: ["Accountant"], deviceId: "d")
+        var doc = try h.engine.save(invoice("L1"), context: granting)
+        let nonGranting = ExecutionContext(operatorId: "v", roles: ["Clerk"], deviceId: "d")
+        XCTAssertThrowsError(try h.engine.submit(&doc, context: nonGranting)) { assertPermissionDenied($0) }
+    }
+
+    /// `canCancel` is distinct from `canSubmit`: a role that may post is not
+    /// implicitly allowed to reverse unless it is also granted cancel.
+    func testCancelRequiresCancelRightEvenWhenSubmitGranted() throws {
+        let h = try TestSupport.makeHarness(failClosedForSubmittable: true)
+        defer { TestSupport.cleanUp(databaseURL: h.url) }
+        let postNotReverse = PermissionRule(
+            role: "Poster", canRead: true, canWrite: true, canCreate: true,
+            canDelete: false, canSubmit: true, canAmend: false, canCancel: false
+        )
+        try h.registry.register(makeSubmittable(perms: [postNotReverse]))
+        let ctx = ExecutionContext(operatorId: "u", roles: ["Poster"], deviceId: "d")
+        var doc = try h.engine.save(invoice("L2"), context: ctx)
+        try h.engine.submit(&doc, context: ctx) // submit is granted
+        if let fetched = try h.engine.fetch(docType: "Invoice", id: "L2") { doc = fetched }
+        XCTAssertThrowsError(try h.engine.cancel(&doc, context: ctx)) { assertPermissionDenied($0) }
+    }
+
+    /// A fully granted role completes the whole submit → cancel → amend cycle.
+    func testGrantingRoleCompletesLifecycle() throws {
+        let h = try TestSupport.makeHarness(failClosedForSubmittable: true)
+        defer { TestSupport.cleanUp(databaseURL: h.url) }
+        try h.registry.register(makeSubmittable(perms: [TestSupport.permissionRule(role: "Accountant")]))
+        let ctx = ExecutionContext(operatorId: "u", roles: ["Accountant"], deviceId: "d")
+        var doc = try h.engine.save(invoice("L3"), context: ctx)
+        XCTAssertNoThrow(try h.engine.submit(&doc, context: ctx))
+        if let fetched = try h.engine.fetch(docType: "Invoice", id: "L3") { doc = fetched }
+        XCTAssertNoThrow(try h.engine.cancel(&doc, context: ctx))
+        if let fetched = try h.engine.fetch(docType: "Invoice", id: "L3") { doc = fetched }
+        XCTAssertNoThrow(try h.engine.amend(doc, context: ctx))
+    }
 }

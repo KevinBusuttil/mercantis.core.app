@@ -831,6 +831,7 @@ public struct PermissionStage: ValidationStage {
         case .delete: return "delete"
         case .submit: return "submit"
         case .amend:  return "amend"
+        case .cancel: return "cancel"
         }
     }
 }
