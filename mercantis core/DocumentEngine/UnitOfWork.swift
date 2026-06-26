@@ -82,4 +82,23 @@ public struct UnitOfWork {
     public func execute(sql: String, arguments: StatementArguments = StatementArguments()) throws {
         try db.execute(sql: sql, arguments: arguments)
     }
+
+    // MARK: - Posting (Phase 1)
+
+    /// Record a posting batch in this transaction, so it commits atomically with
+    /// the source document's submit. Stamps `postedBy` with the operator when not
+    /// already set.
+    public func recordPostingBatch(_ batch: PostingBatch) throws {
+        var batch = batch
+        if batch.postedBy.isEmpty {
+            batch.postedBy = context.operatorId
+        }
+        try PostingBatchWriter.upsert(batch, in: db)
+    }
+
+    /// Whether a posting batch with `id` already exists — the idempotency guard
+    /// for re-fired / replayed posting in this transaction.
+    public func postingBatchExists(id: String) throws -> Bool {
+        try PostingBatchWriter.exists(id: id, in: db)
+    }
 }

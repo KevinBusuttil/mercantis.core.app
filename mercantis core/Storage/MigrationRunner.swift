@@ -88,6 +88,7 @@ public struct MigrationRunner {
         runner.register(version: 10, name: "add_attachments", sql: MigrationRunner.v10SQL)
         runner.register(version: 11, name: "add_notification_log", sql: MigrationRunner.v11SQL)
         runner.register(version: 12, name: "add_custom_fields", sql: MigrationRunner.v12SQL)
+        runner.register(version: 13, name: "add_posting_batches", sql: MigrationRunner.v13SQL)
     }
 
     // MARK: - v1 Schema
@@ -400,5 +401,37 @@ public struct MigrationRunner {
 
         CREATE INDEX IF NOT EXISTS idx_custom_fields_doctype
             ON custom_fields(doctype);
+        """
+
+    // MARK: - v13 Schema — posting_batches (Phase 1 / atomic posting)
+
+    private static let v13SQL = """
+        -- One row per posting attempt for a submittable source document. The
+        -- batch is written in the SAME transaction as the source document's
+        -- submit (via UnitOfWork), so a submitted financial / stock document can
+        -- never silently end up unposted, partially posted, or unbalanced: either
+        -- the batch row (status='posted') and its ledger rows commit together, or
+        -- the whole submit rolls back.
+        --
+        -- `id` is deterministic (`POST-<sourceId>-v<version>`) so a retry is
+        -- idempotent. `status`: pending | posted | failed | reversed.
+        -- `reversalOfBatch` links a reversal batch to the batch it reverses.
+        CREATE TABLE IF NOT EXISTS posting_batches (
+            id              TEXT    PRIMARY KEY NOT NULL,
+            sourceType      TEXT    NOT NULL,
+            sourceId        TEXT    NOT NULL,
+            status          TEXT    NOT NULL DEFAULT 'pending',
+            version         INTEGER NOT NULL DEFAULT 1,
+            errorCode       TEXT,
+            errorMessage    TEXT,
+            postedAt        TEXT,
+            postedBy        TEXT    NOT NULL DEFAULT '',
+            reversalOfBatch TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_posting_batches_source
+            ON posting_batches(sourceType, sourceId);
+        CREATE INDEX IF NOT EXISTS idx_posting_batches_status
+            ON posting_batches(status);
         """
 }
