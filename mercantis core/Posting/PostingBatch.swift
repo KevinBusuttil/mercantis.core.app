@@ -15,7 +15,7 @@ import Foundation
 import GRDB
 
 /// Lifecycle of a posting attempt.
-public enum PostingStatus: String, Codable, Sendable {
+public nonisolated enum PostingStatus: String, Codable, Sendable {
     /// Reserved but not yet completed (rare in the atomic path; used by recovery).
     case pending
     /// Ledger rows written and committed.
@@ -27,7 +27,7 @@ public enum PostingStatus: String, Codable, Sendable {
 }
 
 /// One posting attempt for a source document.
-public struct PostingBatch: Identifiable, Codable, Sendable, Equatable {
+public nonisolated struct PostingBatch: Identifiable, Codable, Sendable, Equatable {
     public let id: String
     public let sourceType: String
     public let sourceId: String
