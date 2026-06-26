@@ -355,7 +355,17 @@ public final class DocumentEngine {
 
         if let docType = registry.get(doc.docType) {
             try validator.validate(docType)
-            doc = try runValidationPipeline(on: doc, docType: docType, isNew: existing == nil)
+            // Remote applies are already validated on the origin device; run
+            // validation under an explicit system context so they are neither
+            // re-gated by, nor consult, the local operator's ambient context
+            // (which may not even be resolvable off the main thread). (P0.2/P0.4)
+            let remoteContext = ExecutionContext.system(
+                operatorId: mutation.userId.isEmpty ? userId : mutation.userId,
+                deviceId: mutation.deviceId
+            )
+            doc = try runValidationPipeline(
+                on: doc, docType: docType, isNew: existing == nil, context: remoteContext
+            )
             if doc.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: doc, docType: docType)
             }
