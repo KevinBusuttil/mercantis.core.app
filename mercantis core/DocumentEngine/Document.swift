@@ -76,7 +76,7 @@ public enum SyncState: String, Codable, Sendable {
 }
 
 /// A single child row belonging to a parent document.
-public struct ChildRow: Identifiable, Codable, Sendable {
+public struct ChildRow: Identifiable, Codable, Sendable, Equatable {
     public let id: String
     public var rowIndex: Int
     public var fields: [String: FieldValue]

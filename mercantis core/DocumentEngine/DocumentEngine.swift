@@ -103,6 +103,16 @@ public final class DocumentEngine {
     private let attachmentManager: AttachmentManager?
     private let deviceId: String
     private let userId: String
+    /// When true, submittable DocTypes are fail-closed in the permission stage
+    /// (P0.4). Off by default so enabling it is a deliberate deployment choice.
+    private let failClosedForSubmittable: Bool
+
+    /// Ambient execution-context provider (P0.2). When a call supplies no
+    /// explicit `context:`, the engine consults this before falling back to the
+    /// instance identity. Hub points it at the signed-in operator so audit and
+    /// permission checks reflect the live operator without threading a context
+    /// through every call site.
+    private var contextProvider: (() -> ExecutionContext?)?
 
     public init(
         database: MercantisDatabase,
@@ -113,7 +123,9 @@ public final class DocumentEngine {
         validationPipeline: ValidationPipeline = ValidationPipeline(),
         namingService: NamingService = NamingService(),
         permissionEngine: PermissionEngine = PermissionEngine(),
-        attachmentManager: AttachmentManager? = nil
+        attachmentManager: AttachmentManager? = nil,
+        failClosedForSubmittable: Bool = false,
+        contextProvider: (() -> ExecutionContext?)? = nil
     ) {
         self.database = database
         self.registry = registry
@@ -127,6 +139,26 @@ public final class DocumentEngine {
         self.attachmentManager = attachmentManager
         self.deviceId = deviceId
         self.userId = userId
+        self.failClosedForSubmittable = failClosedForSubmittable
+        self.contextProvider = contextProvider
+    }
+
+    // MARK: - Execution context (P0.1 / P0.2)
+
+    /// Set (or replace) the ambient execution-context provider (P0.2). Hub uses
+    /// this to resolve the currently signed-in operator at call time.
+    public func setExecutionContextProvider(_ provider: (() -> ExecutionContext?)?) {
+        self.contextProvider = provider
+    }
+
+    /// Resolve the per-operation `ExecutionContext`. Precedence: an explicit
+    /// `context:` argument, then the ambient `contextProvider` (the live
+    /// operator), then a `.legacy(...)` context built from the engine's
+    /// constructor identity so pre-P0.1 call sites are unchanged.
+    private func resolved(_ context: ExecutionContext?) -> ExecutionContext {
+        if let context { return context }
+        if let provided = contextProvider?() { return provided }
+        return ExecutionContext.legacy(userId: userId, deviceId: deviceId)
     }
 
     // MARK: - Cross-document lookup (ADR-029, P2.2)
@@ -151,14 +183,21 @@ public final class DocumentEngine {
     /// If `document.id` is empty, `NamingService` resolves it from the DocType's
     /// `autoname` (defaulting to UUIDv7). (P1.1 / ADR-014)
     @discardableResult
-    public func save(_ document: Document, userSuppliedName: String? = nil) throws -> Document {
+    public func save(
+        _ document: Document,
+        userSuppliedName: String? = nil,
+        context: ExecutionContext? = nil,
+        lifecycleAudit: LifecycleAudit? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
+    ) throws -> Document {
+        let ctx = resolved(context)
         var document = try assigningNameIfNeeded(document, userSuppliedName: userSuppliedName)
 
         let existing = try loadExistingState(docType: document.docType, id: document.id)
 
         if let docType = registry.get(document.docType) {
             try validator.validate(docType)
-            document = try runValidationPipeline(on: document, docType: docType, isNew: existing == nil)
+            document = try runValidationPipeline(on: document, docType: docType, isNew: existing == nil, context: ctx)
 
             if document.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: document, docType: docType)
@@ -183,8 +222,8 @@ public final class DocumentEngine {
             id: UUID(),
             type: .upsertDocument,
             payload: try encoder.encode(document),
-            deviceId: deviceId,
-            userId: userId,
+            deviceId: ctx.deviceId,
+            userId: ctx.operatorId,
             localTimestamp: Date(),
             syncVersion: document.syncVersion,
             status: .pending
@@ -208,18 +247,38 @@ public final class DocumentEngine {
             try recordDocumentVersion(
                 db, document: document,
                 savedAt: saveTimestamp,
-                savedBy: userId,
-                oldFields: oldFields
+                savedBy: ctx.operatorId,
+                oldFields: oldFields,
+                oldChildren: existing?.children ?? [:]
             )
             try auditLogWriter.append(
                 documentId: document.id,
                 docType: document.docType,
-                userId: userId,
+                userId: ctx.operatorId,
                 action: auditAction,
                 before: existing == nil ? nil : oldFields,
                 after: document.fields,
                 in: db
             )
+            // P0.8: the lifecycle audit row (submit/cancel/amend) commits in the
+            // SAME transaction as the docStatus change — no second transaction.
+            if let lifecycleAudit {
+                try auditLogWriter.append(
+                    AuditLogEntry(
+                        documentId: document.id,
+                        docType: document.docType,
+                        userId: ctx.operatorId,
+                        action: lifecycleAudit.action,
+                        payloadJSON: lifecycleAudit.extraJSON
+                    ),
+                    in: db
+                )
+            }
+            // P0.8: the unit-of-work seam. Anything the caller does here (Phase 1
+            // posting batches) commits atomically with the document.
+            if let inTransaction {
+                try inTransaction(UnitOfWork(db: db, context: ctx, auditLogWriter: auditLogWriter))
+            }
         }
 
         eventEmitter.publish(DocumentSavedEvent(
@@ -296,7 +355,17 @@ public final class DocumentEngine {
 
         if let docType = registry.get(doc.docType) {
             try validator.validate(docType)
-            doc = try runValidationPipeline(on: doc, docType: docType, isNew: existing == nil)
+            // Remote applies are already validated on the origin device; run
+            // validation under an explicit system context so they are neither
+            // re-gated by, nor consult, the local operator's ambient context
+            // (which may not even be resolvable off the main thread). (P0.2/P0.4)
+            let remoteContext = ExecutionContext.system(
+                operatorId: mutation.userId.isEmpty ? userId : mutation.userId,
+                deviceId: mutation.deviceId
+            )
+            doc = try runValidationPipeline(
+                on: doc, docType: docType, isNew: existing == nil, context: remoteContext
+            )
             if doc.docStatus == 1 && docType.isSubmittable {
                 try enforceSubmitImmutability(document: doc, docType: docType)
             }
@@ -327,7 +396,8 @@ public final class DocumentEngine {
                 db, document: doc,
                 savedAt: savedAt,
                 savedBy: savedBy,
-                oldFields: oldFields
+                oldFields: oldFields,
+                oldChildren: existing?.children ?? [:]
             )
             try auditLogWriter.append(
                 documentId: doc.id,
@@ -349,7 +419,8 @@ public final class DocumentEngine {
     // MARK: - Delete
 
     /// Delete a document. Appends a `deleteDocument` mutation atomically.
-    public func delete(docType: String, id: String) throws {
+    public func delete(docType: String, id: String, context: ExecutionContext? = nil) throws {
+        let ctx = resolved(context)
         // ADR-013: Submitted documents cannot be deleted directly.
         let existing = try fetch(docType: docType, id: id)
         if let existing = existing, existing.docStatus == 1 {
@@ -361,8 +432,8 @@ public final class DocumentEngine {
             id: UUID(),
             type: .deleteDocument,
             payload: deletePayload,
-            deviceId: deviceId,
-            userId: userId,
+            deviceId: ctx.deviceId,
+            userId: ctx.operatorId,
             localTimestamp: Date(),
             syncVersion: 0,
             status: .pending
@@ -394,7 +465,7 @@ public final class DocumentEngine {
             try auditLogWriter.append(
                 documentId: id,
                 docType: docType,
-                userId: userId,
+                userId: ctx.operatorId,
                 action: "delete",
                 before: existing?.fields,
                 after: nil,
@@ -406,7 +477,7 @@ public final class DocumentEngine {
         // transaction because attachment metadata + bytes have their own
         // atomic boundary inside `AttachmentManager.deleteAll(...)`.
         if let attachmentManager {
-            try? attachmentManager.deleteAll(forDocumentId: id, userId: userId)
+            try? attachmentManager.deleteAll(forDocumentId: id, userId: ctx.operatorId)
         }
 
         eventEmitter.publish(DocumentDeletedEvent(
@@ -418,7 +489,12 @@ public final class DocumentEngine {
     // MARK: - Submit (ADR-013)
 
     /// Submit a document, transitioning it from Draft (docStatus 0) to Submitted (docStatus 1).
-    public func submit(_ document: inout Document) throws {
+    public func submit(
+        _ document: inout Document,
+        context: ExecutionContext? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
+    ) throws {
+        let ctx = resolved(context)
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
         }
@@ -438,12 +514,11 @@ public final class DocumentEngine {
         // made a freshly-fetched document look stale and threw
         // `concurrencyConflict` whenever a second had elapsed since the last
         // save (ISO8601 second-truncation only hid it within the same second).
-        try save(document)
-
-        try writeLifecycleAuditEntry(
-            documentId: document.id,
-            docType: document.docType,
-            action: "submit"
+        try save(
+            document,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(action: "submit"),
+            inTransaction: inTransaction
         )
 
         eventEmitter.publish(DocumentSubmittedEvent(
@@ -456,7 +531,12 @@ public final class DocumentEngine {
 
     /// Cancel a submitted document, transitioning it from Submitted (1) to Cancelled (2).
     /// Rejects if any downstream submitted document holds a Link field pointing here. (ADR-013)
-    public func cancel(_ document: inout Document) throws {
+    public func cancel(
+        _ document: inout Document,
+        context: ExecutionContext? = nil,
+        inTransaction: ((UnitOfWork) throws -> Void)? = nil
+    ) throws {
+        let ctx = resolved(context)
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
         }
@@ -481,12 +561,11 @@ public final class DocumentEngine {
         // See `submit(...)`: leave `updatedAt` untouched so the optimistic
         // concurrency check in `save(...)` compares like-for-like against the
         // stored row and stamps its own fresh timestamp.
-        try save(document)
-
-        try writeLifecycleAuditEntry(
-            documentId: document.id,
-            docType: document.docType,
-            action: "cancel"
+        try save(
+            document,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(action: "cancel"),
+            inTransaction: inTransaction
         )
 
         eventEmitter.publish(DocumentCancelledEvent(
@@ -499,7 +578,8 @@ public final class DocumentEngine {
 
     /// Amend a cancelled document by creating a new Draft copy. `parentID` is not
     /// inherited — the amended copy is placed at the tree root. (ADR-013)
-    public func amend(_ document: Document) throws -> Document {
+    public func amend(_ document: Document, context: ExecutionContext? = nil) throws -> Document {
+        let ctx = resolved(context)
         guard let docType = registry.get(document.docType) else {
             throw DocumentEngineError.docTypeNotFound(document.docType)
         }
@@ -540,13 +620,13 @@ public final class DocumentEngine {
         }
         amended.children = newChildren
 
-        try save(amended)
-
-        try writeLifecycleAuditEntry(
-            documentId: amended.id,
-            docType: amended.docType,
-            action: "amend",
-            extraJSON: "{\"amendedFrom\":\"\(document.id)\"}"
+        try save(
+            amended,
+            context: ctx,
+            lifecycleAudit: LifecycleAudit(
+                action: "amend",
+                extraJSON: "{\"amendedFrom\":\"\(document.id)\"}"
+            )
         )
 
         eventEmitter.publish(DocumentAmendedEvent(
@@ -556,29 +636,6 @@ public final class DocumentEngine {
         ))
 
         return amended
-    }
-
-    /// Append a single audit row for a lifecycle action (submit/cancel/amend).
-    /// Lives outside the save's atomic block — the save itself is durable, and
-    /// adding a follow-on audit row keeps the writer composable.
-    private func writeLifecycleAuditEntry(
-        documentId: String,
-        docType: String,
-        action: String,
-        extraJSON: String = "{}"
-    ) throws {
-        try database.write { db in
-            try auditLogWriter.append(
-                AuditLogEntry(
-                    documentId: documentId,
-                    docType: docType,
-                    userId: userId,
-                    action: action,
-                    payloadJSON: extraJSON
-                ),
-                in: db
-            )
-        }
     }
 
     // MARK: - Audit log readers (Phase A §3.2)
@@ -1203,12 +1260,15 @@ public final class DocumentEngine {
     private func runValidationPipeline(
         on document: Document,
         docType: DocType,
-        isNew: Bool
+        isNew: Bool,
+        context: ExecutionContext? = nil
     ) throws -> Document {
+        let exec = resolved(context)
         var document = document
         let ctx = ValidationContext(
             docType: docType,
-            userId: userId,
+            userId: exec.operatorId,
+            userRoles: exec.roles,
             operation: isNew ? .create : .write,
             expressionEvaluator: ExpressionEvaluator(),
             documentExists: { [weak self] linkedDocType, linkedId in
@@ -1229,7 +1289,12 @@ public final class DocumentEngine {
             previousStatus: { [weak self] docTypeName, docId in
                 guard let self else { return nil }
                 return try? self.loadStatus(docType: docTypeName, id: docId)
-            }
+            },
+            childDocTypeProvider: { [weak self] childTypeName in
+                self?.registry.get(childTypeName)
+            },
+            isSystemOperation: exec.isSystemOperation,
+            failClosedForSubmittable: failClosedForSubmittable
         )
         let errors = validationPipeline.validate(document: &document, context: ctx)
         if !errors.isEmpty {
@@ -1269,24 +1334,51 @@ public final class DocumentEngine {
     private func loadExistingState(
         docType: String,
         id: String
-    ) throws -> (updatedAt: String?, fields: [String: FieldValue])? {
-        let row = try database.read { db in
-            try Row.fetchOne(
+    ) throws -> (updatedAt: String?, fields: [String: FieldValue], children: [String: [ChildRow]])? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let (row, childRows) = try database.read { db -> (Row?, [Row]) in
+            let row = try Row.fetchOne(
                 db,
                 sql: "SELECT updatedAt, payload FROM documents WHERE id = ? AND doctype = ? LIMIT 1",
                 arguments: [id, docType]
             )
+            guard row != nil else { return (nil, []) }
+            let childRows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, tableName, rowIndex, payload FROM document_children
+                    WHERE parentId = ?
+                    ORDER BY tableName ASC, rowIndex ASC
+                    """,
+                arguments: [id]
+            )
+            return (row, childRows)
         }
         guard let row = row else { return nil }
+
         let updatedAt: String? = row["updatedAt"]
         var fields: [String: FieldValue] = [:]
         let payloadString: String = row["payload"] ?? "{}"
         if let data = payloadString.data(using: .utf8) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
             fields = (try? decoder.decode([String: FieldValue].self, from: data)) ?? [:]
         }
-        return (updatedAt, fields)
+
+        var children: [String: [ChildRow]] = [:]
+        for childRow in childRows {
+            let childId: String = childRow["id"] ?? ""
+            let tableName: String = childRow["tableName"] ?? ""
+            let rowIndex: Int = childRow["rowIndex"] ?? 0
+            let childPayload: String = childRow["payload"] ?? "{}"
+            let rowFields = (childPayload.data(using: .utf8)
+                .flatMap { try? decoder.decode([String: FieldValue].self, from: $0) }) ?? [:]
+            children[tableName, default: []].append(
+                ChildRow(id: childId, rowIndex: rowIndex, fields: rowFields)
+            )
+        }
+
+        return (updatedAt, fields, children)
     }
 
     private func upsertDocumentRow(
@@ -1403,9 +1495,13 @@ public final class DocumentEngine {
         document: Document,
         savedAt: Date,
         savedBy: String,
-        oldFields: [String: FieldValue]
+        oldFields: [String: FieldValue],
+        oldChildren: [String: [ChildRow]] = [:]
     ) throws {
-        let diffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
+        // Parent-field diffs plus child-row diffs (P0.6), so a submitted
+        // document's line-item edits are captured in version history too.
+        var diffs = computeFieldDiffs(oldFields: oldFields, newFields: document.fields)
+        diffs.append(contentsOf: computeChildDiffs(oldChildren: oldChildren, newChildren: document.children))
         guard !diffs.isEmpty else { return }
 
         let version = DocumentVersion(
@@ -1474,6 +1570,21 @@ public final class DocumentEngine {
             if oldValue != newValue && !allowedKeys.contains(key) {
                 throw DocumentEngineError.fieldImmutableAfterSubmit(
                     fieldKey: key, documentId: document.id
+                )
+            }
+        }
+
+        // Child rows are frozen after submit too (P0.6), unless the table field
+        // is explicitly `allowOnSubmit`. Rows are compared in (rowIndex, id)
+        // order so a stable reorder is not mistaken for an edit.
+        for field in docType.fields where field.type == .table && !field.allowOnSubmit {
+            let oldRows = (existing.children[field.key] ?? [])
+                .sorted { ($0.rowIndex, $0.id) < ($1.rowIndex, $1.id) }
+            let newRows = (document.children[field.key] ?? [])
+                .sorted { ($0.rowIndex, $0.id) < ($1.rowIndex, $1.id) }
+            if oldRows != newRows {
+                throw DocumentEngineError.fieldImmutableAfterSubmit(
+                    fieldKey: field.key, documentId: document.id
                 )
             }
         }

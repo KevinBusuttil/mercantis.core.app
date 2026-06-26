@@ -67,6 +67,22 @@ public struct ValidationContext: Sendable {
     /// `WorkflowGuardStage` to detect state transitions. Default: always nil.
     public let previousStatus: @Sendable (String, String) -> String?
 
+    /// Resolve a child DocType definition by name. Used by
+    /// `ChildTableValidationStage` (P0.5) to validate table rows against their
+    /// declared child DocType. Default: always nil (no child validation).
+    public let childDocTypeProvider: @Sendable (String) -> DocType?
+
+    /// Whether this operation is an explicit system / import / migration action.
+    /// When true, `PermissionStage` does not gate it. (P0.4)
+    public let isSystemOperation: Bool
+
+    /// When true, submittable (financial / transactional) DocTypes are
+    /// fail-CLOSED in `PermissionStage`: an empty role set or a DocType with no
+    /// declared permission rules is denied rather than allowed. Defaults to
+    /// false so the legacy permissive behaviour is unchanged until a deployment
+    /// opts in (Hub does so once roles + operator propagation are wired). (P0.4)
+    public let failClosedForSubmittable: Bool
+
     public init(
         docType: DocType,
         userId: String = "",
@@ -77,7 +93,10 @@ public struct ValidationContext: Sendable {
         documentExists: @escaping @Sendable (String, String) -> Bool = { _, _ in true },
         uniqueConflictExists: @escaping @Sendable (String, String, FieldValue, String) -> Bool = { _, _, _, _ in false },
         workflowProvider: @escaping @Sendable (String) -> WorkflowDefinition? = { _ in nil },
-        previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil }
+        previousStatus: @escaping @Sendable (String, String) -> String? = { _, _ in nil },
+        childDocTypeProvider: @escaping @Sendable (String) -> DocType? = { _ in nil },
+        isSystemOperation: Bool = false,
+        failClosedForSubmittable: Bool = false
     ) {
         self.docType = docType
         self.userId = userId
@@ -89,6 +108,9 @@ public struct ValidationContext: Sendable {
         self.uniqueConflictExists = uniqueConflictExists
         self.workflowProvider = workflowProvider
         self.previousStatus = previousStatus
+        self.childDocTypeProvider = childDocTypeProvider
+        self.isSystemOperation = isSystemOperation
+        self.failClosedForSubmittable = failClosedForSubmittable
     }
 }
 
@@ -134,6 +156,7 @@ public final class ValidationPipeline {
             RequiredFieldStage(),
             LinkValidationStage(),
             UniqueConstraintStage(),
+            ChildTableValidationStage(),
             ValidationRuleStage(),
             WorkflowGuardStage(),
             PermissionStage()
@@ -456,6 +479,140 @@ public struct UniqueConstraintStage: ValidationStage {
     }
 }
 
+// MARK: - Stage 4b: Child Table Validation (P0.5)
+
+/// Recursively validates child-table rows against their declared child DocType.
+///
+/// Before this stage, a `.table` field was only checked for emptiness
+/// (`RequiredFieldStage`); the *contents* of each row received no type, option,
+/// link, or rule validation, so financial line items (qty, rate, item link,
+/// tax code) could be persisted with invalid or dangling values. This stage
+/// runs the field-level stages (`TypeCoercion`, `RequiredField`,
+/// `LinkValidation`, `ValidationRule`) against every row of every table field
+/// whose child DocType resolves via `context.childDocTypeProvider`, and also
+/// enforces the child DocType's unique indexes *within the table scope*
+/// (e.g. no duplicate item line if the child DocType marks `item` unique).
+///
+/// Errors are re-attributed with a `tableKey[rowIndex].field` path and a
+/// human-readable "Row N:" prefix so the UI can point at the offending cell.
+///
+/// When a table field has no resolvable child DocType (legacy / untyped
+/// tables), its rows are skipped — behaviour is unchanged for those.
+public struct ChildTableValidationStage: ValidationStage {
+    public let stageName = "ChildTableValidation"
+
+    /// Field-level stages re-used per child row. Unique/Workflow/Permission are
+    /// parent-scoped and intentionally excluded; child uniqueness is handled
+    /// table-locally below.
+    private let rowStages: [ValidationStage] = [
+        TypeCoercionStage(),
+        RequiredFieldStage(),
+        LinkValidationStage(),
+        ValidationRuleStage()
+    ]
+
+    public init() {}
+
+    public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
+        var errors: [DocumentValidationError] = []
+
+        for field in context.docType.fields where field.type == .table {
+            guard let childTypeName = field.childDocType,
+                  let childType = context.childDocTypeProvider(childTypeName) else {
+                continue
+            }
+            let rows = document.children[field.key] ?? []
+
+            // Per-row field validation.
+            for (index, row) in rows.enumerated() {
+                let childDoc = makeChildDocument(row: row, childType: childType, parent: document)
+                let childContext = makeChildContext(childType: childType, parent: context)
+                for stage in rowStages {
+                    for error in stage.validate(document: childDoc, context: childContext) {
+                        errors.append(DocumentValidationError(
+                            stage: stageName,
+                            field: rowFieldPath(table: field.key, index: index, field: error.field),
+                            message: "Row \(index + 1): \(error.message)"
+                        ))
+                    }
+                }
+            }
+
+            // Table-scoped uniqueness: enforce the child DocType's unique
+            // indexes across the rows of this one table (P0.5 duplicate-row
+            // detection). Legitimate exact-duplicate lines are allowed unless
+            // the child DocType explicitly marks a field unique.
+            errors.append(contentsOf: duplicateRowErrors(rows: rows, childType: childType, tableKey: field.key))
+        }
+
+        return errors
+    }
+
+    private func makeChildDocument(row: ChildRow, childType: DocType, parent: Document) -> Document {
+        Document(
+            id: row.id,
+            docType: childType.id,
+            company: parent.company,
+            status: "",
+            createdAt: parent.createdAt,
+            updatedAt: parent.updatedAt,
+            syncVersion: 0,
+            syncState: .local,
+            fields: row.fields,
+            children: [:]
+        )
+    }
+
+    private func makeChildContext(childType: DocType, parent: ValidationContext) -> ValidationContext {
+        ValidationContext(
+            docType: childType,
+            userId: parent.userId,
+            userRoles: parent.userRoles,
+            operation: parent.operation,
+            expressionEvaluator: parent.expressionEvaluator,
+            permissionEngine: parent.permissionEngine,
+            documentExists: parent.documentExists,
+            // Child uniqueness is handled table-locally, not against the store.
+            uniqueConflictExists: { _, _, _, _ in false },
+            workflowProvider: { _ in nil },
+            previousStatus: { _, _ in nil },
+            childDocTypeProvider: parent.childDocTypeProvider
+        )
+    }
+
+    private func rowFieldPath(table: String, index: Int, field: String?) -> String {
+        guard let field else { return "\(table)[\(index)]" }
+        return "\(table)[\(index)].\(field)"
+    }
+
+    private func duplicateRowErrors(rows: [ChildRow], childType: DocType, tableKey: String) -> [DocumentValidationError] {
+        var errors: [DocumentValidationError] = []
+        for index in childType.indexes where index.unique {
+            // (value, firstRowIndex) pairs; linear scan keeps this dependent only
+            // on FieldValue: Equatable (it is not guaranteed Hashable).
+            var seen: [(value: FieldValue, row: Int)] = []
+            for (rowIndex, row) in rows.enumerated() {
+                guard let value = row.fields[index.fieldKey], !isNull(value) else { continue }
+                if let first = seen.first(where: { $0.value == value }) {
+                    errors.append(DocumentValidationError(
+                        stage: stageName,
+                        field: rowFieldPath(table: tableKey, index: rowIndex, field: index.fieldKey),
+                        message: "Row \(rowIndex + 1): duplicates '\(index.fieldKey)' from row \(first.row + 1)."
+                    ))
+                } else {
+                    seen.append((value, rowIndex))
+                }
+            }
+        }
+        return errors
+    }
+
+    private func isNull(_ value: FieldValue) -> Bool {
+        if case .null = value { return true }
+        return false
+    }
+}
+
 // MARK: - Stage 5: Validation Rule
 
 /// `ValidationRule` expressions declared in the DocType are evaluated
@@ -599,8 +756,34 @@ public struct PermissionStage: ValidationStage {
     public init() {}
 
     public func validate(document: Document, context: ValidationContext) -> [DocumentValidationError] {
-        guard !context.userRoles.isEmpty else { return [] }
-        guard !context.docType.permissions.isEmpty else { return [] }
+        // Explicit system / import / migration operations are never gated. (P0.4)
+        if context.isSystemOperation { return [] }
+
+        // Submittable (financial / transactional) DocTypes are fail-CLOSED when a
+        // deployment opts in: they must not silently allow an unauthenticated or
+        // unconstrained write. Non-submittable masters keep the legacy permissive
+        // behaviour, and the whole tightening is off by default. (P0.4)
+        let requiresExplicitGrant = context.failClosedForSubmittable && context.docType.isSubmittable
+
+        guard !context.userRoles.isEmpty else {
+            if requiresExplicitGrant {
+                return [deniedError(
+                    context,
+                    reason: "requires an authenticated operator with a granting role"
+                )]
+            }
+            return []
+        }
+
+        guard !context.docType.permissions.isEmpty else {
+            if requiresExplicitGrant {
+                return [deniedError(
+                    context,
+                    reason: "declares no permission rules, so no role may \(describe(context.operation)) it"
+                )]
+            }
+            return []
+        }
 
         let allowed = context.permissionEngine.canPerform(
             operation: context.operation,
@@ -608,13 +791,18 @@ public struct PermissionStage: ValidationStage {
             userRoles: context.userRoles
         )
         if !allowed {
-            return [DocumentValidationError(
-                stage: stageName,
-                field: nil,
-                message: "User does not have permission to \(describe(context.operation)) '\(context.docType.name)' documents."
-            )]
+            return [deniedError(context, reason: nil)]
         }
         return []
+    }
+
+    private func deniedError(_ context: ValidationContext, reason: String?) -> DocumentValidationError {
+        let base = "User does not have permission to \(describe(context.operation)) '\(context.docType.name)' documents."
+        return DocumentValidationError(
+            stage: stageName,
+            field: nil,
+            message: reason.map { "\(base) (\($0))" } ?? base
+        )
     }
 
     private func describe(_ operation: DocumentOperation) -> String {
