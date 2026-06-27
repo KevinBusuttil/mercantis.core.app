@@ -35,10 +35,11 @@ public struct PrintRecordButton: View {
     /// single (default) format directly.
     private let formatsResolver: (Document) -> [PrintFormat]
     /// Optional last-mile transform applied to the document just before
-    /// rendering (only on print/share, not on every render) — e.g. resolving
-    /// link-field ids to display names so the output shows "Kevin Busuttil"
-    /// rather than a customer id. Identity when nil.
-    private let documentTransform: ((Document) -> Document)?
+    /// rendering (only on print/share, not on every render), given the chosen
+    /// format — e.g. resolving link-field ids to display names per the format's
+    /// link-display rules so the output shows "Kevin Busuttil" rather than a
+    /// customer id. Identity when nil.
+    private let documentTransform: ((Document, PrintFormat) -> Document)?
 
     @State private var errorMessage: String?
     @State private var showError = false
@@ -48,7 +49,7 @@ public struct PrintRecordButton: View {
     public init(
         document: Document,
         printService: PrintService,
-        documentTransform: ((Document) -> Document)? = nil,
+        documentTransform: ((Document, PrintFormat) -> Document)? = nil,
         formatResolver: @escaping (Document) -> PrintFormat
     ) {
         self.document = document
@@ -62,7 +63,7 @@ public struct PrintRecordButton: View {
     public init(
         document: Document,
         printService: PrintService,
-        documentTransform: ((Document) -> Document)? = nil,
+        documentTransform: ((Document, PrintFormat) -> Document)? = nil,
         formatsResolver: @escaping (Document) -> [PrintFormat]
     ) {
         self.document = document
@@ -116,7 +117,7 @@ public struct PrintRecordButton: View {
         do {
             // Ensure the chosen format is known to the service before render.
             printService.register(format: format)
-            let renderDocument = documentTransform?(document) ?? document
+            let renderDocument = documentTransform?(document, format) ?? document
             let result = try printService.render(
                 formatId: format.id,
                 document: renderDocument,

@@ -29,6 +29,18 @@ public struct LetterHead: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// How a link field renders on a printed document. An opaque id (UUID) is
+/// never printed as a code regardless of mode — it falls back to the name.
+public enum PrintLinkDisplay: String, Codable, Sendable, CaseIterable {
+    /// The linked record's name only ("Kevin Busuttil").
+    case name
+    /// The id/code only ("CUST-2026-0002"); falls back to name for UUID keys.
+    case code
+    /// Both, "code — name" ("CUST-2026-0002 — Kevin Busuttil"); name only for
+    /// UUID keys.
+    case codeAndName
+}
+
 /// Declarative print format for one DocType.
 ///
 /// Sections are rendered in order. Each section is a self-describing
@@ -43,6 +55,12 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
     /// When several formats exist for a DocType, the one to use unless the
     /// operator picks another. At most one per DocType should set this.
     public let isDefault: Bool
+    /// Default rendering for link fields in this format.
+    public let linkDisplay: PrintLinkDisplay
+    /// Per-field overrides of `linkDisplay`, keyed by field key (header or
+    /// child-row column), so a format can show, say, the item as code + name
+    /// while keeping the currency as name only.
+    public let fieldLinkDisplays: [String: PrintLinkDisplay]
     public let sections: [PrintSection]
 
     public init(
@@ -51,6 +69,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         docType: String,
         letterHeadId: String? = nil,
         isDefault: Bool = false,
+        linkDisplay: PrintLinkDisplay = .name,
+        fieldLinkDisplays: [String: PrintLinkDisplay] = [:],
         sections: [PrintSection]
     ) {
         self.id = id
@@ -58,11 +78,19 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         self.docType = docType
         self.letterHeadId = letterHeadId
         self.isDefault = isDefault
+        self.linkDisplay = linkDisplay
+        self.fieldLinkDisplays = fieldLinkDisplays
         self.sections = sections
     }
 
+    /// The display mode for a given field key (override → format default).
+    public func linkDisplay(forField key: String) -> PrintLinkDisplay {
+        fieldLinkDisplays[key] ?? linkDisplay
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case id, name, docType, letterHeadId, isDefault, sections
+        case id, name, docType, letterHeadId, isDefault
+        case linkDisplay, fieldLinkDisplays, sections
     }
 
     public init(from decoder: Decoder) throws {
@@ -72,6 +100,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         docType = try c.decode(String.self, forKey: .docType)
         letterHeadId = try c.decodeIfPresent(String.self, forKey: .letterHeadId)
         isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        linkDisplay = try c.decodeIfPresent(PrintLinkDisplay.self, forKey: .linkDisplay) ?? .name
+        fieldLinkDisplays = try c.decodeIfPresent([String: PrintLinkDisplay].self, forKey: .fieldLinkDisplays) ?? [:]
         sections = try c.decode([PrintSection].self, forKey: .sections)
     }
 }
