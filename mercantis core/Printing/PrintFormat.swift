@@ -41,6 +41,68 @@ public enum PrintLinkDisplay: String, Codable, Sendable, CaseIterable {
     case codeAndName
 }
 
+/// Overall page density preset.
+public enum PrintDensity: String, Codable, Sendable, CaseIterable {
+    case compact, standard, detailed
+    public var label: String {
+        switch self {
+        case .compact: return "Compact"
+        case .standard: return "Standard"
+        case .detailed: return "Detailed"
+        }
+    }
+}
+
+/// No-code presentation options for the generated (non-custom-HTML) layout:
+/// letterhead logo, density / typography, and the standing text blocks (footer,
+/// terms, bank details, signature). Ignored when a custom `htmlTemplate` is set.
+public struct PrintStyle: Codable, Sendable, Equatable {
+    public var showLogo: Bool
+    public var density: PrintDensity
+    public var baseFontPx: Int
+    public var footerText: String?
+    public var termsText: String?
+    public var bankDetails: String?
+    public var showSignature: Bool
+    public var signatureLabel: String?
+
+    public init(
+        showLogo: Bool = true,
+        density: PrintDensity = .standard,
+        baseFontPx: Int = 12,
+        footerText: String? = nil,
+        termsText: String? = nil,
+        bankDetails: String? = nil,
+        showSignature: Bool = false,
+        signatureLabel: String? = nil
+    ) {
+        self.showLogo = showLogo
+        self.density = density
+        self.baseFontPx = baseFontPx
+        self.footerText = footerText
+        self.termsText = termsText
+        self.bankDetails = bankDetails
+        self.showSignature = showSignature
+        self.signatureLabel = signatureLabel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case showLogo, density, baseFontPx, footerText, termsText, bankDetails, showSignature, signatureLabel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        showLogo = try c.decodeIfPresent(Bool.self, forKey: .showLogo) ?? true
+        density = try c.decodeIfPresent(PrintDensity.self, forKey: .density) ?? .standard
+        baseFontPx = try c.decodeIfPresent(Int.self, forKey: .baseFontPx) ?? 12
+        footerText = try c.decodeIfPresent(String.self, forKey: .footerText)
+        termsText = try c.decodeIfPresent(String.self, forKey: .termsText)
+        bankDetails = try c.decodeIfPresent(String.self, forKey: .bankDetails)
+        showSignature = try c.decodeIfPresent(Bool.self, forKey: .showSignature) ?? false
+        signatureLabel = try c.decodeIfPresent(String.self, forKey: .signatureLabel)
+    }
+}
+
 /// Declarative print format for one DocType.
 ///
 /// Sections are rendered in order. Each section is a self-describing
@@ -69,6 +131,9 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
     /// When nil a clean default stylesheet is used.
     public let css: String?
     public let sections: [PrintSection]
+    /// No-code presentation options for the generated layout (logo, density,
+    /// typography, standing text blocks). Ignored when `htmlTemplate` is set.
+    public let style: PrintStyle
 
     public init(
         id: String,
@@ -80,7 +145,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         fieldLinkDisplays: [String: PrintLinkDisplay] = [:],
         htmlTemplate: String? = nil,
         css: String? = nil,
-        sections: [PrintSection]
+        sections: [PrintSection],
+        style: PrintStyle = PrintStyle()
     ) {
         self.id = id
         self.name = name
@@ -92,6 +158,7 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         self.htmlTemplate = htmlTemplate
         self.css = css
         self.sections = sections
+        self.style = style
     }
 
     /// The display mode for a given field key (override → format default).
@@ -105,13 +172,13 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         PrintFormat(
             id: id, name: name, docType: docType, letterHeadId: letterHeadId,
             isDefault: flag, linkDisplay: linkDisplay, fieldLinkDisplays: fieldLinkDisplays,
-            htmlTemplate: htmlTemplate, css: css, sections: sections
+            htmlTemplate: htmlTemplate, css: css, sections: sections, style: style
         )
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, docType, letterHeadId, isDefault
-        case linkDisplay, fieldLinkDisplays, htmlTemplate, css, sections
+        case linkDisplay, fieldLinkDisplays, htmlTemplate, css, sections, style
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,6 +193,7 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         htmlTemplate = try c.decodeIfPresent(String.self, forKey: .htmlTemplate)
         css = try c.decodeIfPresent(String.self, forKey: .css)
         sections = try c.decode([PrintSection].self, forKey: .sections)
+        style = try c.decodeIfPresent(PrintStyle.self, forKey: .style) ?? PrintStyle()
     }
 }
 
