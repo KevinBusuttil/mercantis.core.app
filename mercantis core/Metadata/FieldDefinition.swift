@@ -173,6 +173,14 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     public var label: String
     public var type: FieldType
     public var required: Bool
+    /// Short guidance shown beneath the field's editor to explain what it is
+    /// for (e.g. "The account customer balances are posted to."). Surfaced by
+    /// `GenericFormView`; keep it to one plain-language sentence.
+    public var helpText: String?
+    /// Placeholder shown inside an empty text-like editor as an example or hint
+    /// (e.g. "name@business.com"). Ignored by controls that have no placeholder
+    /// concept (toggles, pickers, tables).
+    public var placeholder: String?
     public var defaultValue: FieldValue?
     public var options: [String]?              // for select / multiselect
     public var linkedDocType: String?          // for link fields
@@ -200,6 +208,8 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         label: String,
         type: FieldType,
         required: Bool,
+        helpText: String? = nil,
+        placeholder: String? = nil,
         defaultValue: FieldValue? = nil,
         options: [String]? = nil,
         linkedDocType: String? = nil,
@@ -221,6 +231,8 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         self.label = label
         self.type = type
         self.required = required
+        self.helpText = helpText
+        self.placeholder = placeholder
         self.defaultValue = defaultValue
         self.options = options
         self.linkedDocType = linkedDocType
@@ -240,7 +252,7 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case key, label, type, required, defaultValue, options
+        case key, label, type, required, helpText, placeholder, defaultValue, options
         case linkedDocType, childDocType, validationRules
         case visibilityExpression, readOnlyExpression, formulaExpression, fetchFrom
         case permissions, isSearchable, isSynced, allowOnSubmit
@@ -256,6 +268,8 @@ public struct FieldDefinition: Codable, Identifiable, Sendable {
         label = try c.decode(String.self, forKey: .label)
         type = try c.decode(FieldType.self, forKey: .type)
         required = try c.decode(Bool.self, forKey: .required)
+        helpText = try c.decodeIfPresent(String.self, forKey: .helpText)
+        placeholder = try c.decodeIfPresent(String.self, forKey: .placeholder)
         defaultValue = try c.decodeIfPresent(FieldValue.self, forKey: .defaultValue)
         options = try c.decodeIfPresent([String].self, forKey: .options)
         linkedDocType = try c.decodeIfPresent(String.self, forKey: .linkedDocType)

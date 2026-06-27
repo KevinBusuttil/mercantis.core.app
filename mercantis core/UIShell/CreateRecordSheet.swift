@@ -57,6 +57,13 @@ struct CreateRecordSheet: View {
                     .background(MercantisTheme.fillSoft(for: .danger))
             }
 
+            let prerequisites = missingPrerequisites
+            if !prerequisites.isEmpty {
+                PrerequisiteBanner(docTypeName: docType.name, missing: prerequisites)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+            }
+
             GenericFormView(
                 docType: docType,
                 document: $draft,
@@ -110,6 +117,18 @@ struct CreateRecordSheet: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(MercantisTheme.surface)
+    }
+
+    /// Master records this DocType depends on that don't exist yet. Empty when
+    /// no search provider is wired (we can't tell) or everything is present.
+    private var missingPrerequisites: [MissingPrerequisite] {
+        guard let linkSearchProvider else { return [] }
+        return FormPrerequisites.missing(
+            for: docType,
+            childDocType: { childDocTypeProvider?($0) },
+            isTargetEmpty: { linkSearchProvider($0, "").isEmpty },
+            displayName: { childDocTypeProvider?($0)?.name }
+        )
     }
 
     private func performCreate() {

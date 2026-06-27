@@ -48,6 +48,14 @@ public struct GenericFormView: View {
     /// Persists an inline-created draft and returns the saved document.
     let linkCommitProvider: ((Document) throws -> Document)?
 
+    /// Tracks which editor currently has keyboard focus so we can validate a
+    /// field the moment the user tabs/clicks away from it (on blur), instead of
+    /// only at Save time.
+    @FocusState private var focusedField: String?
+    /// Per-field validation messages, keyed by field key. Populated on blur and
+    /// cleared as soon as the user edits the offending field.
+    @State private var fieldErrors: [String: String] = [:]
+
     public init(
         docType: DocType,
         document: Binding<Document>,
@@ -95,6 +103,11 @@ public struct GenericFormView: View {
         .scrollContentBackground(.hidden)
         #endif
         .navigationTitle(docType.name)
+        .onChange(of: focusedField) { previous, _ in
+            // Validate the field the user just left (blur), so errors surface
+            // field-by-field instead of all at once on Save.
+            if let previous { validateField(key: previous) }
+        }
     }
 
     // MARK: - Section rendering
@@ -217,24 +230,71 @@ public struct GenericFormView: View {
             // their own label and span the full width with no leading label cell.
             layoutSeparator(field: field)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        } else if stacked || usesStackedLayout(field) {
-            VStack(alignment: .leading, spacing: 5) {
-                fieldLabel(for: field)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(MercantisTheme.textMuted)
-                fieldControl(for: field, isReadOnly: isReadOnly)
+        } else {
+            let stackedLayout = stacked || usesStackedLayout(field)
+            VStack(alignment: .leading, spacing: 4) {
+                if stackedLayout {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel(for: field)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(MercantisTheme.textMuted)
+                        decoratedControl(for: field, isReadOnly: isReadOnly)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    fieldFootnotes(for: field, indented: false)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        fieldLabel(for: field)
+                            .font(.system(size: 12))
+                            .foregroundStyle(MercantisTheme.textPrimary)
+                            .frame(width: 150, alignment: .leading)
+                        decoratedControl(for: field, isReadOnly: isReadOnly)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    fieldFootnotes(for: field, indented: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                fieldLabel(for: field)
-                    .font(.system(size: 12))
-                    .foregroundStyle(MercantisTheme.textPrimary)
-                    .frame(width: 150, alignment: .leading)
-                fieldControl(for: field, isReadOnly: isReadOnly)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The field's editor with a red outline when it currently has an inline
+    /// error. Focus tracking (for blur validation) lives on the individual text
+    /// editors, where `.focused` binds reliably.
+    private func decoratedControl(for field: FieldDefinition, isReadOnly: Bool) -> some View {
+        fieldControl(for: field, isReadOnly: isReadOnly)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(MercantisTheme.danger, lineWidth: 1)
+                    .opacity(fieldErrors[field.key] != nil ? 1 : 0)
+                    .allowsHitTesting(false)
+            )
+    }
+
+    /// Inline error (if any) plus the field's help text, shown beneath the
+    /// control. In the two-column / label-left layout these are indented to line
+    /// up under the control rather than the label.
+    @ViewBuilder
+    private func fieldFootnotes(for field: FieldDefinition, indented: Bool) -> some View {
+        let help = field.helpText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let error = fieldErrors[field.key]
+        if (help?.isEmpty == false) || (error?.isEmpty == false) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let error, !error.isEmpty {
+                    Label(error, systemImage: "exclamationmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(MercantisTheme.danger)
+                }
+                if let help, !help.isEmpty {
+                    Text(help)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .padding(.leading, indented ? 162 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -411,9 +471,10 @@ public struct GenericFormView: View {
             if isReadOnly {
                 Text(binding.wrappedValue).foregroundStyle(.secondary)
             } else {
-                TextField(field.label, text: binding)
+                TextField(field.label, text: binding, prompt: promptText(for: field))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
+                    .focused($focusedField, equals: field.key)
             }
         }
     }
@@ -426,6 +487,7 @@ public struct GenericFormView: View {
             } else {
                 TextEditor(text: binding)
                     .frame(minHeight: 90)
+                    .focused($focusedField, equals: field.key)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(.separator, lineWidth: 1)
@@ -444,10 +506,11 @@ public struct GenericFormView: View {
             if isReadOnly {
                 Text(strBinding.wrappedValue).foregroundStyle(.secondary)
             } else {
-                TextField(field.label, text: strBinding)
+                TextField(field.label, text: strBinding, prompt: promptText(for: field))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
+                    .focused($focusedField, equals: field.key)
 #if os(iOS)
                     .keyboardType(.decimalPad)
 #endif
@@ -587,9 +650,10 @@ public struct GenericFormView: View {
                 Text(binding.wrappedValue.isEmpty ? "No attachment" : binding.wrappedValue)
                     .foregroundStyle(.secondary)
             } else {
-                TextField("Attachment reference", text: binding)
+                TextField("Attachment reference", text: binding, prompt: promptText(for: field))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
+                    .focused($focusedField, equals: field.key)
             }
         }
     }
@@ -622,10 +686,11 @@ public struct GenericFormView: View {
                     .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 4) {
-                    TextField(field.label, text: strBinding)
+                    TextField(field.label, text: strBinding, prompt: promptText(for: field))
                         .textFieldStyle(.roundedBorder)
                         .labelsHidden()
                         .multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: field.key)
 #if os(iOS)
                         .keyboardType(.decimalPad)
 #endif
@@ -643,9 +708,10 @@ public struct GenericFormView: View {
                 Text(binding.wrappedValue.isEmpty ? "—" : "••••••••")
                     .foregroundStyle(.secondary)
             } else {
-                SecureField(field.label, text: binding)
+                SecureField(field.label, text: binding, prompt: promptText(for: field))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
+                    .focused($focusedField, equals: field.key)
             }
         }
     }
@@ -749,6 +815,7 @@ public struct GenericFormView: View {
                 }
             },
             set: { newValue in
+                clearError(field.key)
                 document.fields[field.key] = .string(newValue)
             }
         )
@@ -837,6 +904,7 @@ public struct GenericFormView: View {
                 }
             },
             set: { newValue in
+                clearError(field.key)
                 let trimmed = newValue.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty {
                     // An empty numeric field is "no value", not the string "" —
@@ -851,6 +919,93 @@ public struct GenericFormView: View {
                 }
             }
         )
+    }
+
+    // MARK: - Inline validation
+
+    /// Placeholder shown inside a text-like control. Falls back to `nil` (so the
+    /// control shows nothing / its own default) when the field declares none.
+    private func promptText(for field: FieldDefinition) -> Text? {
+        guard let placeholder = field.placeholder, !placeholder.isEmpty else { return nil }
+        return Text(placeholder)
+    }
+
+    /// Re-evaluate one field's inline error and store / clear it.
+    private func validateField(key: String) {
+        guard let field = docType.fields.first(where: { $0.key == key }) else { return }
+        if let message = localValidationError(for: field) {
+            fieldErrors[key] = message
+        } else {
+            fieldErrors.removeValue(forKey: key)
+        }
+    }
+
+    /// Drop a field's error the instant the user starts editing it again, so the
+    /// red outline clears without waiting for the next blur.
+    private func clearError(_ key: String) {
+        if fieldErrors[key] != nil { fieldErrors.removeValue(forKey: key) }
+    }
+
+    /// Cheap, local, DB-free validation used for immediate feedback: required
+    /// fields that are empty and obvious type mismatches (non-numeric numbers,
+    /// malformed emails). The full `ValidationPipeline` still runs on Save for
+    /// link integrity, uniqueness, and cross-field rules.
+    private func localValidationError(for field: FieldDefinition) -> String? {
+        if isLayoutSeparator(field) || field.type == .formula || field.type == .table { return nil }
+        if isReadOnly(field: field) { return nil }
+
+        let value = document.fields[field.key]
+        let empty = isValueEmpty(value)
+
+        if field.required && empty {
+            return "'\(field.label)' is required."
+        }
+        if empty { return nil }  // optional + empty is fine
+
+        switch field.type {
+        case .number, .decimal, .currency, .percent:
+            if !isNumericValue(value) {
+                return "'\(field.label)' must be a valid number."
+            }
+        case .email:
+            if case .string(let s) = value, !looksLikeEmail(s) {
+                return "'\(field.label)' must be a valid email address."
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    private func isValueEmpty(_ value: FieldValue?) -> Bool {
+        switch value {
+        case .none, .null:
+            return true
+        case .string(let s):
+            return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .array(let xs):
+            return xs.isEmpty
+        default:
+            return false
+        }
+    }
+
+    private func isNumericValue(_ value: FieldValue?) -> Bool {
+        switch value {
+        case .int, .double:
+            return true
+        case .string(let s):
+            return Double(s.trimmingCharacters(in: .whitespaces)) != nil
+        default:
+            return false
+        }
+    }
+
+    private func looksLikeEmail(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        guard let at = t.firstIndex(of: "@"), at != t.startIndex else { return false }
+        let domain = t[t.index(after: at)...]
+        return !domain.isEmpty && domain.contains(".") && !domain.hasSuffix(".") && !t.contains(" ")
     }
 }
 
