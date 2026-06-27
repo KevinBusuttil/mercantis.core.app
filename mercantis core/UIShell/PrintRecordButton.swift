@@ -34,6 +34,12 @@ public struct PrintRecordButton: View {
     /// one is returned the menu lets the operator pick; otherwise it prints the
     /// single (default) format directly.
     private let formatsResolver: (Document) -> [PrintFormat]
+    /// Optional last-mile transform applied to the document just before
+    /// rendering (only on print/share, not on every render), given the chosen
+    /// format — e.g. resolving link-field ids to display names per the format's
+    /// link-display rules so the output shows "Kevin Busuttil" rather than a
+    /// customer id. Identity when nil.
+    private let documentTransform: ((Document, PrintFormat) -> Document)?
 
     @State private var errorMessage: String?
     @State private var showError = false
@@ -43,10 +49,12 @@ public struct PrintRecordButton: View {
     public init(
         document: Document,
         printService: PrintService,
+        documentTransform: ((Document, PrintFormat) -> Document)? = nil,
         formatResolver: @escaping (Document) -> PrintFormat
     ) {
         self.document = document
         self.printService = printService
+        self.documentTransform = documentTransform
         self.formatsResolver = { [formatResolver($0)] }
     }
 
@@ -55,10 +63,12 @@ public struct PrintRecordButton: View {
     public init(
         document: Document,
         printService: PrintService,
+        documentTransform: ((Document, PrintFormat) -> Document)? = nil,
         formatsResolver: @escaping (Document) -> [PrintFormat]
     ) {
         self.document = document
         self.printService = printService
+        self.documentTransform = documentTransform
         self.formatsResolver = formatsResolver
     }
 
@@ -107,9 +117,10 @@ public struct PrintRecordButton: View {
         do {
             // Ensure the chosen format is known to the service before render.
             printService.register(format: format)
+            let renderDocument = documentTransform?(document, format) ?? document
             let result = try printService.render(
                 formatId: format.id,
-                document: document,
+                document: renderDocument,
                 as: .pdf
             )
             switch action {
