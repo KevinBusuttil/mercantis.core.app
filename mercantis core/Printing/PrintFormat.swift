@@ -99,6 +99,16 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         fieldLinkDisplays[key] ?? linkDisplay
     }
 
+    /// A copy with `isDefault` flipped — used when a user-defined format becomes
+    /// the default for its DocType and the built-in default must step down.
+    public func settingDefault(_ flag: Bool) -> PrintFormat {
+        PrintFormat(
+            id: id, name: name, docType: docType, letterHeadId: letterHeadId,
+            isDefault: flag, linkDisplay: linkDisplay, fieldLinkDisplays: fieldLinkDisplays,
+            htmlTemplate: htmlTemplate, css: css, sections: sections
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, name, docType, letterHeadId, isDefault
         case linkDisplay, fieldLinkDisplays, htmlTemplate, css, sections
