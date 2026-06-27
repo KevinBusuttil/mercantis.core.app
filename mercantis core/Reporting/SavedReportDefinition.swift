@@ -124,6 +124,68 @@ public struct SavedReportFilter: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Aggregation
+
+/// How a column's values are combined for group subtotals / a grand total, and
+/// how a chart reduces the values in each category.
+public enum SavedReportAggregate: String, Codable, Sendable, CaseIterable {
+    case none
+    case sum
+    case average
+    case count
+    case min
+    case max
+
+    public var label: String {
+        switch self {
+        case .none:    return "None"
+        case .sum:     return "Sum"
+        case .average: return "Average"
+        case .count:   return "Count"
+        case .min:     return "Min"
+        case .max:     return "Max"
+        }
+    }
+}
+
+// MARK: - Chart
+
+/// The visual a report can render in addition to its table.
+public enum SavedReportChartKind: String, Codable, Sendable, CaseIterable {
+    case bar
+    case line
+    case pie
+
+    public var label: String {
+        switch self {
+        case .bar:  return "Bar"
+        case .line: return "Line"
+        case .pie:  return "Pie"
+        }
+    }
+}
+
+/// Declarative chart config: reduce `valueFieldKey` by `valueAggregate` within
+/// each `categoryFieldKey` bucket and plot it as `kind`.
+public struct SavedReportChart: Codable, Sendable, Equatable {
+    public var kind: SavedReportChartKind
+    public var categoryFieldKey: String
+    public var valueFieldKey: String
+    public var valueAggregate: SavedReportAggregate
+
+    public init(
+        kind: SavedReportChartKind = .bar,
+        categoryFieldKey: String,
+        valueFieldKey: String,
+        valueAggregate: SavedReportAggregate = .sum
+    ) {
+        self.kind = kind
+        self.categoryFieldKey = categoryFieldKey
+        self.valueFieldKey = valueFieldKey
+        self.valueAggregate = valueAggregate
+    }
+}
+
 // MARK: - Column
 
 /// A column in a saved report. `order` drives left-to-right placement;
@@ -139,23 +201,28 @@ public struct SavedReportColumn: Codable, Identifiable, Sendable, Equatable {
     /// Optional preferred render width (points). Advisory only — the engine
     /// ignores it; UI hosts may honour it.
     public var width: Double?
+    /// How this column is aggregated in group subtotals and the grand total.
+    /// `.none` (the default) contributes no total for this column.
+    public var aggregate: SavedReportAggregate
 
     public init(
         fieldKey: String,
         labelOverride: String? = nil,
         visible: Bool = true,
         order: Int,
-        width: Double? = nil
+        width: Double? = nil,
+        aggregate: SavedReportAggregate = .none
     ) {
         self.fieldKey = fieldKey
         self.labelOverride = labelOverride
         self.visible = visible
         self.order = order
         self.width = width
+        self.aggregate = aggregate
     }
 
     private enum CodingKeys: String, CodingKey {
-        case fieldKey, labelOverride, visible, order, width
+        case fieldKey, labelOverride, visible, order, width, aggregate
     }
 
     public init(from decoder: any Decoder) throws {
@@ -165,6 +232,7 @@ public struct SavedReportColumn: Codable, Identifiable, Sendable, Equatable {
         visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
         order = try c.decode(Int.self, forKey: .order)
         width = try c.decodeIfPresent(Double.self, forKey: .width)
+        aggregate = try c.decodeIfPresent(SavedReportAggregate.self, forKey: .aggregate) ?? .none
     }
 
     /// The header label this column contributes to a `ReportResult` —
@@ -191,6 +259,11 @@ public struct SavedReportDefinition: Codable, Identifiable, Sendable, Equatable 
     public var columns: [SavedReportColumn]
     public var filters: [SavedReportFilter]
     public var sorts: [SavedReportSort]
+    /// When set, rows are grouped by this field; each group shows its column
+    /// aggregates as a subtotal, plus a grand total across all groups.
+    public var groupByFieldKey: String?
+    /// Optional chart rendered alongside the table.
+    public var chart: SavedReportChart?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -204,6 +277,8 @@ public struct SavedReportDefinition: Codable, Identifiable, Sendable, Equatable 
         columns: [SavedReportColumn] = [],
         filters: [SavedReportFilter] = [],
         sorts: [SavedReportSort] = [],
+        groupByFieldKey: String? = nil,
+        chart: SavedReportChart? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -216,13 +291,15 @@ public struct SavedReportDefinition: Codable, Identifiable, Sendable, Equatable 
         self.columns = columns
         self.filters = filters
         self.sorts = sorts
+        self.groupByFieldKey = groupByFieldKey
+        self.chart = chart
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, baseReportId, sourceDocType, ownerUserId, visibility
-        case columns, filters, sorts, createdAt, updatedAt
+        case columns, filters, sorts, groupByFieldKey, chart, createdAt, updatedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -236,6 +313,8 @@ public struct SavedReportDefinition: Codable, Identifiable, Sendable, Equatable 
         columns = try c.decodeIfPresent([SavedReportColumn].self, forKey: .columns) ?? []
         filters = try c.decodeIfPresent([SavedReportFilter].self, forKey: .filters) ?? []
         sorts = try c.decodeIfPresent([SavedReportSort].self, forKey: .sorts) ?? []
+        groupByFieldKey = try c.decodeIfPresent(String.self, forKey: .groupByFieldKey)
+        chart = try c.decodeIfPresent(SavedReportChart.self, forKey: .chart)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
