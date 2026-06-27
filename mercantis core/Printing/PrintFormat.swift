@@ -61,6 +61,13 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
     /// child-row column), so a format can show, say, the item as code + name
     /// while keeping the currency as name only.
     public let fieldLinkDisplays: [String: PrintLinkDisplay]
+    /// Optional custom HTML template for the HTML/CSS renderer. Supports
+    /// `{field}` substitution; when nil the renderer generates HTML from
+    /// `sections`. Ignored by the plain-text / Core Graphics renderers.
+    public let htmlTemplate: String?
+    /// Optional CSS paired with the HTML output (custom template or generated).
+    /// When nil a clean default stylesheet is used.
+    public let css: String?
     public let sections: [PrintSection]
 
     public init(
@@ -71,6 +78,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         isDefault: Bool = false,
         linkDisplay: PrintLinkDisplay = .name,
         fieldLinkDisplays: [String: PrintLinkDisplay] = [:],
+        htmlTemplate: String? = nil,
+        css: String? = nil,
         sections: [PrintSection]
     ) {
         self.id = id
@@ -80,6 +89,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         self.isDefault = isDefault
         self.linkDisplay = linkDisplay
         self.fieldLinkDisplays = fieldLinkDisplays
+        self.htmlTemplate = htmlTemplate
+        self.css = css
         self.sections = sections
     }
 
@@ -90,7 +101,7 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, docType, letterHeadId, isDefault
-        case linkDisplay, fieldLinkDisplays, sections
+        case linkDisplay, fieldLinkDisplays, htmlTemplate, css, sections
     }
 
     public init(from decoder: Decoder) throws {
@@ -102,6 +113,8 @@ public struct PrintFormat: Codable, Sendable, Equatable, Identifiable {
         isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         linkDisplay = try c.decodeIfPresent(PrintLinkDisplay.self, forKey: .linkDisplay) ?? .name
         fieldLinkDisplays = try c.decodeIfPresent([String: PrintLinkDisplay].self, forKey: .fieldLinkDisplays) ?? [:]
+        htmlTemplate = try c.decodeIfPresent(String.self, forKey: .htmlTemplate)
+        css = try c.decodeIfPresent(String.self, forKey: .css)
         sections = try c.decode([PrintSection].self, forKey: .sections)
     }
 }
