@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 #if canImport(MercantisCore)
 import MercantisCore
 #endif
@@ -502,20 +505,41 @@ public struct GenericFormView: View {
 
     private func numberField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let strBinding = numberBinding(for: field)
+        let symbol = field.type == .currency ? currencySymbol : nil
         return Group {
             if isReadOnly {
-                Text(strBinding.wrappedValue).foregroundStyle(.secondary)
+                Text(symbol.map { "\($0) \(strBinding.wrappedValue)" } ?? strBinding.wrappedValue)
+                    .foregroundStyle(.secondary)
             } else {
-                TextField(field.label, text: strBinding, prompt: promptText(for: field))
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .multilineTextAlignment(.trailing)
-                    .focused($focusedField, equals: field.key)
+                HStack(spacing: 4) {
+                    if let symbol {
+                        Text(symbol)
+                            .foregroundStyle(MercantisTheme.textMuted)
+                    }
+                    TextField(field.label, text: strBinding, prompt: promptText(for: field))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: field.key)
 #if os(iOS)
-                    .keyboardType(.decimalPad)
+                        .keyboardType(.decimalPad)
 #endif
+                }
             }
         }
+    }
+
+    /// The current document's currency symbol, resolved by convention from a
+    /// `currency` link field (→ `Currency` record → its `symbol`). Used to
+    /// prefix `.currency` editors. Returns nil when nothing is wired or set, so
+    /// the field simply renders without a symbol.
+    private var currencySymbol: String? {
+        guard let resolve = linkResolveProvider,
+              case .string(let code)? = document.fields["currency"], !code.isEmpty,
+              let currencyDoc = resolve("Currency", code),
+              case .string(let symbol)? = currencyDoc.fields["symbol"],
+              !symbol.isEmpty else { return nil }
+        return symbol
     }
 
     private func toggleField(field: FieldDefinition, isReadOnly: Bool) -> some View {
@@ -650,13 +674,35 @@ public struct GenericFormView: View {
                 Text(binding.wrappedValue.isEmpty ? "No attachment" : binding.wrappedValue)
                     .foregroundStyle(.secondary)
             } else {
-                TextField("Attachment reference", text: binding, prompt: promptText(for: field))
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .focused($focusedField, equals: field.key)
+                HStack(spacing: 6) {
+                    TextField("Attachment reference", text: binding, prompt: promptText(for: field))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .focused($focusedField, equals: field.key)
+#if os(macOS)
+                    Button("Choose…") { chooseAttachment(into: binding) }
+                        .buttonStyle(.bordered)
+                        .help("Pick a file to attach")
+#endif
+                }
             }
         }
     }
+
+#if os(macOS)
+    /// Present a file picker and store the chosen file's path as the field's
+    /// reference. Attachments are stored by reference (path), matching the
+    /// existing text-based contract.
+    private func chooseAttachment(into binding: Binding<String>) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        if panel.runModal() == .OK, let url = panel.url {
+            binding.wrappedValue = url.path
+        }
+    }
+#endif
 
     private func imageField(field: FieldDefinition, isReadOnly: Bool) -> some View {
         let binding = Binding<Data?>(

@@ -93,9 +93,10 @@ struct CreateRecordSheet: View {
                 Text("New \(docType.name)")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(MercantisTheme.textPrimary)
-                Text(docType.module)
+                Text(ModuleDisplay.label(docType.module))
                     .font(.caption)
                     .foregroundStyle(MercantisTheme.textMuted)
+                    .help(ModuleDisplay.hint)
             }
             Spacer()
         }

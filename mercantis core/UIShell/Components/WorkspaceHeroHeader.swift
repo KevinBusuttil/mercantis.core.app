@@ -16,6 +16,9 @@ public struct WorkspaceHeroHeader: View {
         public let id = UUID()
         public let text: String
         public let tone: Tone
+        /// Optional hover tooltip explaining what the badge means — used to
+        /// demystify chips like the module category for new users.
+        public let help: String?
 
         public enum Tone: Hashable {
             case muted
@@ -25,9 +28,10 @@ public struct WorkspaceHeroHeader: View {
             case info
         }
 
-        public init(_ text: String, tone: Tone = .muted) {
+        public init(_ text: String, tone: Tone = .muted, help: String? = nil) {
             self.text = text
             self.tone = tone
+            self.help = help
         }
     }
 
@@ -75,6 +79,7 @@ public struct WorkspaceHeroHeader: View {
                         ForEach(badges) { badge in
                             Text(badge.text)
                                 .mercantisSemanticBadge(tone: badge.tone.semanticTone)
+                                .help(badge.help ?? "")
                         }
                     }
                     .padding(.top, 2)
