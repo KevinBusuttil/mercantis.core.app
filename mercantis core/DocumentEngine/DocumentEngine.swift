@@ -176,6 +176,21 @@ public final class DocumentEngine {
         ExpressionEvaluator(lookupResolver: lookupCache)
     }()
 
+    // MARK: - Developer read-only query
+
+    /// Run a guarded, read-only SQL query against the underlying store, for the
+    /// Developer ▸ Data Browser. Only SELECT-style statements are permitted and
+    /// they execute on a read-only connection, so this can never mutate data.
+    public func runReadOnlyQuery(_ sql: String, rowLimit: Int = 5_000) throws -> ReadOnlyQueryResult {
+        try database.runReadOnlyQuery(sql, rowLimit: rowLimit)
+    }
+
+    /// Async variant of `runReadOnlyQuery` — runs the query off the calling
+    /// thread so the Data Browser UI stays responsive during slow queries.
+    public func runReadOnlyQueryAsync(_ sql: String, rowLimit: Int = 5_000) async throws -> ReadOnlyQueryResult {
+        try await database.runReadOnlyQueryAsync(sql, rowLimit: rowLimit)
+    }
+
     // MARK: - Save
 
     /// Create or update a document. Appends an `upsertDocument` mutation atomically.
