@@ -101,17 +101,42 @@ public struct LinkPickerField: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            pickerButton
-                .sheet(isPresented: $isPickerPresented, onDismiss: {
-                    searchQuery = ""
-                    lastSearchError = nil
-                    isCreating = false
-                    draftDocument = nil
-                    createError = nil
-                }) {
-                    pickerSheet
+            HStack(spacing: 6) {
+                pickerButton
+                // Surface "create new" on the field itself (not just inside the
+                // picker) so a new user with no records yet sees the path to add
+                // one without first opening an empty picker.
+                if canCreate && value.isEmpty {
+                    newRecordButton
                 }
+            }
+            .sheet(isPresented: $isPickerPresented, onDismiss: {
+                searchQuery = ""
+                lastSearchError = nil
+                isCreating = false
+                draftDocument = nil
+                createError = nil
+            }) {
+                pickerSheet
+            }
         }
+    }
+
+    /// Compact "+ New" button shown beside an empty link field. Opens the picker
+    /// straight into its inline create form.
+    private var newRecordButton: some View {
+        Button {
+            presentCreateDirectly()
+        } label: {
+            Image(systemName: "plus")
+                .imageScale(.small)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(MercantisTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .help("New \(targetDocType)")
     }
 
     // MARK: - Picker button (idle state)
@@ -188,6 +213,16 @@ public struct LinkPickerField: View {
         draftDocument = draft
         createError = nil
         isCreating = true
+    }
+
+    /// Open the picker already in create mode — used by the field's "+ New"
+    /// button so the user lands straight on the blank new-record form.
+    private func presentCreateDirectly() {
+        guard let draft = makeDraft?() else { return }
+        draftDocument = draft
+        createError = nil
+        isCreating = true
+        isPickerPresented = true
     }
 
     /// Persist the inline draft, select it, and dismiss. Errors stay in the

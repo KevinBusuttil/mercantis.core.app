@@ -262,7 +262,7 @@ public struct RecordCollectionHostView: View {
             .init("\(documents.count) records")
         ]
         if !docType.module.isEmpty {
-            badges.append(.init(docType.module, tone: .info))
+            badges.append(.init(ModuleDisplay.label(docType.module), tone: .info, help: ModuleDisplay.hint))
         }
         return badges
     }
@@ -330,6 +330,12 @@ public struct RecordCollectionHostView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let selectedDocument, let detailHeader {
                     detailHeader(selectedDocument)
+                }
+
+                let prerequisites = missingPrerequisites
+                if !prerequisites.isEmpty {
+                    PrerequisiteBanner(docTypeName: docType.name, missing: prerequisites)
+                        .padding(.horizontal)
                 }
 
                 if let detailEditor {
@@ -467,6 +473,19 @@ public struct RecordCollectionHostView: View {
             detailSaveError = (error as NSError).localizedDescription
             pendingDeleteDocument = nil
         }
+    }
+
+    /// Master records this DocType depends on that don't exist yet, so the
+    /// detail form can nudge a new user to create them first. Empty when no
+    /// search provider is wired or all prerequisites are present.
+    private var missingPrerequisites: [MissingPrerequisite] {
+        guard let linkSearchProvider else { return [] }
+        return FormPrerequisites.missing(
+            for: effectiveDocType,
+            childDocType: { childDocTypeProvider?($0) },
+            isTargetEmpty: { linkSearchProvider($0, "").isEmpty },
+            displayName: { childDocTypeProvider?($0)?.name }
+        )
     }
 
     private var selectedDocumentBinding: Binding<Document> {
