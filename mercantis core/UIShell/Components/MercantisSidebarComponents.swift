@@ -52,7 +52,7 @@ public struct MercantisSidebarIconChip: View {
         case .emphasizedSelection:
             return Color.white.opacity(0.22)
         case .mutedSelection:
-            return MercantisTheme.accentFillSoft
+            return MercantisTheme.brandPrimarySoft
         case .normal:
             if let tone {
                 return MercantisTheme.moduleFill(tone)
@@ -66,7 +66,7 @@ public struct MercantisSidebarIconChip: View {
         case .emphasizedSelection:
             return MercantisTheme.selectionForegroundEmphasized
         case .mutedSelection:
-            return MercantisTheme.accent
+            return MercantisTheme.brandPrimary
         case .normal:
             if let tone {
                 return MercantisTheme.moduleTint(tone)
@@ -156,15 +156,15 @@ public struct MercantisSidebarRow: View {
             // the strong selection background is owned by the native list, so
             // layering an accent wash there would muddy it.
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(emphasis == .mutedSelection ? MercantisTheme.accentFillSoft : Color.clear)
+                .fill(emphasis == .mutedSelection ? MercantisTheme.brandPrimarySoft : Color.clear)
         )
         .overlay(alignment: .leading) {
             // Colour is never the only selection signal: keep a leading rule on
-            // every selected row, tinted white on the strong selection and
-            // accent on the muted one so it stays visible against either fill.
+            // every selected row, tinted white on the strong selection and the
+            // brand indigo on the muted one so it stays visible against either fill.
             if isSelected {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(highContrast ? MercantisTheme.selectionForegroundEmphasized : MercantisTheme.accent)
+                    .fill(highContrast ? MercantisTheme.selectionForegroundEmphasized : MercantisTheme.brandPrimary)
                     .frame(width: 2.5)
                     .padding(.vertical, 5)
                     .padding(.leading, indentation)
@@ -180,14 +180,14 @@ public struct MercantisSidebarRow: View {
         if highContrast {
             return Color.white.opacity(0.22)
         }
-        return isSelected ? MercantisTheme.accentFillSoft : Color.secondary.opacity(0.14)
+        return isSelected ? MercantisTheme.brandPrimarySoft : Color.secondary.opacity(0.14)
     }
 
     private func badgeForeground(highContrast: Bool) -> Color {
         if highContrast {
             return MercantisTheme.selectionForegroundEmphasized
         }
-        return isSelected ? MercantisTheme.accent : .secondary
+        return isSelected ? MercantisTheme.brandPrimary : .secondary
     }
 }
 

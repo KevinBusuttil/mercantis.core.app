@@ -125,12 +125,14 @@ public enum MercantisTheme {
 
     // MARK: - System accent (native selection / control tint)
 
-    /// The system accent is intentionally retained for selection and native
-    /// control tint so the app still respects the user's macOS accent choice.
-    /// Product identity uses `brandPrimary` instead.
-    public static let accent = Color.accentColor
-    public static let accentFillSoft = Color.accentColor.opacity(0.12)
-    public static let accentBorder = Color.accentColor.opacity(0.34)
+    /// "Accent" now resolves to the Mercantis brand (indigo) so every active
+    /// state — selection, chips, focus rings, segmented tabs — shows one
+    /// consistent product colour rather than splitting between brand and the
+    /// system azure. (The native focused selection is retinted to match
+    /// app-wide via `.tint(brandPrimary)`.)
+    public static let accent = brandPrimary
+    public static let accentFillSoft = brandPrimary.opacity(0.12)
+    public static let accentBorder = brandPrimary.opacity(0.34)
 
     public static let softFillOpacity = 0.14
     public static let warningFillOpacity = 0.16
@@ -150,8 +152,11 @@ public enum MercantisTheme {
         light: (0.18, 0.36, 0.78),
         dark:  (0.40, 0.58, 0.96)
     )
-    public static let selectionBackground = accentFillSoft
-    public static let selectionForeground = accent
+    // Selection chrome uses the Mercantis brand (indigo), not the system accent,
+    // so active states match product identity everywhere. (The native focused
+    // selection is retinted app-wide via `.tint(brandPrimary)`.)
+    public static let selectionBackground = brandPrimarySoft
+    public static let selectionForeground = brandPrimary
     /// High-contrast foreground for a row drawn on the *strong* (emphasized,
     /// key-window) selection fill — the saturated accent that macOS paints
     /// behind a focused sidebar/list selection. White clears the accent in
@@ -225,9 +230,10 @@ public enum MercantisTheme {
     /// already inverts per appearance (near-black in light, near-white in dark),
     /// so a single low opacity reads correctly in both.
     public static let tableRowHover = Color.primary.opacity(0.05)
-    /// Selected-row background — reuses the native selection tint so the table
-    /// still respects the user's macOS accent.
-    public static let tableRowSelection = accentFillSoft
+    /// Selected-row background — the Mercantis brand (indigo) soft fill, so the
+    /// app shows one consistent accent across navigation, tables, and tabs
+    /// rather than splitting between brand and the system azure.
+    public static let tableRowSelection = brandPrimarySoft
     /// Header strip behind a table's column titles.
     public static let tableHeaderBackground = surfaceMuted
 
