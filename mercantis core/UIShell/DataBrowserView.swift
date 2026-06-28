@@ -91,7 +91,7 @@ public struct DataBrowserView: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: column.isPrimaryKey ? "key.fill" : "circle.fill")
                                         .font(.system(size: column.isPrimaryKey ? 9 : 4))
-                                        .foregroundStyle(column.isPrimaryKey ? MercantisTheme.brandPrimary : .tertiary)
+                                        .foregroundStyle(column.isPrimaryKey ? MercantisTheme.brandPrimary : MercantisTheme.textMuted)
                                         .frame(width: 12)
                                     Text(column.name).font(.system(size: 11))
                                     Spacer(minLength: 4)
