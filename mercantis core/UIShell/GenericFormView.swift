@@ -120,11 +120,14 @@ public struct GenericFormView: View {
         let containsTable = section.fields.contains { $0.type == .table }
         VStack(alignment: .leading, spacing: 6) {
             if let title = section.title, !title.isEmpty {
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(MercantisTheme.textMuted)
-                    .padding(.horizontal, 4)
+                HStack(spacing: 4) {
+                    Text(title.uppercased())
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.5)
+                        .foregroundStyle(MercantisTheme.textMuted)
+                    GlossaryInfoButton(title)
+                }
+                .padding(.horizontal, 4)
             }
 
             sectionBody(for: section, containsTable: containsTable)
@@ -305,16 +308,21 @@ public struct GenericFormView: View {
     /// required, plus an accessibility hint so VoiceOver announces it.
     @ViewBuilder
     private func fieldLabel(for field: FieldDefinition) -> some View {
-        if field.required {
-            HStack(spacing: 2) {
+        HStack(spacing: 3) {
+            if field.required {
+                HStack(spacing: 2) {
+                    Text(field.label)
+                    Text("*")
+                        .foregroundStyle(MercantisTheme.danger)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel(Text("\(field.label), required"))
+            } else {
                 Text(field.label)
-                Text("*")
-                    .foregroundStyle(MercantisTheme.danger)
-                    .accessibilityHidden(true)
             }
-            .accessibilityLabel(Text("\(field.label), required"))
-        } else {
-            Text(field.label)
+            // Explains the term in a popover when it's a registered glossary
+            // entry; renders nothing otherwise.
+            GlossaryInfoButton(field.label)
         }
     }
 
