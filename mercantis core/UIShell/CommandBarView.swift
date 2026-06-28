@@ -60,6 +60,7 @@ public struct CommandBarView: View {
 
     @State private var query = ""
     @State private var selectedIndex = 0
+    @FocusState private var fieldFocused: Bool
 
     public init(
         isPresented: Binding<Bool>,
@@ -85,6 +86,7 @@ public struct CommandBarView: View {
         )
         .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         .frame(maxWidth: 720)
+        .onAppear { fieldFocused = true }
         .onDisappear {
             query = ""
             selectedIndex = 0
@@ -137,6 +139,7 @@ public struct CommandBarView: View {
             TextField("Jump to module, DocType, report, dashboard…", text: $query)
                 .font(.title3)
                 .textFieldStyle(.plain)
+                .focused($fieldFocused)
                 .onChange(of: query) { _, _ in
                     selectedIndex = 0
                 }
