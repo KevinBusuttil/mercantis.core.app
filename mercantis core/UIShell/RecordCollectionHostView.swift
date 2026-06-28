@@ -262,7 +262,7 @@ public struct RecordCollectionHostView: View {
             .init("\(documents.count) records")
         ]
         if !docType.module.isEmpty {
-            badges.append(.init(ModuleDisplay.label(docType.module), tone: .info, help: ModuleDisplay.hint))
+            badges.append(.init(ModuleDisplay.label(docType.module), tone: .muted, help: ModuleDisplay.hint))
         }
         return badges
     }
