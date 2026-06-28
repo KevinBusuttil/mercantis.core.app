@@ -44,6 +44,12 @@ public final class MercantisDatabase {
         return try pool.read(block)
     }
 
+    /// Execute a read-only block off the calling thread on GRDB's reader pool,
+    /// suspending the caller so the main thread stays free during slow queries.
+    public func readAsync<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
+        return try await pool.read(block)
+    }
+
     /// Execute a write block on the database inside a transaction.
     public func write<T>(_ block: (Database) throws -> T) throws -> T {
         return try pool.write(block)

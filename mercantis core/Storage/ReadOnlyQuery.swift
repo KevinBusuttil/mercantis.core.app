@@ -75,18 +75,27 @@ public extension MercantisDatabase {
     /// many rows are materialised for the UI; the result flags when it was hit.
     func runReadOnlyQuery(_ sql: String, rowLimit: Int = 5_000) throws -> ReadOnlyQueryResult {
         try ReadOnlyQueryGuard.validate(sql)
-        return try read { db in
-            let cursor = try Row.fetchCursor(db, sql: sql)
-            var columns: [String] = []
-            var rows: [[String]] = []
-            var truncated = false
-            while let row = try cursor.next() {
-                if columns.isEmpty { columns = row.map { $0.0 } }
-                if rows.count >= rowLimit { truncated = true; break }
-                rows.append(row.map { Self.render($0.1) })
-            }
-            return ReadOnlyQueryResult(columns: columns, rows: rows, truncated: truncated)
+        return try read { db in try Self.buildResult(db, sql: sql, rowLimit: rowLimit) }
+    }
+
+    /// Async variant: runs the query off the main thread so the Data Browser UI
+    /// stays responsive while a slow query executes.
+    func runReadOnlyQueryAsync(_ sql: String, rowLimit: Int = 5_000) async throws -> ReadOnlyQueryResult {
+        try ReadOnlyQueryGuard.validate(sql)
+        return try await readAsync { db in try Self.buildResult(db, sql: sql, rowLimit: rowLimit) }
+    }
+
+    private static func buildResult(_ db: Database, sql: String, rowLimit: Int) throws -> ReadOnlyQueryResult {
+        let cursor = try Row.fetchCursor(db, sql: sql)
+        var columns: [String] = []
+        var rows: [[String]] = []
+        var truncated = false
+        while let row = try cursor.next() {
+            if columns.isEmpty { columns = row.map { $0.0 } }
+            if rows.count >= rowLimit { truncated = true; break }
+            rows.append(row.map { render($0.1) })
         }
+        return ReadOnlyQueryResult(columns: columns, rows: rows, truncated: truncated)
     }
 
     private static func render(_ value: DatabaseValue) -> String {

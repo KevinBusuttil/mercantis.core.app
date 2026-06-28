@@ -185,6 +185,12 @@ public final class DocumentEngine {
         try database.runReadOnlyQuery(sql, rowLimit: rowLimit)
     }
 
+    /// Async variant of `runReadOnlyQuery` — runs the query off the calling
+    /// thread so the Data Browser UI stays responsive during slow queries.
+    public func runReadOnlyQueryAsync(_ sql: String, rowLimit: Int = 5_000) async throws -> ReadOnlyQueryResult {
+        try await database.runReadOnlyQueryAsync(sql, rowLimit: rowLimit)
+    }
+
     // MARK: - Save
 
     /// Create or update a document. Appends an `upsertDocument` mutation atomically.

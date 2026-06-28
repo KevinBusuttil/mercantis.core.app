@@ -13,12 +13,12 @@ import UniformTypeIdentifiers
 /// independent of the engine; the host wires it to a guarded, read-only runner.
 public struct DataBrowserView: View {
 
-    private let runQuery: (String) throws -> ReadOnlyQueryResult
+    private let runQuery: (String) async throws -> ReadOnlyQueryResult
 
     @State private var sql: String
     @State private var result: ReadOnlyQueryResult?
     @State private var errorMessage: String?
-    @State private var elapsed: String?
+    @State private var running = false
 
     @State private var sortColumn: Int?
     @State private var sortAscending = true
@@ -27,6 +27,8 @@ public struct DataBrowserView: View {
 
     @State private var savedQueries: [SavedQuery] = []
     @State private var tables: [String] = []
+    @State private var expandedTables: Set<String> = []
+    @State private var tableColumns: [String: [ColumnInfo]] = [:]
     @State private var showSaveSheet = false
     @State private var saveName = ""
 
@@ -34,7 +36,7 @@ public struct DataBrowserView: View {
     /// more); keeps the table responsive. Narrow with filters to see the rest.
     private let renderCap = 1_000
 
-    public init(runQuery: @escaping (String) throws -> ReadOnlyQueryResult) {
+    public init(runQuery: @escaping (String) async throws -> ReadOnlyQueryResult) {
         self.runQuery = runQuery
         _sql = State(initialValue: "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
     }
@@ -51,10 +53,8 @@ public struct DataBrowserView: View {
         }
         .frame(minWidth: 820, minHeight: 560)
         .navigationTitle("Data Browser")
-        .onAppear {
-            loadSaved()
-            loadTables()
-        }
+        .onAppear(perform: loadSaved)
+        .task { await loadTables() }
         .sheet(isPresented: $showSaveSheet) { saveSheet }
     }
 
@@ -85,13 +85,33 @@ public struct DataBrowserView: View {
                     Text("No tables found.").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(tables, id: \.self) { table in
-                    Button {
-                        sql = "SELECT * FROM \(table) LIMIT 100;"
-                        run()
+                    DisclosureGroup(isExpanded: tableExpansionBinding(table)) {
+                        if let columns = tableColumns[table] {
+                            ForEach(columns) { column in
+                                HStack(spacing: 6) {
+                                    Image(systemName: column.isPrimaryKey ? "key.fill" : "circle.fill")
+                                        .font(.system(size: column.isPrimaryKey ? 9 : 4))
+                                        .foregroundStyle(column.isPrimaryKey ? MercantisTheme.brandPrimary : .tertiary)
+                                        .frame(width: 12)
+                                    Text(column.name).font(.system(size: 11))
+                                    Spacer(minLength: 4)
+                                    Text(column.type)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else {
+                            Text("Loading…").font(.caption).foregroundStyle(.secondary)
+                        }
                     } label: {
-                        Label(table, systemImage: "tablecells").font(.system(size: 12))
+                        Button {
+                            sql = "SELECT * FROM \"\(table)\" LIMIT 100;"
+                            Task { await run() }
+                        } label: {
+                            Label(table, systemImage: "tablecells").font(.system(size: 12))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -107,17 +127,21 @@ public struct DataBrowserView: View {
                     .font(.system(size: 10, weight: .semibold)).tracking(0.5)
                     .foregroundStyle(MercantisTheme.textMuted)
                 Spacer()
+                if running {
+                    ProgressView().controlSize(.small)
+                }
                 Button { saveName = ""; showSaveSheet = true } label: {
                     Label("Save…", systemImage: "bookmark")
                 }
                 .controlSize(.small)
                 .disabled(sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button { run() } label: {
+                Button { Task { await run() } } label: {
                     Label("Run", systemImage: "play.fill")
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .disabled(running)
             }
 
             TextEditor(text: $sql)
@@ -282,10 +306,12 @@ public struct DataBrowserView: View {
         )
     }
 
-    private func run() {
+    private func run() async {
         errorMessage = nil
+        running = true
+        defer { running = false }
         do {
-            result = try runQuery(sql)
+            result = try await runQuery(sql)
             // Reset view state for the new result shape.
             sortColumn = nil
             columnFilters = [:]
@@ -296,10 +322,40 @@ public struct DataBrowserView: View {
         }
     }
 
-    private func loadTables() {
-        if let r = try? runQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") {
+    private func loadTables() async {
+        if let r = try? await runQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") {
             tables = r.rows.compactMap(\.first)
         }
+    }
+
+    /// Lazily fetch a table's columns (name + declared type + primary-key flag)
+    /// via PRAGMA table_info, for the schema inspector.
+    private func loadColumns(_ table: String) async {
+        guard let r = try? await runQuery("PRAGMA table_info(\"\(table)\")") else { return }
+        let nameIdx = r.columns.firstIndex(of: "name") ?? 1
+        let typeIdx = r.columns.firstIndex(of: "type") ?? 2
+        let pkIdx = r.columns.firstIndex(of: "pk") ?? 5
+        tableColumns[table] = r.rows.map { row in
+            ColumnInfo(
+                name: row.indices.contains(nameIdx) ? row[nameIdx] : "",
+                type: row.indices.contains(typeIdx) ? row[typeIdx] : "",
+                isPrimaryKey: (row.indices.contains(pkIdx) ? row[pkIdx] : "0") != "0"
+            )
+        }
+    }
+
+    private func tableExpansionBinding(_ table: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedTables.contains(table) },
+            set: { expanded in
+                if expanded {
+                    expandedTables.insert(table)
+                    if tableColumns[table] == nil { Task { await loadColumns(table) } }
+                } else {
+                    expandedTables.remove(table)
+                }
+            }
+        )
     }
 
     private func processedRows(_ result: ReadOnlyQueryResult) -> [[String]] {
@@ -394,5 +450,12 @@ public struct DataBrowserView: View {
         var id = UUID()
         var name: String
         var sql: String
+    }
+
+    struct ColumnInfo: Identifiable {
+        let name: String
+        let type: String
+        let isPrimaryKey: Bool
+        var id: String { name }
     }
 }
