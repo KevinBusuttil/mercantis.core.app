@@ -6,6 +6,7 @@ import MercantisCore
 public enum RecordViewMode: String, CaseIterable, Codable, Hashable, Identifiable {
     case list
     case browse
+    case tree
     case detail
 
     public var id: String { rawValue }
@@ -14,6 +15,7 @@ public enum RecordViewMode: String, CaseIterable, Codable, Hashable, Identifiabl
         switch self {
         case .list: return "List"
         case .browse: return "Browse"
+        case .tree: return "Tree"
         case .detail: return "Detail"
         }
     }

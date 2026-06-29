@@ -274,8 +274,45 @@ public struct RecordCollectionHostView: View {
             listPane
         case .browse:
             browsePane
+        case .tree:
+            treePane
         case .detail:
             detailPane
+        }
+    }
+
+    /// The view modes offered for this DocType: the caller's configured set,
+    /// plus Tree for hierarchical (tree) DocTypes — so the chart of accounts and
+    /// other group masters can be browsed as an expandable outline. Inserted
+    /// before Detail to read "List · Browse · Tree · Detail".
+    private var effectiveViewModes: [RecordViewMode] {
+        var modes = configuration.supportedViewModes
+        if docType.isTree, !modes.contains(.tree) {
+            if let detailIndex = modes.firstIndex(of: .detail) {
+                modes.insert(.tree, at: detailIndex)
+            } else {
+                modes.append(.tree)
+            }
+        }
+        return modes
+    }
+
+    /// Tree (outline) of the records on the left, the selected record's detail
+    /// on the right — the same split as Browse, but hierarchical.
+    private var treePane: some View {
+        HStack(spacing: 0) {
+            RecordTreeView(
+                docType: effectiveDocType,
+                documents: documents,
+                selectedDocumentID: selectedDocument?.id,
+                onSelect: selectDocument(_:)
+            )
+            .frame(minWidth: 360, maxWidth: .infinity)
+
+            Divider()
+
+            detailPane
+                .frame(minWidth: 380, maxWidth: .infinity)
         }
     }
 
@@ -283,7 +320,7 @@ public struct RecordCollectionHostView: View {
         RecordWorkspaceToolbarContent(
             statusText: workspaceRecordStatusText,
             selectedViewMode: $selectedViewMode,
-            supportedViewModes: configuration.supportedViewModes,
+            supportedViewModes: effectiveViewModes,
             primaryActionTitle: primaryCreateActionTitle,
             // Primary create lives in the hero header; surfacing it here too
             // would render two identical "+ New <DocType>" buttons on every
@@ -554,7 +591,7 @@ public struct RecordCollectionHostView: View {
     }
 
     private func syncSelection(from documentID: String?) {
-        if !configuration.supportedViewModes.contains(selectedViewMode) {
+        if !effectiveViewModes.contains(selectedViewMode) {
             selectedViewMode = configuration.defaultViewMode
         }
 
@@ -574,7 +611,7 @@ public struct RecordCollectionHostView: View {
             return
         }
 
-        if selectedViewMode == .browse || selectedViewMode == .detail,
+        if selectedViewMode == .browse || selectedViewMode == .detail || selectedViewMode == .tree,
            let first = documents.first {
             selectDocument(first)
             return
@@ -588,7 +625,7 @@ public struct RecordCollectionHostView: View {
     private func restorePersistedViewMode() {
         guard let rawValue = UserDefaults.standard.string(forKey: viewModeStorageKey),
               let mode = RecordViewMode(rawValue: rawValue),
-              configuration.supportedViewModes.contains(mode) else {
+              effectiveViewModes.contains(mode) else {
             selectedViewMode = configuration.defaultViewMode
             return
         }
